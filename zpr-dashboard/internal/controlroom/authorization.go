@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
+	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
 
 type Authorizer interface {
@@ -17,6 +18,10 @@ type Authorizer interface {
 var subjectLinkRecordID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 func subjectLinkPermission(method, path string) (string, bool) {
+	if strings.HasPrefix(path, operatordelegation.SubjectLinkPublicationPrefix) {
+		route, ok := operatordelegation.ParseSubjectLinkPublicationRoute(method, path)
+		return route.Permission, ok
+	}
 	if rest, ok := strings.CutPrefix(path, "/api/subject-link-registry/"); ok {
 		if method == http.MethodPost && rest == "context" {
 			return "subject-link.read", true

@@ -55,6 +55,7 @@ func runControlRoom(listen string) error {
 	controlRoomMux := http.NewServeMux()
 	controlRoomMux.Handle(subjectReviewPrefix, subjectLinkReviewProxy(security.auth, signer, proxy))
 	controlRoomMux.Handle(subjectRegistryPrefix, subjectLinkReviewProxy(security.auth, signer, proxy))
+	controlRoomMux.Handle(subjectPublicationPrefix, subjectLinkReviewProxy(security.auth, signer, proxy))
 	controlRoomMux.Handle("/api/budget-authority/", budgetAuthorityOperatorProxy(security.auth, signer, proxy))
 	controlRoomMux.Handle("/", mux)
 	server := &http.Server{

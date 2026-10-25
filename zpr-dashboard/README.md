@@ -293,12 +293,13 @@ keys, endpoint, Simulator or directory are required by those tests.
 
 The separately approved
 [internal publication-intent ledger](../MULTISOURCE_POLICY_SUPPORT.md#implemented-internal-publication-intent-and-revocation-ledger)
-adds no route or UI control. Deliberate promotion and revocation are internal
-store methods only; approval still does not activate a link. Registry edits now
+adds no UI control. Deliberate promotion and revocation are store methods that
+only the separately authorized publication API below calls; approval still does
+not activate a link. Registry edits now
 atomically invalidate any affected internal intents and advance their recipient
 sequences, with immutable audit evidence. Production callers must separately
 authorize publication operations; registry/review permissions and their proofs
-do not grant publication. No publisher or signing-key loader calls these methods.
+do not grant publication.
 
 The internal
 [snapshot-candidate bridge](../MULTISOURCE_POLICY_SUPPORT.md#implemented-immutable-internal-snapshot-candidates)
@@ -306,8 +307,8 @@ now captures complete registry/intent state into immutable unsigned payload byte
 Every new capture explicitly supplies issue/expiry and expected stream sequence;
 it allocates a new sequence even for a lease renewal. Exact principal-bound
 retries return retained historical bytes, never recapture changed state or renew
-expiry. No HTTP route, browser control, production signing key or delivery worker
-calls this API. Expired intent retirement, candidate bytes, sequence/audit and
+expiry. Only the authorized publication API calls it; no browser control or
+delivery worker does. Expired intent retirement, candidate bytes, sequence/audit and
 retry reference commit together; errors roll them all back.
 
 The internal
@@ -318,7 +319,8 @@ complete registry must all match. The caller injects an Ed25519 `crypto.Signer`
 that must match the pinned key ID; the store never loads keys. Fences are
 rechecked after signing, one immutable envelope is retained per sequence and
 signing does not advance the stream. Exact retries return the historical
-envelope. No HTTP route, delivery worker or enforcement path calls it.
+envelope. Only the authorized publication API calls it; no delivery worker or
+enforcement path does.
 
 Control-Service can load the
 [snapshot signing key](../MULTISOURCE_POLICY_SUPPORT.md#implemented-protected-snapshot-signing-key-custody)
@@ -326,6 +328,27 @@ at startup from absolute `ZPR_SUBJECT_SNAPSHOT_SIGNING_FILE` (active `key_id`
 plus rotation pins) and `ZPR_SUBJECT_SNAPSHOT_SIGNING_KEY_FILE` (0600 PKCS#8
 Ed25519 PEM). Omitting both disables signing; partial or invalid configuration
 fails startup. Room never reads either file.
+
+#### Subject-link publication API
+
+The approved
+[publication API](../MULTISOURCE_POLICY_SUPPORT.md#implemented-authorized-publication-capture-and-signing-api)
+uses the same review database and Control-Service configuration. Room exposes
+these exact routes under `/api/subject-link-publications/{vs_id}/{epoch}`:
+
+| Route | Permission | Body / headers |
+|---|---|---|
+| `GET …?organization_id=` | `subject-link.read` | Stream state, current candidate digest and signing key ID |
+| `GET …/events/{seq}`, `…/candidates/{seq}`, `…/signed/{seq}` `?organization_id=` | `subject-link.read` | Historical readback |
+| `POST …/provision` | `subject-link.publish` | `organization_id`, `reason`; no `Idempotency-Key` (a repeat conflicts) |
+| `POST …/intents` | `subject-link.publish` | promote: `organization_id`, `action`, `expected_sequence`, `review_id`, `review_digest`, `review_version`, `reason`; revoke replaces the review digest/version with `binding_version`; `Idempotency-Key` |
+| `POST …/candidates` | `subject-link.snapshot.capture` | `organization_id`, `expected_sequence`, `issued_at`, `expires_at` (Unix seconds as strings), `reason`; `Idempotency-Key` |
+| `POST …/candidates/{seq}/sign` | `subject-link.snapshot.sign` | `organization_id`, `digest`, `reason`; `Idempotency-Key`. The key ID is server-side |
+
+Proofs use a separate `subject-link-publication-v1` purpose, and review/registry
+permissions grant only reads here. Backend trust must grant each permission
+explicitly. Signing returns HTTP 503 while no signing key is configured. Signed
+existence is historical evidence, not delivery, VS installation or enforcement.
 
 #### Subject-Link Review operator page
 

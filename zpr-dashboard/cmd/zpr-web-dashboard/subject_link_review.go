@@ -195,6 +195,10 @@ func (api *subjectReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		api.serveRegistry(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, operatordelegation.SubjectLinkPublicationPrefix) {
+		api.servePublication(w, r)
+		return
+	}
 	request, err := parseSubjectReviewRequest(w, r)
 	if err != nil {
 		subjectReviewError(w, changereview.ErrInvalid)

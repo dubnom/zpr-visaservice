@@ -247,7 +247,11 @@ and restart path; no production signer or delivery path is connected.
 An internal signing gate now signs only the exact retained current candidate with
 a caller-injected, pinned Ed25519 signer. It refuses stale, expired, digest-
 mismatched or registry-incomplete candidates, rechecks after signing and retains
-one immutable envelope per sequence. It has no key loader, route or delivery.
+one immutable envelope per sequence. Control-Service loads its key from a
+protected 0600 file with an explicit key ID and rotation pins. A separately
+authorized Control-Service/Room API (distinct publish, capture and sign
+permissions) provisions streams, promotes/revokes intent, captures, signs and
+reads back history. There is still no delivery, VS installation or enforcement.
 
 Expired lookup identities are indeterminate even if another identity on the
 actor is still live. They cannot fetch fresh enrichment or be silently dropped

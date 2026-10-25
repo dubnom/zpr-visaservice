@@ -26,9 +26,14 @@ func subjectLinkReviewProxy(auth *operatorauth.Auth, signer *operatordelegation.
 			return
 		}
 		registry := strings.HasPrefix(r.URL.Path, subjectRegistryPrefix)
+		publication := strings.HasPrefix(r.URL.Path, operatordelegation.SubjectLinkPublicationPrefix)
 		var input subjectReviewRequest
 		var err error
-		if registry {
+		if publication {
+			var parsed subjectPublicationRequest
+			parsed, err = parseSubjectPublicationRequest(w, r)
+			input.organization, input.permission, input.body = parsed.organization, parsed.route.Permission, parsed.body
+		} else if registry {
 			var parsed subjectRegistryRequest
 			parsed, err = parseSubjectRegistryRequest(w, r)
 			input.organization, input.permission, input.body = parsed.organization, parsed.permission, parsed.body
@@ -47,7 +52,9 @@ func subjectLinkReviewProxy(auth *operatorauth.Auth, signer *operatordelegation.
 		request := r.Clone(r.Context())
 		request.Body = io.NopCloser(bytes.NewReader(input.body))
 		var token string
-		if registry {
+		if publication {
+			token, err = signer.SignSubjectLinkPublication(request, input.body, identity, input.organization, time.Now())
+		} else if registry {
 			token, err = signer.SignSubjectLinkRegistry(request, input.body, identity, input.organization, time.Now())
 		} else {
 			token, err = signer.SignSubjectLinkReview(request, input.body, identity, input.organization, time.Now())

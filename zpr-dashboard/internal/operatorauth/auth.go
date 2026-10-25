@@ -43,6 +43,7 @@ func ValidPermission(permission string) bool {
 		"directory.read", "directory.edit", "directory.publish",
 		"device.lifecycle", "device.session", "device.workloads",
 		"subject-link.read", "subject-link.propose", "subject-link.approve", "subject-link.revoke", "subject-link.registry.manage",
+		"subject-link.publish", "subject-link.snapshot.capture", "subject-link.snapshot.sign",
 	}, permission)
 }
 

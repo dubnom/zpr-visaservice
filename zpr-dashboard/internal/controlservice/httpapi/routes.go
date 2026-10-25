@@ -67,6 +67,7 @@ func NewMux(handlers Handlers) *http.ServeMux {
 	}
 	mux.Handle("/api/subject-link-reviews/", reviews)
 	mux.Handle("/api/subject-link-registry/", reviews)
+	mux.Handle("/api/subject-link-publications/", reviews)
 	mux.Handle("POST /api/budget-authority/current", budgetCurrent)
 	mux.Handle("/api/operator-enrollment/v1/budget-authority/", budgetOperator)
 	handlers.Assertions.Register(mux)

@@ -3014,14 +3014,78 @@ verifiable while their pin remains listed. Omitting both variables leaves
 signing disabled (logged). Partial, relative or invalid configuration fails
 startup, as does enabling signing without the subject-link review store. Errors
 never include key material. The loaded key is held by the Control-Service
-review handler only; Room never reads it. No route calls it yet; it exists for
-the authorized capture/sign API that follows.
+review handler only; Room never reads it. Only the authorized publication
+signing route below uses it.
 
 Tests cover disabled and valid rotation configuration plus rejection of
 partial/relative paths, group-readable, symlinked, non-Ed25519 or
 trailing-data keys, unpinned/missing active IDs, duplicate IDs or public keys,
 padded keys, invalid IDs, wrong versions, empty pins, unknown fields,
 world-writable configuration and signing without the review store.
+
+#### Implemented: authorized publication, capture and signing API
+
+Operator decisions: split permissions, no two-person rule between capture and
+signing, and stream administration included. Control-Service serves exact
+routes under `/api/subject-link-publications/{vs_id}/{epoch}` from the subject-link
+review handler. Room proxies them through the existing named-user session,
+same-origin CSRF and mTLS path:
+
+- `GET` stream state (`subject-link.read`) returns publication intent, the
+  current candidate (sequence and digest, only when a candidate exists at the
+  stream sequence), its signed key ID if retained, and the configured signing key
+  ID. `GET` `events/{seq}` (0 allowed), `candidates/{seq}` and `signed/{seq}`
+  return immutable historical evidence. Every `GET` requires exactly
+  `?organization_id=`.
+- `POST provision` (`subject-link.publish`): `organization_id`, `reason`. It
+  forbids `Idempotency-Key` because the store has no provision receipt; a repeat
+  conflicts.
+- `POST intents` (`subject-link.publish`): an exact promote or revoke field set
+  with `Idempotency-Key`. Promotion builds the mandatory fresh exact-subject
+  provider check from the approved review. An exact retry returns the receipt
+  without a directory lookup.
+- `POST candidates` (`subject-link.snapshot.capture`): `expected_sequence`,
+  `issued_at`, `expires_at` (decimal Unix seconds), `reason`, `Idempotency-Key`.
+- `POST candidates/{seq}/sign` (`subject-link.snapshot.sign`): `digest` (the
+  bytes the operator read), `reason`, `Idempotency-Key`. The key ID, pins and
+  signer come only from the protected startup configuration; a request
+  `key_id` is rejected. With no key configured the route returns 503.
+
+`operatordelegation.ParseSubjectLinkPublicationRoute` is the single route
+grammar used by Room authorization, Room proof signing and Control-Service
+verification. Proofs use the new `subject-link-publication-v1` purpose and bind
+method, target, body hash, organization, permission and retry key. Review,
+registry, enrollment and active-binding proofs cannot be used here, and
+review/registry permissions grant only reads. The three new permissions are in
+`operatorauth.ValidPermission`; backend trust must grant each one explicitly.
+Body parsing reuses the review rules: exact canonical field names, no nulls or
+duplicates, UTF-8 JSON content type and strict decoding. The verified grant
+supplies the actor. Errors map to 400/403/404/409/503 with `no-store`.
+Neither Room nor Control-Service reads Simulator state for these routes.
+
+Tests drive the full workflow through the Control-Service handler:
+- provision, promote with a provider outage then success, and an exact retry
+  without a directory lookup;
+- capture, signing returning 503 without a key, a wrong-digest conflict, then
+  signing and verification against the pins;
+- an identical signing retry, state showing a signed current candidate with an
+  unchanged sequence, and candidate/signed/event readback;
+- revocation clearing the current candidate and rejecting late signing;
+- historical signed readback after reopen.
+
+Each mutation is denied for every role lacking its exact permission, and for a
+foreign-organization holder. A strict-input table covers 18 malformed requests.
+Proof tests cover review-to-publication token substitution, retargeting,
+nonce replay, missing TLS and an unconfigured handler. Package tests cover the
+route/permission table and proof isolation, including that no other permission
+grants signing.
+
+A Room test runs the same capture/sign split through real OIDC sessions and
+mutual TLS. It checks that denials (wrong role, foreign organization, missing
+CSRF) never reach Control-Service and that browser credentials are replaced by
+the signed proof. It also checks that the signed actor is the verified
+named user. A mutation that mapped signing to the capture permission failed the
+workflow test. No Control Room screen calls these routes yet.
 
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 
