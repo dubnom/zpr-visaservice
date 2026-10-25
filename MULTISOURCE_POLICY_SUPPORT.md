@@ -15,16 +15,28 @@ the independent Go provider and durable VS state in one automated chain:
    fixture. Explicit synthetic actor identities select exact directory UUIDs.
    The compiled source-qualified policy permits TCP 80 and denies TCP 81.
    Assert persisted, source-owned attributes and a real issued visa.
-3. Disable the source through the production durable control functions. Deny new
-   requests and queue the existing visa for revocation at both fixture nodes.
+3. Start the production Admin TLS listener/router on an ephemeral loopback
+   socket. With fresh read/read-write fixture API keys, assert authenticated
+   readback and a default-on source with an empty override revision. Missing,
+   malformed and revoked keys cannot read or mutate; read-only keys cannot
+   mutate. Malformed/duplicate/extra-field toggle JSON cannot change the stored
+   control. A client trusting an unrelated CA cannot connect.
+4. Disable the source over HTTPS with the write key and require a 202 response
+   with declared/effective/desired state, pending work and a fresh UUID revision.
+   Deny new requests and let the actual event worker queue the existing visa
+   for revocation at both fixture nodes; the test does not call the control
+   reconciliation function directly.
    Stop and restart a private Valkey/Redis process from its actual AOF files,
    then start a separate VS test process. Assert that the exact signed artifact,
-   off revision, pending work, actor docking and revoke queues survive.
-4. Re-enable against changed LDAP mail and prove a compiled-policy denial rather
+   off revision, pending work, actor docking and revoke queues survive, including
+   authenticated HTTPS control readback from the new process.
+5. Re-enable over HTTPS against changed LDAP mail, wait for the actual event
+   worker's persisted completion, and prove a compiled-policy denial rather
    than stale permission or a missing-route/docking failure. A further process
    with LDAP bind failure must deny, report failed source health rather than
    successful empty absence, and issue no new visa.
-5. Restore LDAP data and start another process. Fresh lookup permits a new visa
+6. Restore LDAP data and start another process. Re-enable over HTTPS, wait for
+   persisted worker completion, and verify fresh lookup permits a new visa
    with a different ID; the old queued revoke remains. Assert exactly two
    directory searches per successful phase and none during bind failure; the
    disabled requests must not add directory searches.
@@ -55,9 +67,11 @@ successful skip from being counted as acceptance. Simulator URLs deliberately
 point to unavailable loopback endpoints, and no simulation manifest is loaded.
 
 **Evidence boundary:** these are real compiler, HTTPS/mTLS, LDAP protocol,
-Redis AOF, production manager/evaluator/visa-worker and OS-process boundaries.
-They are not full Visa Service daemon/listener, node authentication, Admin API
-or Control Room browser acceptance. Actor authority and UUID-valued device CNs
+Redis AOF, production Admin TLS/router/authentication, real event worker,
+manager/evaluator/visa-worker and OS-process boundaries. The Admin listener
+shares the production connection-serving loop, not a substitute HTTP router.
+They are not full Visa Service daemon/startup, node authentication, Control-Service
+bridge or Control Room browser acceptance. Actor authority and UUID-valued device CNs
 are explicitly synthetic fixtures, not invented device/person subject links.
 The LDAP server is a bounded protocol fixture, not deployed OpenLDAP. The signed
 candidate is loaded directly by the test harness, not activated through the
@@ -78,8 +92,11 @@ Validation for this acceptance increment:
 - Required full `make test`: **11 operator-stack checks pass**, with exactly
   the same **13 pre-existing dashboard fixture/environment failures**. No
   unrelated failing tests were changed; the complete Go suite is not green.
-- No production Rust/Go behavior or dependency manifests changed in this
-  increment; changes are acceptance tests, fixture support, runner and docs.
+- The Admin connection-serving loop is extracted without changing production
+  routing, TLS or authentication behavior, allowing a test-only entrypoint to
+  use a prebound private listener without a port reservation race. Other changes
+  are acceptance tests, fixture support, runner and docs; no dependency manifests
+  or production configuration changed.
 
 ## Operator controls, shared JSON documents and immutable LDAP provider
 

@@ -130,8 +130,11 @@ now connects saved shared-ID JSON policy, the real compiler, the VS REST consume
 and an mTLS provider backed by a TLS LDAP protocol fixture. It proves compiled
 allow/deny, durable source-off and queued revocation across real database/process
 restarts, changed-data denial, outage handling and fresh recovery, with Simulator
-unavailable. This uses synthetic actor identities and production VS functions
-inside test processes, not the full daemon/authentication/Control Room flow.
+unavailable. Toggles and readback cross the production authenticated Admin HTTPS
+listener; the real event worker handles reconciliation. Rejected credentials,
+malformed toggles and an unrelated TLS trust root are checked. This uses
+synthetic actor identities inside test processes, not the full daemon/node
+authentication/Control-Service/Control Room flow.
 It does not activate subject links, provision production transport/credentials,
 prove gateway acknowledgement or establish deployed-directory acceptance.
 Final envelope syntax remains open. See the

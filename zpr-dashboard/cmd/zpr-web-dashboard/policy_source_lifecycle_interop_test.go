@@ -103,7 +103,7 @@ func TestPolicyDocumentsSourceLifecycleInterop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("provider/VS lifecycle failed: %v\n%s", err, output)
 	}
-	for _, marker := range []string{"SOURCE_LIFECYCLE initial:", "SOURCE_LIFECYCLE restart-off:", "SOURCE_LIFECYCLE changed:", "SOURCE_LIFECYCLE provider-down:", "SOURCE_LIFECYCLE recover:"} {
+	for _, marker := range []string{"SOURCE_LIFECYCLE admin-http:", "SOURCE_LIFECYCLE initial:", "SOURCE_LIFECYCLE restart-off:", "SOURCE_LIFECYCLE changed:", "SOURCE_LIFECYCLE provider-down:", "SOURCE_LIFECYCLE recover:"} {
 		if !strings.Contains(string(output), marker) {
 			t.Fatalf("missing acceptance marker %q:\n%s", marker, output)
 		}

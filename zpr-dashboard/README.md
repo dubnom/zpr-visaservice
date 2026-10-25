@@ -96,8 +96,11 @@ connects saved shared-ID JSON policy and signed compiler output to the real
 Rust VS REST consumer and a local mTLS provider/TLS LDAP fixture. It verifies
 allow/deny, durable disable and queued revocation across database/process
 restart, changed-data denial, outage handling and fresh recovery with Simulator
-unavailable. This is component/process acceptance with explicitly synthetic
-identities, not approved subject-link, full daemon/UI or gateway-delivery
+unavailable. Controls cross the real authenticated Admin HTTPS API; the actual
+event worker reconciles accepted changes. Missing/invalid/revoked/read-only
+credentials, malformed mutations and an unrelated TLS trust root are rejected.
+This is component/process acceptance with explicitly synthetic identities,
+not approved subject-link, full daemon/Control-Service/UI or gateway-delivery
 acceptance. See [prerequisites and exact boundaries](../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
 
 Subject-link authorization groundwork now accepts explicit `subject-link.read`,

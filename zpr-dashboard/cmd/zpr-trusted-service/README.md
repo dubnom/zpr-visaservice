@@ -137,8 +137,11 @@ It tests allow/deny, durable disable and queued revocation, a private AOF
 database/process restart, changed-data denial, bind failure and fresh recovery.
 Simulator is unavailable throughout. Synthetic UUID-valued actor CNs are
 explicitly provisioned as fixture lookup identities; this does not approve or
-implement a device/person subject link. The VS runs production functions in
-test processes, not the full daemon or gateway transport. See
+implement a device/person subject link. Source controls use the actual Admin
+HTTPS listener and API-key checks, and the real event worker performs queued
+reconciliation. Unauthorized/malformed mutations and an unrelated TLS trust
+root are rejected. The VS runs production components in test processes, not
+the full daemon, Control-Service bridge or gateway transport. See
 [prerequisites, reproduction and evidence boundaries](../../../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
 
 ### Optional source validity bound

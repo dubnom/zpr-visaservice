@@ -557,11 +557,31 @@ fn admin_app(state: SharedState) -> Router {
 }
 
 async fn serve(tls_acceptor: TlsAcceptor, listen: SocketAddr, state: SharedState) {
-    let app = admin_app(state);
     let listener = TcpListener::bind(listen).await.unwrap_or_else(|e| {
         panic!("failed to bind admin https listener on {listen}: {e}");
     });
     info!(target: ADMIN, "admin https service listening on {listen} (TLS)");
+    serve_listener(tls_acceptor, listener, state).await;
+}
+
+#[cfg(test)]
+pub(crate) async fn serve_source_lifecycle_fixture(
+    listener: TcpListener,
+    asm: Arc<Assembly>,
+    key: &Path,
+    cert: &Path,
+) {
+    assert!(listener.local_addr().unwrap().ip().is_loopback());
+    serve_listener(
+        rustls_tls_acceptor(key, cert),
+        listener,
+        Arc::new(tokio::sync::RwLock::new(AdminState::new(asm))),
+    )
+    .await;
+}
+
+async fn serve_listener(tls_acceptor: TlsAcceptor, listener: TcpListener, state: SharedState) {
+    let app = admin_app(state);
 
     loop {
         let tower_service = app.clone();
