@@ -24,6 +24,18 @@ remain pending. The milestone checkboxes below retain that distinction.
 
 ## 1. Target outcome
 
+**2026-10-24 source ownership update:** policy declarations, not operator
+directory registration, authorize the VS trusted-source set. A durable default-on
+operator toggle now gates declared sources through provisional production
+`GET`/`PUT /admin/trusted-services/{id}/control` JSON. Off survives policy
+removal/re-addition and state-preserving restart; lookups fail closed and visa
+reconciliation remains asynchronous. This is a VS runtime/API increment, not
+the completed Control Room workflow, LDAP provider delivery, multi-document
+declaration merger or M1 acceptance. Earlier registration/wizard tasks below
+describe existing evaluation scaffolding and must not be treated as a competing
+source authorization authority. See the
+[ownership, API and lifecycle evidence](MULTISOURCE_POLICY_SUPPORT.md#policy-declared-sources-and-durable-default-on-controls-2026-10-24).
+
 **Control Room does not know that Simulator exists.** Simulator is one more
 client of the ZPR system, alongside real users, adapters and applications.
 Control Room sees ordinary identities, services, topology, policies, trusted
@@ -262,6 +274,171 @@ Depends on M0.
 **Exit:** two sources can be registered and read concurrently, including the
 approved LDAP/provider path, with Simulator never started. LDAP receives no
 write requests. Visual tests V02-V07 and V13 pass.
+
+#### M1 acceptance reconciliation (2026-10-24)
+
+M1 remains **open**. The unchecked items above are whole acceptance gates,
+not a claim that their implementation has not started. Use this reconciliation
+to choose the next increment; additional database/visa race hardening is not a
+substitute for the missing M1 functionality or integrated acceptance.
+
+| Gate | Current evidence | Remaining before closure |
+| --- | --- | --- |
+| S01: durable registration | Protected single-writer registry, stable source/org identity, revision conflicts, protected secret references, edits and restart persistence have backend tests; registration/default controls have desktop/tablet fixture tests. | Reconcile enabled-state and optional-capability requirements with the actual registration contract; verify the approved configuration in the integrated stack. Single-writer provisioning is not HA qualification. |
+| S02: independent LDAP | Verified LDAPS bind/search fixtures exercise two independently configured network providers, approved attributes, scoped DNs and credential/certificate failures with invalid Simulator inputs. The client fixture rejects LDAP write operations. | Approved read-only directory account/ACL and live LDAP/provider acceptance; local protocol fixtures are not evidence of deployed directory access or least-privilege ACLs. |
+| S03: two concurrent sources | Backend registration/read tests and desktop/tablet catalogs retain separate stable IDs and different values for the same username. | Register/read both approved sources through the integrated deployment without Simulator. |
+| S04: tests and health/capabilities | Bounded read-only connection tests, selected-source failure/recovery, last-success UI evidence and explicit unsupported Updates have backend/browser fixture coverage. Saved configuration does not certify connectivity. | Reconcile registration, runtime inventory and feed identities/capabilities; qualify unavailable/stale/last-success behavior and the observation budget in the integrated stack. Browser-session connection evidence is not durable health certification. |
+| S05: provenance and identity isolation | Source-qualified catalogs/compiler/runtime keys avoid overwrites; scoped assertion expressions and UI selection preserve source identity. | **Functional blocker:** VS lookup still fans out matching live identity strings. Approved issuer-qualified subject links and their revocation enforcement are not implemented. Separate keys/catalogs do not establish separate principals. |
+| S06: defaults and dependency-aware outages | Explicit per-org policy defaults persist and bind signed staging. Required-provider failure is fail-closed; an independent selected-source read remains usable. | **Functional blocker:** VS whole-actor closure is conservative, not dependency-aware. Complete negative/deny/admission dependencies and cached-visa enforcement must precede selective availability. Do not skip failed providers or substitute defaults. |
+| S07: lifecycle and reference safety | Scoped/revisioned removal, default/watched/shared-source restrictions, duplicate IDs, invalid configuration, restart and fault coverage exist. Staged policy bindings detect source/default changes. | Verify policy/assertion reference handling before removal and enabled-state lifecycle; installed-policy/visa version invalidation remains open. Existing source retirement restrictions are not proof of complete reference protection. |
+
+Fresh validation for this reconciliation:
+
+- Focused source registry, network LDAP, policy-default/version-binding and
+  source-ID tests pass with `go test -race`. These tests use local protocol
+  fixtures, not a running Simulator or an external company directory.
+- **28 browser fixture cases pass** across desktop and tablet: 12 registration/
+  multi-source catalog cases and 16 Trusted Sources GUI cases. They cover
+  delayed responses, source/org switching, unsupported Updates, independent
+  browsing during outage, recovery, explicit defaults and registration errors.
+  Routes/data are mocked; these are not integrated V02-V07/V13 sign-off.
+- Added `TestSourceRegistryRestartOutageAndRecoveryPreserveSourceIdentity`
+  in [the registry tests](zpr-dashboard/cmd/zpr-web-dashboard/assertion_source_registry_test.go).
+  It registers both LDAPS sources, persists the policy default, recreates the
+  runtime twice during a provider bind failure, proves no cached-success or
+  peer fallback, recovers, restarts again and verifies unchanged registry bytes,
+  revision and identities. The existing fixture permits only bind/search/unbind.
+  This is combined backend restart/recovery evidence, **not** a live LDAP
+  process restart or browser/service deployment test.
+
+Reproduction from `zpr-dashboard`:
+
+```sh
+go test -race ./cmd/zpr-web-dashboard \
+  -run 'Test(SourceRegistry|NetworkLDAP|PolicySourceDefault|PolicySourceBindingsRequire|PolicySourceID)' -count=1
+npm run test:browser -- tests/browser/source-registration.spec.mjs tests/browser/multisource-policy-contract.spec.mjs
+npm run test:browser -- tests/browser/dashboard.spec.mjs --grep 'Trusted Sources GUI'
+```
+
+**Remaining work order:** resolve the S05 approved subject-link/authenticated
+identity contract and S06 complete dependency contract documented in
+[multi-source support](MULTISOURCE_POLICY_SUPPORT.md#explicit-subject-links-required-follow-up)
+before implementation; reconcile the S01/S04/S07 contract gaps above; then run
+V02-V07/V13 against an isolated, approved two-source stack with Simulator absent.
+Do not introduce the deferred principal-envelope/shared-schema design merely
+to close a checkbox, and do not claim acceptance from Rust test totals.
+M0's still-open production boundary prerequisites also remain prerequisites.
+
+The next S05 design packet is now drafted for review in
+[the minimal subject-link proposal](MULTISOURCE_POLICY_SUPPORT.md#s05-minimal-subject-link-contract-review-proposal-2026-10-24).
+It specifies direct approved root-to-provider bindings, no identity-string
+fan-out, actor/visa persistence and revocation/restart acceptance. It explicitly
+leaves authority/immutable-ID ownership, source-version delivery, approval
+storage/API, enforcement timing and compatibility decisions unapproved. No
+subject-link runtime behavior or shared schema was changed by the proposal.
+
+A separately approved
+[verified-device foundation](MULTISOURCE_POLICY_SUPPORT.md#s05-foundation-increment-preserved-device-authentication-2026-10-24)
+now preserves authenticated adapter/device identity outside policy claims and
+through actor storage/refresh. It does not authorize links or change provider
+lookups. Organization/trust-version ownership, directory selectors, binding
+approval/storage and generation/revocation enforcement remain open; S05 remains
+unchecked.
+
+A subsequent approved
+[session-guarded write packet](MULTISOURCE_POLICY_SUPPORT.md#s05-foundation-increment-session-guarded-actor-writes-2026-10-24)
+atomically rejects stale actor updates after authentication-session replacement
+and preserves explicit reconnect behavior. It is not complete actor-generation
+or subject-link/visa enforcement; the remaining S05 gates above still apply.
+
+The operator has now selected **Control-Service ownership of approved links**,
+VS enforcement through authenticated versioned snapshots, and **immutable
+provider subject IDs only**, with no UID/DN/mail fallback. The
+[production binding contract review](MULTISOURCE_POLICY_SUPPORT.md#s05-production-binding-contract-ownership-and-api-review-2026-10-24)
+specifies proposed records/API shapes, approval boundaries, delivery/restart
+rules and an acceptance matrix. This is a documentation-only contract packet:
+routes, storage, transport/schema and link enforcement are not implemented.
+Operator authorization, authority registration/version mapping, authenticated
+delivery format, atomic publication and revocation timing still need approval.
+
+The next approved
+[operator authorization foundation](MULTISOURCE_POLICY_SUPPORT.md#s05-operator-authorization-foundation-2026-10-24)
+adds dedicated subject-link permissions and exact Control Room route mapping
+using existing organization-scoped OIDC authorization, plus the independent
+issuer/subject reviewer-check primitive. Approval storage/handlers and the
+durable two-person commit check are still absent; enrollment delegation is not
+broadened. This is not S05 sign-off or a running subject-link workflow.
+
+The approved
+[durable subject-link review foundation](MULTISOURCE_POLICY_SUPPORT.md#s05-durable-subject-link-review-foundation-2026-10-24)
+now persists isolated immutable proposals and transactional independent review
+decisions in the existing SQLite store. Its `review-approved` state is not an
+active binding and is excluded from the policy/gateway queue. HTTP authorization
+integration, atomic source/authority validation, publication, delivery and
+revocation remain unimplemented; this does not close S05.
+
+The [durable review retry packet](MULTISOURCE_POLICY_SUPPORT.md#s05-durable-review-retry-receipts-2026-10-24)
+adds principal/organization-scoped retry receipts committed with the review and
+audit event. Identical keyed retries replay the original response; changed
+content conflicts. This does not publish active links or expose HTTP handlers,
+and does not close S05.
+
+The documentation-only
+[Control-Service review integration proposal](MULTISOURCE_POLICY_SUPPORT.md#s05-control-service-review-integration-contract-2026-10-24)
+locates future subject-link review APIs/state in Control-Service, leaves the
+generic policy/gateway queue in Control Room and separates review-only approval
+from active publication. It specifies end-to-end operator-proof requirements,
+retry/capture ordering and acceptance with Simulator absent. Concrete proof
+scope, authoritative authority capture, configuration and HTTP limits still
+require approval/implementation; no endpoints or active links are added.
+
+The approved
+[isolated review-proof groundwork](MULTISOURCE_POLICY_SUPPORT.md#s05-isolated-review-request-proof-foundation-2026-10-24)
+adds internal signing/verification for the three review-only routes, with a
+distinct purpose, exact organization/permission/request/retry-key binding,
+independent backend grants, pinned mTLS caller and single-use nonces. Targeted
+race/compatibility tests pass; enrollment scope is unchanged. No HTTP handler,
+trust provisioning, authority registration or active binding is enabled.
+
+The approved
+[durable proof/review composition batch](MULTISOURCE_POLICY_SUPPORT.md#s05-durable-proof-and-review-composition-groundwork-2026-10-24)
+adds a bounded persistent proof-nonce store, exact review-only permission
+mappings and signer/verifier/review composition tests across reopen, concurrent
+retries, grant denial and audit failure. Proof consumption and semantic retry
+receipts remain separate. HTTP handlers, service trust/configuration,
+authoritative authority capture and active publication remain unimplemented;
+S05 is not closed.
+
+The approved
+[internal BAS authority batch](MULTISOURCE_POLICY_SUPPORT.md#s05-internal-bas-authority-registration-and-capture-2026-10-24)
+adds organization-scoped service/issuer registration, server-owned version-CAS
+edits, immutable audit history and exact enabled-version device-root capture.
+Tests cover restart, isolation, concurrent edits and rollback. No production
+authority configuration/HTTP API, trust provisioning, combined review capture
+or active-link enforcement is enabled; S05 remains open.
+
+The [authority-guarded review integration](MULTISOURCE_POLICY_SUPPORT.md#s05-transaction-guarded-authority-review-integration-2026-10-24)
+now checks current BAS registration in opt-in review transactions, with distinct
+retry fingerprints and legacy/guarded proof-composition tests. Separate source
+capture/selector capability, production HTTP composition and active publication
+are still missing. This narrows the authority capture race, not the S05 gate.
+
+The approved
+[LDAP selector declaration increment](MULTISOURCE_POLICY_SUPPORT.md#s05-explicit-ldap-selector-declaration-2026-10-24)
+adds optional network-LDAPS-only `ldap_entry_uuid` configuration, identity-version
+invalidation and an explicitly unverified editor declaration. Backend tests and
+12 desktop/tablet registration cases pass. Actual UUID lookup, provider support
+validation and combined review capture remain unimplemented; S05 stays open.
+
+The [exact LDAP/source-review batch](MULTISOURCE_POLICY_SUPPORT.md#s05-exact-ldap-subject-lookup-and-source-guarded-review-2026-10-24)
+now provides internal exact UUID lookup and source/authority-guarded review
+composition, with API-managed source edits fenced through commit and historical
+retries independent of provider availability. Local LDAPS/race fixtures pass.
+External-file atomic publication and configured HTTP service composition remain
+open. Dynamic source binding into VS explicitly needs source-to-policy version/
+identity mapping, authenticated delivery, credential activation and installed
+readback plus disable/removal invalidation; existing policy-driven store rebuilds
+do not establish that contract. No dynamic VS installation is enabled here.
 
 ### M2 - Production-owned Control Room workflows
 
