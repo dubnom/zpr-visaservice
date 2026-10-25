@@ -134,7 +134,7 @@ dialog[aria-label="Review AI definition changes"] pre {
 }
 
 .tab-badge {
-  background: #e8eee9;
+  background: var(--profile-heading-surface);
   color: var(--muted);
   font: 11px var(--mono);
   padding: 1px 6px;
@@ -162,7 +162,7 @@ dialog[aria-label="Review AI definition changes"] pre {
 }
 
 .metric-card {
-  background: #f8faf7;
+  background: var(--profile-section-surface);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 10px 12px;
@@ -220,13 +220,13 @@ dialog[aria-label="Review AI definition changes"] pre {
   font: 11px var(--mono);
   border: 1px solid var(--line);
   border-radius: 2px;
-  background: white;
+  background: var(--profile-input-surface);
   color: var(--ink);
 }
 
 .compact-input:focus {
-  border-color: #62856f;
-  box-shadow: 0 0 0 1px #b5e34f42;
+  border-color: var(--profile-focus-border);
+  box-shadow: 0 0 0 1px var(--profile-focus-shadow);
   outline: none;
 }
 
@@ -240,8 +240,8 @@ dialog[aria-label="Review AI definition changes"] pre {
 }
 
 .button-delete:hover {
-  background: #fbeae9;
-  border-color: #f0c5c3;
+  background: var(--profile-error-surface);
+  border-color: var(--profile-error-border);
   border-radius: 2px;
 }
 
@@ -256,7 +256,7 @@ dialog[aria-label="Review AI definition changes"] pre {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 12px;
-  background: #fcfdfc;
+  background: var(--profile-detail-surface);
 }
 
 .topology-nodes-grid {
@@ -267,7 +267,7 @@ dialog[aria-label="Review AI definition changes"] pre {
 }
 
 .topology-node-card {
-  background: white;
+  background: var(--profile-node-surface);
   border: 1px solid var(--line);
   border-radius: 3px;
   padding: 8px 10px;
@@ -305,4 +305,15 @@ dialog[aria-label="Review AI definition changes"] pre {
 
 .input-port {
   width: 70px;
+}
+:root {
+  --profile-heading-surface: var(--surface-heading, #e8eee9);
+  --profile-section-surface: var(--surface-subtle, #f8faf7);
+  --profile-focus-border: var(--focus-border, #62856f);
+  --profile-focus-shadow: var(--focus-ring, #b5e34f42);
+  --profile-error-surface: #fbeae9;
+  --profile-error-border: #f0c5c3;
+  --profile-detail-surface: #fcfdfc;
+  --profile-input-surface: var(--surface-input, white);
+  --profile-node-surface: var(--surface-panel, white);
 }

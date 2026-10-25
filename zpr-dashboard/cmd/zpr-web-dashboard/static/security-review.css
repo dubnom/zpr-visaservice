@@ -18,8 +18,8 @@
 .security-review-inventory-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 4px 10px 12px; }
 .security-review-inventory-details h3 { margin: 0 0 5px; color: var(--muted); font: 9px var(--mono); text-transform: uppercase; }
 .security-review-inventory-details ul { max-height: 160px; margin: 0; padding: 0; overflow: auto; list-style: none; font: 11px/1.7 var(--mono); overflow-wrap: anywhere; }
-.security-review-inventory-details [data-change="added"] { color: #18894b; }
-.security-review-inventory-details [data-change="removed"] { color: #a43830; }
+.security-review-inventory-details [data-change="added"] { color: var(--security-added-text); }
+.security-review-inventory-details [data-change="removed"] { color: var(--security-removed-text); }
 #security-review-baseline-time, #security-review-current-time, #security-review-status { color: var(--muted); font: 10px var(--mono); overflow-wrap: anywhere; }
 .security-review-baseline-row > .button { flex: 0 0 auto; }
 .security-review-tools { align-items: center; flex-wrap: wrap; }
@@ -37,7 +37,7 @@
 .security-review-table .security-observed { white-space: nowrap; font: 10px var(--mono); }
 .security-review-table .security-disposition { white-space: nowrap; }
 .security-review-table tr[data-dismissed="true"] { opacity: .65; }
-.security-review-table tr[data-severity="review"] .security-indicator { color: #9c4b26; }
+.security-review-table tr[data-severity="review"] .security-indicator { color: var(--security-review-text); }
 @media (max-width: 700px) {
   .security-review-actions { align-items: flex-start; flex-wrap: wrap; }
   .security-review-actions .button { min-height: 34px; }
@@ -47,4 +47,10 @@
   .security-review-inventory-details { grid-template-columns: minmax(0, 1fr); }
   .security-review-table { min-width: 680px; }
 }
-[data-security-review] tr[data-severity="high"] .security-indicator { color: #a43824; font-weight: 800; }
+[data-security-review] tr[data-severity="high"] .security-indicator { color: var(--security-high-text); font-weight: 800; }
+:root {
+  --security-added-text: #18894b;
+  --security-removed-text: var(--status-error-strong, #a43830);
+  --security-review-text: #9c4b26;
+  --security-high-text: #a43824;
+}

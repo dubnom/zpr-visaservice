@@ -18,8 +18,13 @@ await writeFile(output, `<!-- Natural Earth 1:110m countries, public domain. htt
 Source: https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_admin_0_countries.geojson
 Generated equirectangular projection: x=(longitude+180)*5, y=(90-latitude)*5. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 900">
-<rect width="1800" height="900" fill="#eaf4fa"/>
-<g fill="#f7f5ed" stroke="#8c9ba5" stroke-width="0.7" fill-rule="evenodd">
+<style>
+  :root { --map-water: #eaf4fa; --map-land: #f7f5ed; --map-coastline: #8c9ba5; }
+  .map-water { fill: var(--map-water); }
+  .map-land { fill: var(--map-land); stroke: var(--map-coastline); }
+</style>
+<rect class="map-water" width="1800" height="900" fill="#eaf4fa"/>
+<g class="map-land" stroke-width="0.7" fill-rule="evenodd">
 ${paths.join("\n")}
 </g></svg>
 `);

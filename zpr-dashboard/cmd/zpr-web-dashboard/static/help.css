@@ -7,41 +7,58 @@
   color: var(--ink-soft);
   font-size: 11px;
 }
-.main-content .help-trigger:hover { border-color: #a5b4aa; background: white; }
+.main-content .help-trigger:hover { border-color: var(--help-trigger-hover-border); background: var(--help-control-surface); }
 .main-content .topbar > .help-trigger {
   flex: 0 0 auto;
   margin-left: auto;
   white-space: nowrap;
 }
-.main-content .topbar > .help-trigger:focus-visible { outline: 2px solid #547c55; outline-offset: 2px; }
+.main-content .topbar > .help-trigger:focus-visible { outline: 2px solid var(--help-focus); outline-offset: 2px; }
 .zpr-help-dialog {
   width: min(720px, calc(100vw - 28px));
   max-height: min(84dvh, 820px);
   overflow: auto;
   padding: 20px 22px;
-  border: 1px solid #b5c1b8;
+  border: 1px solid var(--help-dialog-border);
   border-radius: 4px;
-  background: #f8faf7;
-  color: #17211e;
-  box-shadow: 0 16px 48px #101a1880;
+  background: var(--help-dialog-surface);
+  color: var(--help-dialog-text);
+  box-shadow: 0 16px 48px var(--help-dialog-shadow);
 }
-.zpr-help-dialog::backdrop { background: #101a1870; }
-.zpr-help-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid #dbe2dc; }
-.zpr-help-dialog header .eyebrow { margin: 0 0 5px; color: #68766e; font: 11px/1.4 var(--mono, monospace); }
+.zpr-help-dialog::backdrop { background: var(--help-dialog-backdrop); }
+.zpr-help-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--help-divider); }
+.zpr-help-dialog header .eyebrow { margin: 0 0 5px; color: var(--help-eyebrow-text); font: 11px/1.4 var(--mono, monospace); }
 .zpr-help-dialog h2 { margin: 0; font-size: 20px; }
 .zpr-help-dialog h3 { margin: 16px 0 6px; font-size: 13px; }
-.zpr-help-dialog p, .zpr-help-dialog li { color: #3e4d45; font-size: 13px; line-height: 1.55; }
+.zpr-help-dialog p, .zpr-help-dialog li { color: var(--help-body-text); font-size: 13px; line-height: 1.55; }
 .zpr-help-dialog > p { margin: 14px 0; }
 .zpr-help-dialog ol { margin: 0; padding-left: 22px; }
 .zpr-help-dialog li + li { margin-top: 5px; }
 .zpr-help-dialog section[hidden] { display: none; }
-.zpr-help-dialog pre { max-height: 260px; min-height: 0; margin: 0; padding: 12px; border: 1px solid #dbe2dc; border-radius: 3px; background: #f0f4ef; color: #26352e; font: 11px/1.55 var(--mono, monospace); overflow: auto; white-space: pre; }
+.zpr-help-dialog pre { max-height: 260px; min-height: 0; margin: 0; padding: 12px; border: 1px solid var(--help-divider); border-radius: 3px; background: var(--help-source-surface); color: var(--help-source-text); font: 11px/1.55 var(--mono, monospace); overflow: auto; white-space: pre; }
 .zpr-help-dialog pre code { font: inherit; }
-.zpr-help-dialog footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-top: 12px; border-top: 1px solid #dbe2dc; }
-.zpr-help-dialog footer a { color: #315e78; font-size: 12px; text-decoration: underline; }
-.zpr-help-dialog button { min-height: 32px; padding: 5px 10px; border: 1px solid #aebbb2; border-radius: 3px; background: #fff; color: #17211e; cursor: pointer; }
-.zpr-help-dialog button:focus-visible, .zpr-help-dialog a:focus-visible { outline: 2px solid #547c55; outline-offset: 2px; }
+.zpr-help-dialog footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--help-divider); }
+.zpr-help-dialog footer a { color: var(--help-link-text); font-size: 12px; text-decoration: underline; }
+.zpr-help-dialog button { min-height: 32px; padding: 5px 10px; border: 1px solid var(--help-button-border); border-radius: 3px; background: var(--help-control-surface); color: var(--help-dialog-text); cursor: pointer; }
+.zpr-help-dialog button:focus-visible, .zpr-help-dialog a:focus-visible { outline: 2px solid var(--help-focus); outline-offset: 2px; }
 @media (max-width: 520px) {
   .zpr-help-dialog { padding: 16px; }
   .zpr-help-dialog footer { align-items: flex-start; }
+}
+:root {
+  --help-trigger-hover-border: var(--border-control-hover, #a5b4aa);
+  --help-control-surface: var(--surface-input, white);
+  --help-focus: #547c55;
+  --help-dialog-border: #b5c1b8;
+  --help-dialog-surface: var(--surface-subtle, #f8faf7);
+  --help-dialog-text: var(--text-primary, #17211e);
+  --help-dialog-shadow: #101a1880;
+  --help-dialog-backdrop: #101a1870;
+  --help-divider: var(--border-subtle, #dbe2dc);
+  --help-eyebrow-text: #68766e;
+  --help-body-text: #3e4d45;
+  --help-source-surface: #f0f4ef;
+  --help-source-text: #26352e;
+  --help-link-text: #315e78;
+  --help-button-border: #aebbb2;
 }

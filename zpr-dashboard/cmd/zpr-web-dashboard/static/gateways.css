@@ -1,7 +1,7 @@
 .gateway-catalog-pane .catalog-pane-heading strong { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; }
 .gateway-record-item { grid-template-columns: 18px minmax(0, 1fr); }
 .gateway-record-item small { grid-column: 2; overflow: hidden; color: var(--muted); font: 8px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
-.gateway-record-item[data-kind="gateway"] .policy-kind-icon { color: #c98612; }
+.gateway-record-item[data-kind="gateway"] .policy-kind-icon { color: var(--gateway-record-icon); }
 .gateway-source-editor .zpr-config-source:disabled { cursor: not-allowed; }
 .gateway-source-editor .config-gutter-line { width: 100%; grid-template-columns: 40px; justify-items: start; }
 .gateway-source-editor .zpr-config-source:focus { outline: none; }
@@ -18,6 +18,10 @@
 .gateway-form-destination label, .gateway-form-limits > label { flex: 1 1 180px; }
 .gateway-form-destination input, .gateway-form-destination textarea, .gateway-form-limits > label input { display: block; width: 100%; box-sizing: border-box; }
 .gateway-form textarea { border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
-#gateway-form-error { color: #a43830; }
+#gateway-form-error { color: var(--gateway-error-text); }
 [data-gateway-manager][data-gateway-mode="form"] .editor-search-tools,
 [data-gateway-manager][data-gateway-mode="form"] .editor-wrap-toggle { display: none; }
+:root {
+  --gateway-record-icon: #c98612;
+  --gateway-error-text: var(--status-error-strong, #a43830);
+}

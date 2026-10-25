@@ -2,8 +2,13 @@
 Source: https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_admin_0_countries.geojson
 Generated equirectangular projection: x=(longitude+180)*5, y=(90-latitude)*5. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 900">
-<rect width="1800" height="900" fill="#eaf4fa"/>
-<g fill="#f7f5ed" stroke="#8c9ba5" stroke-width="0.7" fill-rule="evenodd">
+<style>
+  :root { --map-water: #eaf4fa; --map-land: #f7f5ed; --map-coastline: #8c9ba5; }
+  .map-water { fill: var(--map-water); }
+  .map-land { fill: var(--map-land); stroke: var(--map-coastline); }
+</style>
+<rect class="map-water" width="1800" height="900" fill="#eaf4fa"/>
+<g class="map-land" stroke-width="0.7" fill-rule="evenodd">
 <path d="M1800.00,530.34L1800.00,532.78L1796.82,534.01L1793.63,535.06L1792.98,533.20L1795.48,532.17L1797.07,531.90L1800.00,530.34Z"/>
 <path d="M1790.63,537.52L1791.87,536.70L1793.59,538.14L1792.76,540.75L1789.66,541.44L1786.91,540.82L1786.43,538.62L1788.35,536.91L1790.63,537.52Z"/>
 <path d="M1.03,530.10L0.41,532.51L0.00,532.78L0.00,530.34L1.03,530.10Z"/>

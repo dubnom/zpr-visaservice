@@ -5,20 +5,20 @@
 .operator-login form { margin: 0; }
 .operator-login [role="status"] { max-width: 180px; overflow-wrap: anywhere; font: 10px var(--mono); }
 .provisioning-actions .button:disabled { opacity: .48; cursor: not-allowed; }
-.provisioning-notice { padding: 12px; border-left: 3px solid var(--orange, #c96932); background: #fff0e5; }
-.provisioning-status[data-state="available"] { border-left-color: #84938a; }
+.provisioning-notice { padding: 12px; border-left: 3px solid var(--provisioning-notice-border); background: var(--provisioning-notice-surface); }
+.provisioning-status[data-state="available"] { border-left-color: var(--provisioning-available-border); }
 .provisioning-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .provisioning-card { min-width: 0; padding: 16px; border: 1px solid var(--line); background: var(--panel); }
 .provisioning-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
 .provisioning-fields label { display: grid; gap: 6px; color: var(--ink); font-size: 12px; }
-.provisioning-fields input, .provisioning-fields select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--line); background: white; color: var(--ink); font: 12px var(--sans); }
+.provisioning-fields input, .provisioning-fields select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--line); background: var(--provisioning-input-surface); color: var(--ink); font: 12px var(--sans); }
 .provisioning-panel [hidden] { display: none; }
 .provisioning-preflight-checks { display: grid; gap: 10px; margin: 16px 0; padding: 14px; border: 1px solid var(--line); }
 .provisioning-preflight-checks legend { padding: 0 6px; color: var(--muted); font-size: 12px; }
 .provisioning-preflight-checks label { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; color: var(--ink); font-size: 12px; line-height: 1.5; }
 .provisioning-preflight-checks input { margin-top: 2px; }
-#provisioning-preflight-blockers { margin-top: 0; color: #8a321f; font-size: 12px; line-height: 1.5; }
-#provisioning-preflight-status[data-state="ready"] { border-left: 3px solid #54775e; padding-left: 10px; }
+#provisioning-preflight-blockers { margin-top: 0; color: var(--provisioning-blocker-text); font-size: 12px; line-height: 1.5; }
+#provisioning-preflight-status[data-state="ready"] { border-left: 3px solid var(--provisioning-ready-border); padding-left: 10px; }
 #provisioning-preflight code { overflow-wrap: anywhere; }
 #provisioning-one-time-code { display: block; padding: 12px; user-select: all; overflow-wrap: anywhere; border: 1px solid var(--line); font: 16px var(--mono); }
 .provisioning-review label { display: block; margin: 12px 0; font-size: 12px; }
@@ -28,7 +28,7 @@
 .provisioning-steps li { padding-left: 4px; margin-bottom: 12px; }
 .provisioning-steps strong { font-size: 12px; }
 .provisioning-queue { margin-top: 16px; }
-.provisioning-queue select { max-width: 100%; padding: 8px; margin: 8px; border: 1px solid var(--line); background: white; color: var(--ink); }
+.provisioning-queue select { max-width: 100%; padding: 8px; margin: 8px; border: 1px solid var(--line); background: var(--provisioning-input-surface); color: var(--ink); }
 .provisioning-table-scroll { overflow-x: auto; }
 .provisioning-queue table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .provisioning-queue th, .provisioning-queue td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
@@ -46,4 +46,12 @@
   .provisioning-fields { grid-template-columns: minmax(0, 1fr); }
   .provisioning-review dl { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .provisioning-review dd { margin-bottom: 8px; }
+}
+:root {
+  --provisioning-notice-border: var(--orange, #c96932);
+  --provisioning-notice-surface: var(--status-warning-surface, #fff0e5);
+  --provisioning-available-border: #84938a;
+  --provisioning-input-surface: var(--surface-input, white);
+  --provisioning-blocker-text: #8a321f;
+  --provisioning-ready-border: #54775e;
 }

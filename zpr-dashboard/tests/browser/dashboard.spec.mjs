@@ -814,6 +814,7 @@ import { fileURLToPath } from "node:url";
 import { registerControlRoomGuidelineTests } from "./control-room-guidelines.mjs";
 import { registerWorkflowGuidelineTests } from "./workflow-guidelines.mjs";
 import { registerTrustedSourceGUITests } from "./trusted-source-gui.mjs";
+import { registerColorTokenTests } from "./color-tokens.mjs";
 import { registerPageRuntimeTests } from "./page-runtime.mjs";
 import { registerWindowControlTests } from "./window-controls.mjs";
 import { registerNodeLogTests } from "./node-logs.mjs";
@@ -1041,6 +1042,7 @@ registerCodeEditorTests(test, expect);
 registerRemainingCodeEditorTests(test, expect);
 registerWorkflowGuidelineTests(test, expect);
 registerTrustedSourceGUITests(test, expect);
+registerColorTokenTests(test, expect);
 
 test("GUI status sorting breaks primary ties independently of snapshot order", async ({ page, appURL, api }) => {
   api.snapshot.actors = [

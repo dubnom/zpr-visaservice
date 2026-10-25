@@ -5,29 +5,28 @@ import { bracketMatching } from "@codemirror/language";
 import { autocompletion, completionKeymap, startCompletion } from "@codemirror/autocomplete";
 
 const instances = new Map();
-// Keep the palette aligned with the color-only CSP declarations in main.go.
 const tokenColors = {
-  keyword: "#e5a66c", string: "#d7a7cf", comment: "#829188", number: "#d8bd80",
-  class: "#92c5df", "class-definition": "#c2d88a", attribute: "#b8d78b",
-  value: "#d8bd80", punctuation: "#bac9bf",
+  keyword: "var(--cm-syntax-keyword)", string: "var(--cm-syntax-string)", comment: "var(--cm-syntax-comment)", number: "var(--cm-syntax-value)",
+  class: "var(--cm-syntax-class)", "class-definition": "var(--cm-syntax-class-definition)", attribute: "var(--cm-syntax-attribute)",
+  value: "var(--cm-syntax-value)", punctuation: "var(--cm-syntax-punctuation)",
 };
 const theme = EditorView.theme({
-  "&": { height: "100%", color: "#e4ebe5", backgroundColor: "#17211e" },
+  "&": { height: "100%", color: "var(--cm-text)", backgroundColor: "var(--cm-surface)" },
   ...Object.fromEntries(Object.entries(tokenColors).map(([token, color]) => [`.cm-token-${token}`, { color }])),
   ".cm-scroller": { overflow: "auto" },
-  ".cm-content": { padding: "12px 0", caretColor: "#e6eee8" },
+  ".cm-content": { padding: "12px 0", caretColor: "var(--cm-caret)" },
   ".cm-line": { padding: "0 8px" },
-  ".cm-gutters": { backgroundColor: "#1d2b24", color: "#a0afa5", borderRight: "1px solid #344a40" },
+  ".cm-gutters": { backgroundColor: "var(--cm-gutter-surface)", color: "var(--cm-gutter-text)", borderRight: "1px solid var(--cm-border)" },
   ".cm-result-gutter .cm-gutterElement": { minWidth: "46px", padding: "0 3px" },
-  ".cm-cursor": { borderLeftColor: "#e6eee8" },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "#36543f !important" },
-  ".cm-tooltip": { backgroundColor: "#23362b", color: "#e6eee8", border: "1px solid #6c8671" },
-  ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "#36543f", color: "#fff" },
-  ".cm-source-error": { borderBottom: "2px dotted #ffb49e" },
+  ".cm-cursor": { borderLeftColor: "var(--cm-caret)" },
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--cm-selection) !important" },
+  ".cm-tooltip": { backgroundColor: "var(--cm-tooltip-surface)", color: "var(--cm-caret)", border: "1px solid var(--cm-tooltip-border)" },
+  ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "var(--cm-selection)", color: "var(--cm-selected-text)" },
+  ".cm-source-error": { borderBottom: "2px dotted var(--cm-error)" },
   // Native Chromium replacements copy bracket backgrounds into CSP-blocked inline styles.
   // Match the language extension's focused selectors; keep feedback outline-only.
-  ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": { color: "inherit", backgroundColor: "transparent", outline: "1px solid #7ea65b" },
-  ".cm-nonmatchingBracket, &.cm-focused .cm-nonmatchingBracket": { color: "inherit", backgroundColor: "transparent", outline: "1px solid #ffb49e" },
+  ".cm-matchingBracket, &.cm-focused .cm-matchingBracket": { color: "inherit", backgroundColor: "transparent", outline: "1px solid var(--cm-match)" },
+  ".cm-nonmatchingBracket, &.cm-focused .cm-nonmatchingBracket": { color: "inherit", backgroundColor: "transparent", outline: "1px solid var(--cm-error)" },
 }, { dark: true });
 
 class ResultMarker extends GutterMarker {
@@ -62,7 +61,7 @@ function mount(source, hooks) {
   if (!root.adoptedStyleSheets || !window.CSSStyleSheet) throw new Error("This browser cannot load the editor's CSP-safe styles. Use a browser with constructed stylesheet support.");
   const styles = document.createElement("link");
   styles.rel = "stylesheet";
-  styles.href = "/code-editor.css?v=3";
+  styles.href = "/code-editor.css?v=5";
   root.append(styles);
   surface.append(host);
   const nativeValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");

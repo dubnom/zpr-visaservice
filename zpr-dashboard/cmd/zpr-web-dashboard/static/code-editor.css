@@ -8,15 +8,46 @@
 .config-source-editor.code-editor-loading { position: relative; }
 .config-source-editor:is(.code-editor-active, .code-editor-loading) > .config-source-gutter,
 .config-source-editor:is(.code-editor-active, .code-editor-loading) > .config-code-surface { display: none !important; }
-.code-editor-error { padding: 12px; color: var(--danger, #ffb49e); }
+.code-editor-error { padding: 12px; color: var(--editor-load-error-text); }
 .code-editor-active::after { display: none !important; }
 .code-editor-host { position: absolute; inset: 0; }
 .code-editor-host .cm-editor { outline: none; }
 .code-editor-host .cm-scroller { scrollbar-width: auto; }
 .code-editor-host .cm-result-gutter button { vertical-align: middle; }
 :host { display: block; }
-.cm-result-gutter button { padding: 1px 3px; border: 1px solid #6c8671; border-radius: 2px; background: #23362b; color: #d2e7d1; font: 11px/1.4 var(--mono); cursor: pointer; }
+.cm-result-gutter button { padding: 1px 3px; border: 1px solid var(--cm-result-border); border-radius: 2px; background: var(--cm-result-surface); color: var(--cm-result-text); font: 11px/1.4 var(--mono); cursor: pointer; }
 .cm-result-gutter button[data-effect="error"], .cm-result-gutter button[data-state="error"],
-.cm-result-gutter button[data-state="fail"] { color: #ffc0b5; border-color: #a96358; }
-.cm-result-gutter button[data-effect="warning"], .cm-result-gutter button[data-state="warning"] { color: #ffe0a7; border-color: #ac7a39; }
-.cm-result-gutter button:focus-visible { outline: 2px solid #b5e34f; }
+.cm-result-gutter button[data-state="fail"] { color: var(--cm-result-error-text); border-color: var(--cm-result-error-border); }
+.cm-result-gutter button[data-effect="warning"], .cm-result-gutter button[data-state="warning"] { color: var(--cm-result-warning-text); border-color: var(--cm-result-warning-border); }
+.cm-result-gutter button:focus-visible { outline: 2px solid var(--cm-result-focus); }
+:root, :host {
+  --cm-text: var(--source-text, #e4ebe5);
+  --cm-surface: var(--source-surface, #17211e);
+  --cm-caret: var(--source-editor-caret, #e6eee8);
+  --cm-gutter-surface: var(--source-gutter-surface, #1d2b24);
+  --cm-gutter-text: var(--source-gutter-text, #a0afa5);
+  --cm-border: var(--source-border, #344a40);
+  --cm-selection: var(--source-editor-selection, #36543f);
+  --cm-tooltip-surface: var(--source-tooltip-surface, #23362b);
+  --cm-tooltip-border: var(--source-tooltip-border, #6c8671);
+  --cm-selected-text: var(--text-on-strong, #fff);
+  --cm-error: var(--source-editor-error, #ffb49e);
+  --cm-match: var(--source-focus, #7ea65b);
+  --cm-syntax-keyword: var(--syntax-keyword, #e5a66c);
+  --cm-syntax-string: var(--syntax-string, #d7a7cf);
+  --cm-syntax-comment: var(--syntax-comment, #829188);
+  --cm-syntax-value: var(--syntax-value, #d8bd80);
+  --cm-syntax-class: var(--syntax-class, #92c5df);
+  --cm-syntax-class-definition: var(--syntax-class-definition, #c2d88a);
+  --cm-syntax-attribute: var(--syntax-attribute, #b8d78b);
+  --cm-syntax-punctuation: var(--syntax-punctuation, #bac9bf);
+  --editor-load-error-text: var(--danger, #ffb49e);
+  --cm-result-border: var(--editor-result-border, #6c8671);
+  --cm-result-surface: var(--editor-result-surface, #23362b);
+  --cm-result-text: var(--editor-result-text, #d2e7d1);
+  --cm-result-error-text: var(--editor-result-error-text, #ffc0b5);
+  --cm-result-error-border: var(--editor-result-error-border, #a96358);
+  --cm-result-warning-text: var(--editor-result-warning-text, #ffe0a7);
+  --cm-result-warning-border: var(--editor-result-warning-border, #ac7a39);
+  --cm-result-focus: var(--accent-highlight, #b5e34f);
+}

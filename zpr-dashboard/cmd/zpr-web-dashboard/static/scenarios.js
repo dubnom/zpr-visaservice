@@ -908,9 +908,9 @@ function renderScenarioRun(run) {
   if (busy && previousProgress !== JSON.stringify([scenarioRun.scenario_id, scenarioRun.state, scenarioRun.current_step, scenarioRun.results])
     && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     state.animate([
-      { opacity: 0.8, transform: "scale(1)", boxShadow: "inset 0 0 0 1px #1251a0" },
-      { opacity: 1, transform: "scale(1.05)", boxShadow: "0 0 0 3px #2473d866, inset 0 0 0 1px #1251a0", offset: 0.45 },
-      { opacity: 1, transform: "scale(1)", boxShadow: "inset 0 0 0 1px #1251a0" },
+      { opacity: 0.8, transform: "scale(1)", boxShadow: "var(--scenario-progress-shadow)" },
+      { opacity: 1, transform: "scale(1.05)", boxShadow: "var(--scenario-progress-pulse-shadow)", offset: 0.45 },
+      { opacity: 1, transform: "scale(1)", boxShadow: "var(--scenario-progress-shadow)" },
     ], { duration: 750, easing: "ease-in-out" });
   }
   document.getElementById("scenario-cancel").hidden = !busy;

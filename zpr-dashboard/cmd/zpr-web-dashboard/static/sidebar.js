@@ -234,7 +234,7 @@
     if (!document.querySelector("link[data-zpr-help-styles]")) {
       const stylesheet = document.createElement("link");
       stylesheet.rel = "stylesheet";
-      stylesheet.href = "/help.css?v=4";
+      stylesheet.href = "/help.css?v=7";
       stylesheet.dataset.zprHelpStyles = "true";
       document.head.append(stylesheet);
     }

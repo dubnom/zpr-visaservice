@@ -1,38 +1,61 @@
-ldap-org-graph { display: block; min-width: 0; border: 1px solid var(--line, #cbd5ce); border-radius: 5px; background: var(--panel, #fff); color: var(--ink, #17211e); }
-ldap-org-graph.maximized { position: fixed; z-index: 1000; inset: 12px; overflow: auto; border-radius: 5px; box-shadow: 0 16px 48px #17211e55; }
-ldap-org-graph .ldap-graph-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px; border-bottom: 1px solid var(--line, #cbd5ce); }
-ldap-org-graph .ldap-graph-toolbar input { flex: 1; min-width: 0; width: 100%; padding: 5px 8px; border: 1px solid var(--line, #cbd5ce); border-radius: 3px; background: var(--panel, #fff); color: inherit; font: 12px var(--mono, monospace); }
-ldap-org-graph .ldap-graph-toolbar button { flex: 0 0 auto; min-width: 30px; height: 30px; padding: 0 8px; border: 1px solid var(--line, #cbd5ce); border-radius: 3px; background: var(--panel, #fff); color: inherit; font: 12px var(--mono, monospace); cursor: pointer; }
+ldap-org-graph {
+  --directory-border-fallback: #cbd5ce;
+  --directory-panel-fallback: #fff;
+  --directory-text: #17211e;
+  --directory-maximized-shadow: #17211e55;
+  --directory-focus: #183f2d;
+  --directory-grid: #dfe6df;
+  --directory-edge: #99aba1;
+  --directory-group-border: #ad7635;
+  --directory-node-surface: #f4f7f5;
+  --directory-node-border: #829a8c;
+  --directory-root-surface: #dcebdc;
+  --directory-root-border: #458267;
+  --directory-department-surface: #edf2da;
+  --directory-department-border: #7b8c49;
+  --directory-person-surface: #e8f2f7;
+  --directory-person-border: #51829b;
+  --directory-group-surface: #fff0d9;
+  --directory-kind-text: #55665d;
+  --directory-toggle-border: #526d5e;
+  --directory-dialog-shadow: #17211e33;
+  --directory-dialog-backdrop: #17211e66;
+}
+ldap-org-graph { display: block; min-width: 0; border: 1px solid var(--line, var(--directory-border-fallback)); border-radius: 5px; background: var(--panel, var(--directory-panel-fallback)); color: var(--ink, var(--directory-text)); }
+ldap-org-graph.maximized { position: fixed; z-index: 1000; inset: 12px; overflow: auto; border-radius: 5px; box-shadow: 0 16px 48px var(--directory-maximized-shadow); }
+ldap-org-graph .ldap-graph-toolbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px; border-bottom: 1px solid var(--line, var(--directory-border-fallback)); }
+ldap-org-graph .ldap-graph-toolbar input { flex: 1; min-width: 0; width: 100%; padding: 5px 8px; border: 1px solid var(--line, var(--directory-border-fallback)); border-radius: 3px; background: var(--panel, var(--directory-panel-fallback)); color: inherit; font: 12px var(--mono, monospace); }
+ldap-org-graph .ldap-graph-toolbar button { flex: 0 0 auto; min-width: 30px; height: 30px; padding: 0 8px; border: 1px solid var(--line, var(--directory-border-fallback)); border-radius: 3px; background: var(--panel, var(--directory-panel-fallback)); color: inherit; font: 12px var(--mono, monospace); cursor: pointer; }
 ldap-org-graph .ldap-graph-toolbar button:is([aria-label="Zoom in"], [aria-label="Zoom out"]) { min-width: 36px; height: 36px; padding: 0; font: 700 26px/1 var(--mono, monospace); }
-ldap-org-graph .ldap-graph-toolbar button:focus-visible { outline: 2px solid #183f2d; outline-offset: 2px; }
-ldap-org-graph svg { display: block; width: 100%; height: 420px; touch-action: none; background: radial-gradient(#dfe6df 0.8px, transparent 0.8px); background-size: 15px 15px; cursor: grab; }
+ldap-org-graph .ldap-graph-toolbar button:focus-visible { outline: 2px solid var(--directory-focus); outline-offset: 2px; }
+ldap-org-graph svg { display: block; width: 100%; height: 420px; touch-action: none; background: radial-gradient(var(--directory-grid) 0.8px, transparent 0.8px); background-size: 15px 15px; cursor: grab; }
 ldap-org-graph .ldap-graph-toolbar button.window-control svg { width: 16px; height: 16px; }
 ldap-org-graph.maximized svg { height: calc(100vh - 78px); }
-ldap-org-graph .ldap-graph-edge { fill: none; stroke: #99aba1; stroke-width: 1.5; }
-ldap-org-graph .ldap-graph-membership { fill: none; stroke: #ad7635; stroke-width: 2; stroke-dasharray: 5 4; }
+ldap-org-graph .ldap-graph-edge { fill: none; stroke: var(--directory-edge); stroke-width: 1.5; }
+ldap-org-graph .ldap-graph-membership { fill: none; stroke: var(--directory-group-border); stroke-width: 2; stroke-dasharray: 5 4; }
 ldap-org-graph [hidden] { display: none; }
 ldap-org-graph .ldap-graph-node { cursor: pointer; }
-ldap-org-graph .ldap-graph-node rect { fill: #f4f7f5; stroke: #829a8c; stroke-width: 1; }
-ldap-org-graph .ldap-graph-node.directory rect { fill: #dcebdc; stroke: #458267; }
-ldap-org-graph .ldap-graph-node.department rect { fill: #edf2da; stroke: #7b8c49; }
-ldap-org-graph .ldap-graph-node.person rect { fill: #e8f2f7; stroke: #51829b; }
-ldap-org-graph .ldap-graph-node.group rect { fill: #fff0d9; stroke: #ad7635; }
-ldap-org-graph .ldap-graph-node text { fill: #17211e; font: 12px var(--mono, monospace); pointer-events: none; }
-ldap-org-graph .ldap-graph-node .ldap-graph-kind { fill: #55665d; font-size: 11px; }
-ldap-org-graph .ldap-graph-node.selected rect, ldap-org-graph .ldap-graph-node:focus rect { stroke: #183f2d; stroke-width: 3; }
+ldap-org-graph .ldap-graph-node rect { fill: var(--directory-node-surface); stroke: var(--directory-node-border); stroke-width: 1; }
+ldap-org-graph .ldap-graph-node.directory rect { fill: var(--directory-root-surface); stroke: var(--directory-root-border); }
+ldap-org-graph .ldap-graph-node.department rect { fill: var(--directory-department-surface); stroke: var(--directory-department-border); }
+ldap-org-graph .ldap-graph-node.person rect { fill: var(--directory-person-surface); stroke: var(--directory-person-border); }
+ldap-org-graph .ldap-graph-node.group rect { fill: var(--directory-group-surface); stroke: var(--directory-group-border); }
+ldap-org-graph .ldap-graph-node text { fill: var(--directory-text); font: 12px var(--mono, monospace); pointer-events: none; }
+ldap-org-graph .ldap-graph-node .ldap-graph-kind { fill: var(--directory-kind-text); font-size: 11px; }
+ldap-org-graph .ldap-graph-node.selected rect, ldap-org-graph .ldap-graph-node:focus rect { stroke: var(--directory-focus); stroke-width: 3; }
 ldap-org-graph .ldap-graph-node.dimmed { opacity: 0.3; }
 ldap-org-graph .ldap-graph-toggle { cursor: pointer; }
-ldap-org-graph .ldap-graph-toggle circle { fill: #fff; stroke: #526d5e; stroke-width: 1.5; }
-ldap-org-graph .ldap-graph-toggle text { fill: #183f2d; font: 700 20px var(--mono, monospace); pointer-events: none; }
-ldap-org-graph .ldap-graph-toggle:hover circle, ldap-org-graph .ldap-graph-toggle:focus circle { fill: #dcebdc; stroke: #183f2d; stroke-width: 2.5; }
-ldap-org-graph .ldap-graph-dialog { box-sizing: border-box; width: min(540px, calc(100vw - 32px)); max-height: min(640px, 80vh); padding: 0; overflow: auto; border: 1px solid var(--line, #cbd5ce); border-radius: 5px; background: var(--panel, #fff); color: var(--ink, #17211e); box-shadow: 0 16px 48px #17211e33; }
-ldap-org-graph .ldap-graph-dialog::backdrop { background: #17211e66; }
-ldap-org-graph .ldap-graph-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-bottom: 1px solid var(--line, #cbd5ce); }
+ldap-org-graph .ldap-graph-toggle circle { fill: var(--directory-panel-fallback); stroke: var(--directory-toggle-border); stroke-width: 1.5; }
+ldap-org-graph .ldap-graph-toggle text { fill: var(--directory-focus); font: 700 20px var(--mono, monospace); pointer-events: none; }
+ldap-org-graph .ldap-graph-toggle:hover circle, ldap-org-graph .ldap-graph-toggle:focus circle { fill: var(--directory-root-surface); stroke: var(--directory-focus); stroke-width: 2.5; }
+ldap-org-graph .ldap-graph-dialog { box-sizing: border-box; width: min(540px, calc(100vw - 32px)); max-height: min(640px, 80vh); padding: 0; overflow: auto; border: 1px solid var(--line, var(--directory-border-fallback)); border-radius: 5px; background: var(--panel, var(--directory-panel-fallback)); color: var(--ink, var(--directory-text)); box-shadow: 0 16px 48px var(--directory-dialog-shadow); }
+ldap-org-graph .ldap-graph-dialog::backdrop { background: var(--directory-dialog-backdrop); }
+ldap-org-graph .ldap-graph-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-bottom: 1px solid var(--line, var(--directory-border-fallback)); }
 ldap-org-graph .ldap-graph-dialog-header h2 { min-width: 0; margin: 0; overflow-wrap: anywhere; font: 600 15px var(--mono, monospace); }
-ldap-org-graph .ldap-graph-dialog-header button { display: grid; flex: 0 0 36px; min-width: 36px; height: 36px; place-items: center; padding: 0; border: 1px solid #829a8c; border-radius: 3px; background: var(--panel, #fff); color: #17211e; font: 700 26px/1 var(--mono, monospace); cursor: pointer; }
-ldap-org-graph .ldap-graph-dialog-header button:hover { background: #dcebdc; }
+ldap-org-graph .ldap-graph-dialog-header button { display: grid; flex: 0 0 36px; min-width: 36px; height: 36px; place-items: center; padding: 0; border: 1px solid var(--directory-node-border); border-radius: 3px; background: var(--panel, var(--directory-panel-fallback)); color: var(--directory-text); font: 700 26px/1 var(--mono, monospace); cursor: pointer; }
+ldap-org-graph .ldap-graph-dialog-header button:hover { background: var(--directory-root-surface); }
 ldap-org-graph .ldap-graph-details { padding: 12px; overflow-wrap: anywhere; }
 ldap-org-graph .ldap-graph-details dl { display: grid; grid-template-columns: minmax(60px, 100px) minmax(0, 1fr); gap: 5px 12px; margin: 10px 0 0; font: 11px/1.5 var(--mono, monospace); }
-ldap-org-graph .ldap-graph-details dt { color: var(--muted, #55665d); }
+ldap-org-graph .ldap-graph-details dt { color: var(--muted, var(--directory-kind-text)); }
 ldap-org-graph .ldap-graph-details dd { margin: 0; }
 @media (max-width: 600px) { ldap-org-graph svg { height: 320px; } }

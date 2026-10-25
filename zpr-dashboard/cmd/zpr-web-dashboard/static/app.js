@@ -1,4 +1,6 @@
 const byId = (id) => document.getElementById(id);
+document.querySelector('meta[name="theme-color"]').content =
+  getComputedStyle(document.documentElement).getPropertyValue("--ink").trim();
 const zplKeywords = new Set(["allow", "never", "define", "with", "to", "access", "and", "as", "aka", "tag", "tags", "on", "optional", "multiple", "signal", "over"]);
 const GRAPH_ARRIVAL_DURATION = 2800;
 const GRAPH_REMOVAL_DURATION = 900;
@@ -1177,7 +1179,7 @@ function renderTopology(data, exitComponents = []) {
 
   if (!actors.length) {
     if (geographic) {
-      stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}<label class="graph-auto-fit"><input type="checkbox" data-graph-auto-fit${graphAutoFit ? " checked" : ""}>Auto-fit</label><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 3600 1800" role="img" aria-label="World Map; no nodes or adapters reported"><g id="graph-world"><image href="/geography-land.svg?v=2" width="3600" height="1800" class="graph-geographic-basemap"/></g></svg><p class="empty-state" role="status">No nodes or adapters reported. The World Map is shown at its full extent.</p>`;
+      stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}<label class="graph-auto-fit"><input type="checkbox" data-graph-auto-fit${graphAutoFit ? " checked" : ""}>Auto-fit</label><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 3600 1800" role="img" aria-label="World Map; no nodes or adapters reported"><g id="graph-world"><image href="/geography-land.svg?v=3" width="3600" height="1800" class="graph-geographic-basemap"/></g></svg><p class="empty-state" role="status">No nodes or adapters reported. The World Map is shown at its full extent.</p>`;
       setupGraphAppearance(stage);
       setupGraphControls(stage, 3600, 1800, null);
       applyMapVisaFocus(data);
@@ -1569,7 +1571,7 @@ function renderTopology(data, exitComponents = []) {
     `Topology graph with ${nodes.length} nodes, ${attachedAdapterCount} attached adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links; ${unconnected.length} adapters in Detached`);
   if (geographic) {
     const basemap = document.createElementNS("http://www.w3.org/2000/svg", "image");
-    basemap.setAttribute("href", "/geography-land.svg?v=2");
+    basemap.setAttribute("href", "/geography-land.svg?v=3");
     basemap.setAttribute("width", "3600");
     basemap.setAttribute("height", "1800");
     basemap.setAttribute("class", "graph-geographic-basemap");
@@ -3994,21 +3996,21 @@ byId("version-form").addEventListener("submit", (event) => {
 
 
 const serviceTypePalette = new Map([
-  ["BuiltIn", { color: "#294879", background: "#e8edf9", border: "#8da4cb" }],
-  ["Regular", { color: "#285b3a", background: "#e8f3e9", border: "#80ad8a" }],
-  ["Visa", { color: "#873c2b", background: "#ffe5df", border: "#d89480" }],
-  ["Gateway", { color: "#754000", background: "#fff1c8", border: "#cc963d" }],
-  ["ZPR", { label: "ZPR service", color: "#124e78", background: "#e3eff8", border: "#598cb4" }],
-  ["Policy", { label: "Policy service", color: "#214e68", background: "#e4f0f6", border: "#6395ae" }],
-  ["Control", { label: "Control service", color: "#66521e", background: "#f4f0da", border: "#ab963e" }],
-  ["Auth", { label: "Authentication service", color: "#793947", background: "#f7e8eb", border: "#bd7c88" }],
-  ["Attribute", { label: "Attribute service", color: "#31594c", background: "#e6f1ec", border: "#78a591" }],
-  ["Application", { label: "Application service", color: "#47525a", background: "#e8ebf0", border: "#909ba3" }],
-  ["Node", { color: "#42613b", background: "#ecf1df", border: "#91a875" }],
-  ["Logger", { color: "#6c3e1f", background: "#f5ece4", border: "#b68657" }],
-  ['Trusted("file")', { color: "#285d64", background: "#e7f1f3", border: "#4e8790" }],
-  ['Trusted("rest/1")', { color: "#754820", background: "#fff0df", border: "#b8753f" }],
-  ["Not in current policy", { color: "#55616b", background: "#edf0f2", border: "#a5aeb6" }],
+  ["BuiltIn", { token: "builtin" }],
+  ["Regular", { token: "regular" }],
+  ["Visa", { token: "visa" }],
+  ["Gateway", { token: "gateway" }],
+  ["ZPR", { token: "zpr", label: "ZPR service" }],
+  ["Policy", { token: "policy", label: "Policy service" }],
+  ["Control", { token: "control", label: "Control service" }],
+  ["Auth", { token: "auth", label: "Authentication service" }],
+  ["Attribute", { token: "attribute", label: "Attribute service" }],
+  ["Application", { token: "application", label: "Application service" }],
+  ["Node", { token: "node" }],
+  ["Logger", { token: "logger" }],
+  ['Trusted("file")', { token: "trusted-file" }],
+  ['Trusted("rest/1")', { token: "trusted-rest" }],
+  ["Not in current policy", { token: "unavailable" }],
 ]);
 
 document.addEventListener("click", (event) => {
@@ -4044,7 +4046,18 @@ function serviceTypeAppearance(kind) {
     let hash = 0;
     for (const character of key) hash = (Math.imul(hash, 31) + character.codePointAt(0)) >>> 0;
     const hue = hash % 360;
-    palette = { color: `hsl(${hue} 50% 25%)`, background: `hsl(${hue} 55% 94%)`, border: `hsl(${hue} 35% 55%)` };
+    palette = {
+      color: `hsl(${hue} var(--service-fallback-text))`,
+      background: `hsl(${hue} var(--service-fallback-surface))`,
+      border: `hsl(${hue} var(--service-fallback-border))`,
+    };
+  } else {
+    palette = {
+      ...palette,
+      color: `var(--service-${palette.token}-text)`,
+      background: `var(--service-${palette.token}-surface)`,
+      border: `var(--service-${palette.token}-border)`,
+    };
   }
   return { key, ...palette, label: palette.label || label };
 }

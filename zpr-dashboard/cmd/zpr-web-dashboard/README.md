@@ -2067,3 +2067,101 @@ go test ./cmd/zpr-web-dashboard -run '^TestRedwoodComposedPolicyBuildsWithRuntim
 ```
 
 This compiler test requires previously generated Redwood runtime assets.
+
+## UI color ownership
+
+The service-type palette is defined by `--service-<kind>-text`,
+`--service-<kind>-surface` and `--service-<kind>-border` custom properties in
+`static/app.css`. Table chips, legend swatches and SVG topology badges consume
+the same CSS values. JavaScript retains service classification and deterministic
+unknown-kind hue selection; CSS owns the fallback saturation/lightness through
+`--service-fallback-*`. Do not add a second literal palette in JavaScript.
+
+Scenario progress animation timing remains in JavaScript, while its normal and
+pulse shadows are CSS tokens in `static/simulator.css`. Browser theme-color
+metadata is initialized from the existing CSS `--ink` token.
+
+The external geography SVG has its own CSS palette inside the image. This is
+intentional: an SVG loaded through an image element does not inherit the page's
+custom properties. Its colors and geometry are unchanged. ANSI log rendering
+and bundled editor dependencies are not rewritten as application palette code.
+The ocean rectangle retains its serialized `fill` fallback for the existing
+basemap contract; the image's CSS controls its rendered fill.
+
+The shared base palette now owns semantic `--text-*`, `--surface-*`,
+`--border-subtle`, `--accent-*` and `--status-*` tokens. Existing color-named
+variables remain compatibility aliases so this extraction does not force
+unrelated selector changes. Simulator consumes that palette rather than
+redeclaring it; its `--lime` and `--teal` aliases remain application-local
+compatibility names.
+
+Sidebar controls, diagnostics, provisioning, geography controls, editor result
+gutters and standalone Change Review now have component-role tokens in their
+own stylesheets. Their existing values are preserved, including distinct error
+and warning shades. Editor token defaults also apply when its stylesheet is
+used in a shadow root; Change Review retains standalone fallback values because
+it does not load the shared application stylesheet. Override sidebar-role tokens
+on the sidebar, and root/component tokens at their owning scope.
+
+The shared `app.css` owns navigation defaults (`--sidebar-*`) for both apps.
+`sidebar.css` supplies the shared navigation controls/layout and requires the
+base stylesheet; it no longer redeclares a second palette on `.sidebar`.
+Simulator inherits the shared sidebar colors instead of repeating them.
+Root overrides affect both applications; overrides on a particular `.sidebar`
+affect its brand, links and controls together. Navigation surfaces/text remain
+distinct from page surfaces/text so a dark sidebar can accompany a light page.
+
+Gateway and node error states, trusted-source table headings, Security Review
+indicators, assistant controls and log panels also use component-role tokens.
+Log terminal text/background/error/focus tokens are independent of page
+surfaces; their default dark terminal appearance and `color-scheme: dark` are
+unchanged. ANSI-rendered log colors still represent terminal content, not the
+application palette.
+
+Assertion editors/results, Help, organization profile forms, policy browsing,
+directory graphs and World notices now also own semantic color tokens.
+Directory graph defaults are scoped to `ldap-org-graph` so it still works
+without the application stylesheet. Policy browsing keeps its readable source
+palette separate from page text, including when used as a standalone component.
+Assertion syntax, result severity and editor selection remain separate roles.
+
+Shared colors own the default values; component tokens are override points, not
+independent application palettes. Input surfaces follow `--surface-input`
+(which follows `--surface-panel`), subdued section/dialog surfaces follow
+`--surface-subtle`, and matching form focus treatments follow `--focus-border`
+and `--focus-ring`. Help and review page text use the shared text/page roles.
+Component aliases retain literal fallbacks for standalone use without
+`app.css`. Control Room and Simulator inherit the same shared defaults; loading
+Simulator styles must not reset them. A component may intentionally override a
+role without changing other components. Source, terminal, status and data
+palettes remain distinct where they carry different meanings.
+
+All first-party application stylesheets now keep literal colors in custom
+property defaults/fallbacks, not selector or animation declarations. Shared
+and Simulator selectors use named roles for actions, analysis, charts,
+topology, source editing, dialogs and status feedback. Existing graph-dark
+colors remain a separate graph palette; data highlights and terminal colors
+are not aliases of page surfaces merely because their initial values match.
+
+The authored CodeMirror theme in `browser/code-editor.js` also uses CSS
+variables. Its `--cm-*` aliases in `code-editor.css` inherit the shared source
+and syntax roles, including across the shadow boundary, with standalone
+fallbacks. Assertion and policy-preview palettes reference the same syntax
+roles where their existing colors and meanings agree. To rebuild the bundled
+editor after changing its authored theme, run `npm run build:editor`; do not
+hand-edit the generated vendor bundle or third-party editor/ANSI palettes.
+The existing color-only CSP compatibility hashes are unchanged.
+
+The geography generator preserves the image-local CSS palette when rebuilding
+the basemap, including the serialized ocean fallback described above.
+
+This is a visually unchanged preparatory refactor, not complete Day/Night
+support. Theme values, application identity and accessible contrast still need
+to be designed and tested for each new scheme. There is no theme selector or
+saved appearance preference yet.
+
+Run the desktop/tablet color regressions from `zpr-dashboard`:
+
+```sh
+npm run test:browser -- --grep 'CSS (color|semantic component) tokens|service types share table and map colors'
+```

@@ -20,7 +20,7 @@
 .node-stats-content[hidden] { display: none; }
 .node-stats-section-nav { border-bottom: 1px solid var(--line); margin-bottom: 20px; }
 .node-stats-content > [role="tabpanel"][hidden] { display: none; }
-.node-stats-error { color: var(--danger, #a32626); overflow-wrap: anywhere; }
+.node-stats-error { color: var(--node-stats-error-text); overflow-wrap: anywhere; }
 #node-logs { margin-top: 0; }
 .node-source-details { margin-bottom: 20px; min-width: 0; overflow-x: auto; }
 .node-source-details table { width: 100%; }
@@ -66,3 +66,4 @@
   .node-stats-fields { grid-template-columns: 1fr; }
   .node-stats-fields dd { margin-bottom: 8px; }
 }
+:root { --node-stats-error-text: var(--danger, #a32626); }

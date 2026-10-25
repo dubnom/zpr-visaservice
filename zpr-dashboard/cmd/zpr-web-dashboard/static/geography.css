@@ -1,18 +1,27 @@
 zpr-geography { display: block; }
 .geography-switch { display: flex; gap: 6px; margin-bottom: 12px; }
 .geography-switch button, .geography-group button, .geography-unplaced button {
-  background: #f4f7fa; color: #16344b;
-  border: 1px solid var(--border, #53677b); border-radius: 5px; padding: 7px 12px; cursor: pointer;
+  background: var(--geography-control-surface); color: var(--geography-control-text);
+  border: 1px solid var(--geography-control-border); border-radius: 5px; padding: 7px 12px; cursor: pointer;
 }
-.geography-switch button[aria-pressed="true"] { background: #174e78; color: #fff; border-color: #174e78; }
+.geography-switch button[aria-pressed="true"] { background: var(--geography-selected-surface); color: var(--geography-selected-text); border-color: var(--geography-selected-surface); }
 .geography-panel[hidden], .geography-group[hidden] { display: none; }
 .geography-switch button:focus-visible, .geography-group button:focus-visible,
-.geography-unplaced button:focus-visible { outline: 2px solid #ffda75; outline-offset: 2px; }
+.geography-unplaced button:focus-visible { outline: 2px solid var(--geography-focus); outline-offset: 2px; }
 .geography-unplaced > div { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0; }
 .geography-group button { margin: 4px; min-height: 44px; }
-.geography-group button[aria-pressed="true"] { background: #174e78; color: #fff; }
+.geography-group button[aria-pressed="true"] { background: var(--geography-selected-surface); color: var(--geography-selected-text); }
 .graph-geographic-basemap { pointer-events: none; }
 #page-map[data-map-view="geography"] .topology-layout { min-height: 320px; }
-#page-map[data-map-view="geography"] .topology-stage { background-color: #eaf4fa; background-image: none; }
+#page-map[data-map-view="geography"] .topology-stage { background-color: var(--geography-ocean); background-image: none; }
 .geography-panel { max-height: 25vh; overflow: auto; margin-bottom: 8px; }
 .geography-panel:has(.geography-group[hidden]):has(.geography-unplaced:empty) { display: none; }
+:root {
+  --geography-control-surface: #f4f7fa;
+  --geography-control-text: #16344b;
+  --geography-control-border: var(--border, #53677b);
+  --geography-selected-surface: #174e78;
+  --geography-selected-text: #fff;
+  --geography-focus: #ffda75;
+  --geography-ocean: #eaf4fa;
+}

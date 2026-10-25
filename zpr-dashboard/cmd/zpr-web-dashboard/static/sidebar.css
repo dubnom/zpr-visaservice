@@ -1,16 +1,16 @@
 .sidebar-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .sidebar-header .brand { min-width: 0; padding: 0; gap: 9px; }
 .sidebar-header .brand > span:last-child { min-width: 0; }
-.sidebar-toggle { display: grid; flex: 0 0 32px; width: 32px; height: 32px; margin-left: auto; place-items: center; padding: 0; border: 1px solid #668076; border-radius: 3px; background: transparent; color: #f4f7f2; cursor: pointer; }
+.sidebar-toggle { display: grid; flex: 0 0 32px; width: 32px; height: 32px; margin-left: auto; place-items: center; padding: 0; border: 1px solid var(--sidebar-control-border); border-radius: 3px; background: transparent; color: var(--sidebar-text); cursor: pointer; }
 .sidebar-toggle span { font: 24px/1 var(--sans); }
-.nav-separator { height: 1px; margin: 5px 10px; background: #3a4841; }
+.nav-separator { height: 1px; margin: 5px 10px; background: var(--sidebar-divider); }
 .nav-group { display: grid; gap: 3px; }
-.nav-group-label { margin: 2px 10px 1px; color: #84938a; font: 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
-.primary-nav .sidebar-external-link .external-arrow { color: #b5e34f; font: 700 14px/1 var(--sans); }
-.primary-nav .sidebar-external-link:hover .external-arrow { color: #d4f58a; }
-.primary-nav .nav-sub-link { margin-left: 8px; padding-left: 16px; color: #a3b2a9; font-size: 11px; }
-.sidebar-toggle:hover { border-color: #b5e34f; background: #24322d; }
-.sidebar-toggle:focus-visible { outline: 2px solid #b5e34f; outline-offset: 2px; }
+.primary-nav .sidebar-external-link .external-arrow { color: var(--sidebar-link-accent); font: 700 14px/1 var(--sans); }
+.primary-nav .sidebar-external-link:hover .external-arrow { color: var(--sidebar-link-accent-hover); }
+.nav-group-label { margin: 2px 10px 1px; color: var(--sidebar-label); font: 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.primary-nav .nav-sub-link { margin-left: 8px; padding-left: 16px; color: var(--sidebar-sub-link); font-size: 11px; }
+.sidebar-toggle:hover { border-color: var(--sidebar-link-accent); background: var(--sidebar-control-hover); }
+.sidebar-toggle:focus-visible { outline: 2px solid var(--sidebar-link-accent); outline-offset: 2px; }
 body.sidebar-condensed .sidebar { width: 104px; padding: 14px 8px; }
 body.sidebar-condensed .main-content { margin-left: 104px; }
 body.sidebar-condensed .sidebar-header { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; }

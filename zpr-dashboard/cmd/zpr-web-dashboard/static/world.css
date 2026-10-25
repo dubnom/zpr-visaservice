@@ -3,8 +3,8 @@
 .world-heading h1 { margin: 0; font-size: 25px; font-weight: 650; }
 .world-intro { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
 .world-status, .world-release { color: var(--muted); font: 11px var(--mono); overflow-wrap: anywhere; }
-.world-error { padding: 10px 12px; border-left: 4px solid var(--red); background: #fff1ee; color: #752a20; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.world-beta { max-width: 880px; padding: 12px 14px; border: 1px solid #e2c58e; background: #fff8e8; color: #59431d; font-size: 12px; line-height: 1.55; }
+.world-error { padding: 10px 12px; border-left: 4px solid var(--red); background: var(--world-error-surface); color: var(--world-error-text); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.world-beta { max-width: 880px; padding: 12px 14px; border: 1px solid var(--world-beta-border); background: var(--world-beta-surface); color: var(--world-beta-text); font-size: 12px; line-height: 1.55; }
 .world-beta strong { text-transform: uppercase; letter-spacing: .04em; }
 .world-content h2 { margin: 24px 0 10px; font-size: 16px; }
 .world-section-title { margin-top: 28px !important; }
@@ -29,4 +29,11 @@
   .world-grid { grid-template-columns: minmax(0, 1fr); }
   .world-card-heading { flex-direction: column; }
   .world-actions { justify-content: flex-start; }
+}
+:root {
+  --world-error-surface: #fff1ee;
+  --world-error-text: #752a20;
+  --world-beta-border: #e2c58e;
+  --world-beta-surface: #fff8e8;
+  --world-beta-text: #59431d;
 }
