@@ -49,8 +49,54 @@ offline host. A render success explicitly does **not** claim running-service rea
 - Default **IPv4 loopback-only** ports: Control Room `18787`, Control-Service
   `18790`, LDAPS `11636`, OpenObserve `15080`, Dex `15556`. All must be free.
   Set distinct `-room-port`, `-service-port`, `-ldap-port`, `-logging-port`,
-  `-oidc-port` values for parallel installations. Never expose these services
-  to a LAN, add a reverse proxy, or publish the private state directory.
+  `-oidc-port` values for parallel installations. Explicit private-network
+  browser access is available as described below. Never publish the private
+  state directory or expose the internal directory/logging/Control-Service
+  ports; do not add an unconfigured reverse proxy.
+
+## Non-loopback browser address
+
+Localhost is the default, not a mandatory transport. For a **new** evaluation,
+opt in to browser access at the host's private IPv4 address:
+
+```sh
+sh packaging/evaluation/bootstrap.sh \
+  -state "$PWD/.zpr-evaluation-network" \
+  -browser-ip 192.168.194.24
+```
+
+The address must belong to the machine running this launcher. Configure the
+host firewall to allow only intended clients to Room `18787` and Dex
+`15556` (or their explicitly selected ports). The launcher binds that exact
+address, not a wildcard; this is not public-Internet or production qualification.
+Internal services remain loopback-only. The native Room process has no
+Simulator dependency.
+
+Open `https://192.168.194.24:18787`. Dex uses the single canonical issuer
+`https://192.168.194.24:15556`; the callback uses the same address on the Room
+port. Generated TLS certificates cover both the selected IP and `localhost`.
+Securely transfer **only `ca.pem`** and trust it on the browser computer.
+Passwords and grants follow the normal named-operator workflow below.
+
+`https://localhost:18787` remains an HTTPS entrypoint on the server and redirects
+to the network URL. It is not an independent login/session origin: this avoids
+host-only cookie and callback confusion. Localhost on your laptop still refers
+to your laptop, not this server; no tunnel is required for the network URL.
+Dex also retains its local listener, but its advertised issuer stays canonical.
+The browser and server must both be able to reach that issuer.
+
+The IP is frozen with the install's configuration. Restart with identical
+image/port/address flags. Changing it on an existing localhost-only install is
+an **issuer migration**, not a bind-address tweak: old grants bind the issuer.
+This launcher refuses that change rather than rewriting checksums, credentials,
+subjects or persistent state. Do not delete state or edit its protected files
+to bypass this check. Preserve the existing installation until a separately
+validated identity-preserving migration is available; a new state directory
+creates a distinct evaluation with new credentials, not a migration.
+
+This launcher does not launch or relay Simulator. Simulator needs its own
+listener, certificate, issuer/callback and deployment routing on its actual
+host. Exposing Room never requires Simulator availability.
 
 ## Identity, health and lifecycle
 

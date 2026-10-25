@@ -3225,16 +3225,30 @@ go test -race ./internal/operatorauth ./internal/enrollment
 
 ### Direct HTTPS configuration
 
-Control Room terminates TLS itself. With no management-IP opt-in, it preserves
+Control Room terminates TLS itself. With no management-IP or direct-IP opt-in, it preserves
 the existing loopback-only browser/API exposure: use a literal
 loopback `-listen` address and a `localhost`/loopback origin with the same fixed
 port. A container may listen on `0.0.0.0` only with an explicit
 `ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP`; the Docker host port must still bind
 to `127.0.0.1`, and the handler requires actual TLS, the exact loopback Host,
 and a loopback or exact configured peer address. Other wildcard/remote binding
-is rejected unless the explicit management mode below is selected.
+is rejected unless an explicit network mode below is selected.
 Forwarded headers and the existing browser gateway cannot establish TLS or a
 named-user identity for these handlers.
+
+For native private-IP access without company DNS, explicitly set
+`ZPR_CONTROL_ROOM_DIRECT_IP=192.168.194.24`, use
+`-listen 192.168.194.24:8787`, and set
+`ZPR_CONTROL_ROOM_ORIGIN=https://192.168.194.24:8787`. Supply a current
+server-auth certificate with that IP SAN and the usual OIDC config/secret/CA.
+Register that exact origin's `/auth/operator/callback`; the issuer must be
+reachable by both server and browser. This mode requires named-user OIDC,
+rejects wildcard listeners, trusted-proxy/management-mode combinations,
+forwarded headers and foreign origins. Restrict access with the host firewall
+policy. It does not start a second localhost listener or migrate existing
+issuer-bound grants. The
+[evaluation network option](packaging/evaluation/README.md#non-loopback-browser-address)
+provisions a new evaluation and a localhost HTTPS redirecting entrypoint.
 
 For `-mode control-room`, keep the existing Control-Service mTLS environment
 configuration and explicitly add:
@@ -3529,6 +3543,15 @@ bridge gateway; override with `ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP` only when
 the direct TLS peer differs. Readiness uses the supplied TLS CA, not an insecure
 certificate bypass. Leaving the Simulator origin unset preserves the existing
 loopback HTTP development mode.
+
+For a separately configured **native** Simulator, the same explicit private-IP
+mode is available via `ZPR_SIMULATOR_OPERATOR_DIRECT_IP`. Set its
+`ZPR_SIMULATOR_OPERATOR_ORIGIN` to the matching HTTPS IP/port, use that exact
+`-listen IP:PORT`, and provision matching IP-SAN TLS and operator OIDC files.
+This is independent of Control Room and does not expose a remote Simulator
+through another machine automatically. The existing Docker stack's loopback/
+trusted-peer wrapper is unchanged; do not pass its wildcard listener or proxy
+peer settings into native direct-IP mode.
 
 These route checks are enforced at the web-app edge. General monitoring,
 policy-editor, and Simulator operations do not yet carry signed user delegation

@@ -1023,6 +1023,21 @@ listener with a company DNS origin, required single-company OIDC authorization
 and direct TLS. Company firewall/VPN policy is separately required; no public
 Internet, reverse-proxy or production container-network rollout is certified.
 See [direct management HTTPS](../../README.md#direct-management-https).
+For explicit private-IPv4 access without a company DNS origin, set
+`ZPR_CONTROL_ROOM_DIRECT_IP` (Control Room) or
+`ZPR_SIMULATOR_OPERATOR_DIRECT_IP` (Simulator) to the exact private listener IP.
+Use `-listen IP:PORT`, a matching HTTPS origin and IP-SAN server certificate,
+and the existing application-specific OIDC config/secret/CA settings. The OIDC
+callback must exactly match that origin. This opt-in mode requires initialized
+named-user authorization, rejects forwarded headers and foreign origins, and
+does not accept wildcard listeners or a trusted-proxy setting. It does not
+replace the separate production management contract or configure routing from
+one host to a Simulator on another. Restrict access with the host firewall.
+The [evaluation network option](../../packaging/evaluation/README.md#non-loopback-browser-address)
+renders these settings for a new Control Room evaluation and retains localhost
+as a redirecting entrypoint. Other deployments must explicitly provision any
+additional localhost entrypoint; a private-IP listener does not itself bind
+loopback.
 Sign in uses the native same-origin POST; callback creates an opaque secure
 session cookie. The GUI displays the verified subject and configured enrollment
 scope and offers CSRF-protected Sign out. Login is not mounted on default HTTP,

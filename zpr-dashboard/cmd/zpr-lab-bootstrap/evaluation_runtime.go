@@ -45,6 +45,9 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 			"ZPR_CONTROL_SERVICE_KEY_FILE="+file("server-key.pem"),
 			"ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="+file("ca.pem"))
 	}
+	if config.BrowserIP != "" {
+		env = append(env, "ZPR_CONTROL_ROOM_DIRECT_IP="+config.BrowserIP)
+	}
 	return append(env,
 		"ZPR_CONTROL_ROOM_LOG_PERMISSION=logs.read",
 		"ZPR_OPERATOR_OIDC_CONFIG_FILE="+file("operator-oidc.json"),
@@ -53,7 +56,7 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 		"ZPR_CONTROL_ROOM_ORGANIZATION_ID=evaluation-"+inventory.InstallID,
 		"ZPR_CONTROL_ROOM_CERT_FILE="+file("server-chain.pem"),
 		"ZPR_CONTROL_ROOM_KEY_FILE="+file("server-key.pem"),
-		"ZPR_CONTROL_ROOM_ORIGIN="+fmt.Sprintf("https://localhost:%d", config.RoomPort),
+		"ZPR_CONTROL_ROOM_ORIGIN="+config.browserOrigin(config.RoomPort),
 		"ZPR_CONTROL_SERVICE_URL="+fmt.Sprintf("https://localhost:%d", config.ServicePort),
 		"ZPR_CONTROL_SERVICE_CA_FILE="+file("ca.pem"),
 		"ZPR_CONTROL_CLIENT_CERT_FILE="+file("client-chain.pem"),
@@ -107,13 +110,13 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 	}
 	// Reserve all ports until just before startup, preventing contact with an existing stack.
 	listeners := []net.Listener{}
-	for _, port := range []int{inventory.Config.OIDCPort, inventory.Config.RoomPort, inventory.Config.ServicePort, inventory.Config.LDAPPort, inventory.Config.LogPort} {
-		listener, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
+	for _, address := range inventory.Config.listenAddresses() {
+		listener, err := net.Listen("tcp4", address)
 		if err != nil {
 			for _, listener := range listeners {
 				listener.Close()
 			}
-			return fmt.Errorf("loopback port %d is occupied; stop that install or render a NEW install with distinct port flags", port)
+			return fmt.Errorf("evaluation listener %s unavailable; check local interface/port availability and the original launch flags", address)
 		}
 		listeners = append(listeners, listener)
 	}
@@ -177,7 +180,7 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 		}
 		args := []string{"-mode", mode}
 		if mode == "control-room" {
-			args = append(args, "-listen", fmt.Sprintf("127.0.0.1:%d", inventory.Config.RoomPort))
+			args = append(args, "-listen", inventory.Config.roomListen())
 		}
 		command := exec.Command(binary, args...)
 		command.Env = evaluationEnvironment(state, inventory, mode)
@@ -204,10 +207,24 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 				return errEvaluationProcessExited
 			default:
 			}
+			if mode == "control-room" {
+				serviceTLS = serviceTLS.Clone()
+				serviceTLS.ServerName = inventory.Config.browserHost()
+				return checkEvaluationURL(inventory.Config.browserOrigin(port)+path, serviceTLS, "")
+			}
 			return checkEvaluationHTTP(port, path, serviceTLS, "")
 		}); err != nil {
 			return err
 		}
+	}
+	var aliasDone <-chan error
+	if inventory.Config.BrowserIP != "" {
+		closeAlias, done, err := startEvaluationLocalAlias(state, inventory.Config)
+		if err != nil {
+			return err
+		}
+		defer closeAlias()
+		aliasDone = done
 	}
 	if err := registerEvaluationSource(startup, state, inventory); err != nil {
 		return err
@@ -215,7 +232,10 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 	if err := waitEvaluation(startup, "evaluation lifecycle ingestion/query", out, func() error { return collectEvaluationLog(startup, state, inventory, "bootstrap_ready") }); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s\nREADY (B1-B3 evaluation): https://localhost:%d\nOpenObserve administrator: admin@evaluation.invalid at https://localhost:%d (password: private logging-admin.secret).\nTrust ONLY this install's ca.pem in your evaluation browser; never disable certificate checks.\n", evaluationBanner, inventory.Config.RoomPort, inventory.Config.LogPort)
+	fmt.Fprintf(out, "%s\nREADY (B1-B3 evaluation): %s\nOpenObserve administrator: admin@evaluation.invalid at https://localhost:%d (password: private logging-admin.secret).\nTrust ONLY this install's ca.pem in your evaluation browser; never disable certificate checks.\n", evaluationBanner, inventory.Config.browserOrigin(inventory.Config.RoomPort), inventory.Config.LogPort)
+	if inventory.Config.BrowserIP != "" {
+		fmt.Fprintf(out, "Local entrypoint https://localhost:%d redirects to the canonical network origin. Restrict browser/OIDC ports to intended clients; other services remain loopback-only.\n", inventory.Config.RoomPort)
+	}
 	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Administrator-scoped evaluation grants; no shared sessions.\nStarter directory registered; lifecycle events ingested into evaluation logging. Upstream Visa/Policy services are NOT configured. Control Room reports unavailable dependencies explicitly.")
 	fmt.Fprintln(out, "Foreground supervision active. Ctrl-C stops this install's services/containers; rerun the SAME command to preserve identity and directory/log data.")
 	ticker := time.NewTicker(5 * time.Second)
@@ -225,6 +245,8 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 		case <-ctx.Done():
 			fmt.Fprintln(out, "Stopping evaluation services; private state retained.")
 			return nil
+		case <-aliasDone:
+			return errors.New("localhost HTTPS entrypoint exited; stopping this install; inspect private state and retry")
 		case <-ticker.C:
 			if err := collectEvaluationLog(ctx, state, inventory, "bootstrap_heartbeat"); err != nil {
 				if ctx.Err() != nil {
@@ -323,10 +345,14 @@ func checkEvaluationLogging(port int, state string, config *tls.Config) error {
 }
 
 func checkEvaluationHTTP(port int, path string, config *tls.Config, authorization string) error {
+	return checkEvaluationURL(fmt.Sprintf("https://localhost:%d%s", port, path), config, authorization)
+}
+
+func checkEvaluationURL(address string, config *tls.Config, authorization string) error {
 	transport := &http.Transport{TLSClientConfig: config, Proxy: nil}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Timeout: 3 * time.Second, Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
-	request, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://localhost:%d%s", port, path), nil)
+	request, err := http.NewRequest(http.MethodGet, address, nil)
 	if err != nil {
 		return err
 	}
@@ -346,11 +372,13 @@ func checkEvaluationHTTP(port int, path string, config *tls.Config, authorizatio
 
 // Obtain and verify the IdP's actual subject; never invent a grant from an email.
 func configureEvaluationOperator(ctx context.Context, state string, inventory evaluationInventory, tlsConfig *tls.Config) error {
+	tlsConfig = tlsConfig.Clone()
+	tlsConfig.ServerName = inventory.Config.browserHost()
 	transport := &http.Transport{TLSClientConfig: tlsConfig, Proxy: nil}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Timeout: 3 * time.Second, Transport: transport, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	verifiedContext := oidc.ClientContext(ctx, client)
-	issuer := fmt.Sprintf("https://localhost:%d", inventory.Config.OIDCPort)
+	issuer := inventory.Config.browserOrigin(inventory.Config.OIDCPort)
 	provider, err := oidc.NewProvider(verifiedContext, issuer)
 	if err != nil {
 		return errors.New("OIDC discovery not ready")
@@ -394,7 +422,7 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 	if err != nil || identity.Subject == "" {
 		return errors.New("OIDC identity verification failed")
 	}
-	config := operatorauth.Config{Version: 1, Issuer: issuer, ClientID: "zpr-control-room", RedirectURL: fmt.Sprintf("https://localhost:%d/auth/operator/callback", inventory.Config.RoomPort), SessionLifetimeSeconds: 3600,
+	config := operatorauth.Config{Version: 1, Issuer: issuer, ClientID: "zpr-control-room", RedirectURL: inventory.Config.browserOrigin(inventory.Config.RoomPort) + "/auth/operator/callback", SessionLifetimeSeconds: 3600,
 		Grants: []operatorauth.Grant{{Issuer: issuer, Subject: identity.Subject, Organizations: []string{"evaluation-" + inventory.InstallID}, Permissions: []string{"monitor.read", "logs.read", "policy.read", "policy.edit", "policy.analyze"}}}}
 	if err := config.Validate(); err != nil {
 		return errors.New("verified bootstrap operator grant is invalid")

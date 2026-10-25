@@ -163,8 +163,8 @@ func reserveRecoveryPorts(config evaluationConfig) (func(), error) {
 			listener.Close()
 		}
 	}
-	for _, port := range []int{config.RoomPort, config.ServicePort, config.OIDCPort, config.LDAPPort, config.LogPort} {
-		listener, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
+	for _, address := range config.listenAddresses() {
+		listener, err := net.Listen("tcp4", address)
 		if err != nil {
 			closePorts()
 			return nil, errors.New("evaluation ports are occupied; stop all install processes/containers before recovery")

@@ -28,14 +28,14 @@ func controlRoomAPIProxy(auth operatorRequestAuthorizer, organization string, pr
 }
 
 func (s *controlRoomSecurity) apiProxy(organization string, proxy http.Handler) http.Handler {
-	if !s.management {
+	if !s.management && !s.direct {
 		return controlRoomAPIProxy(s.auth, organization, proxy)
 	}
 	return managementControlRoomProxy(s.auth, organization, proxy)
 }
 
 func (s *controlRoomSecurity) assetProxy(organization string, proxy http.Handler) http.Handler {
-	if !s.management {
+	if !s.management && !s.direct {
 		return localControlRoomProxy(proxy)
 	}
 	return managementControlRoomProxy(s.auth, organization, proxy)
