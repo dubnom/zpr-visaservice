@@ -314,6 +314,24 @@ func TestSubjectReviewProviderDurableRegistryComposition(t *testing.T) {
 	if err != nil || approved.State != "review-approved" {
 		t.Fatal("real directory validation failed independent review", approved, err)
 	}
+	scope := changereview.SubjectLinkPublicationScope{Organization: "production", Recipient: "vs-fixture", Epoch: "epoch-fixture"}
+	publisher := changereview.Principal{Issuer: author.Issuer, Subject: "publication-manager"}
+	if err := store.ProvisionSubjectLinkPublication(ctx, scope, publisher, "Explicit internal recipient"); err != nil {
+		t.Fatal(err)
+	}
+	promotion := changereview.SubjectLinkPublicationRequest{
+		Scope: scope, Action: "promote", ExpectedSequence: "0", ReviewID: approved.ID,
+		ReviewDigest: approved.Digest, ReviewVersion: approved.Version, Reason: "Promote exact validated intent",
+	}
+	mode.Store(3)
+	if _, err := store.ChangeSubjectLinkPublicationOnce(ctx, promotion, publisher, "promote", check); err == nil {
+		t.Fatal("missing LDAP subject promoted despite historical approval")
+	}
+	mode.Store(0)
+	published, err := store.ChangeSubjectLinkPublicationOnce(ctx, promotion, publisher, "promote", check)
+	if err != nil || published.Sequence != "1" || len(published.Bindings) != 1 || published.Bindings[0].State != "publication-intent" {
+		t.Fatal("real LDAP validator failed internal promotion", published, err)
+	}
 	other, err := store.SubmitSubjectLinkWithRegistryOnce(ctx, proposal, "pending", check)
 	if err != nil {
 		t.Fatal(err)
@@ -339,6 +357,14 @@ func TestSubjectReviewProviderDurableRegistryComposition(t *testing.T) {
 		capture.Revision, "Independent directory review", reviewer, "approve", check)
 	if err != nil || !reflect.DeepEqual(replayed, approved) || searches.Load() != before {
 		t.Fatal("historical approval replay queried disabled/outage directory", replayed, err)
+	}
+	prior, err := store.ChangeSubjectLinkPublicationOnce(ctx, promotion, publisher, "promote", check)
+	if err != nil || !reflect.DeepEqual(prior, published) || searches.Load() != before {
+		t.Fatal("historical promotion replay queried disabled/outage directory", prior, err)
+	}
+	current, err := store.GetSubjectLinkPublication(ctx, scope)
+	if err != nil || current.Sequence != "2" || current.Bindings[0].State != "registry-invalidated" || current.Bindings[0].Version != "2" {
+		t.Fatal("source disable did not durably invalidate promoted intent", current, err)
 	}
 }
 func TestSubjectReviewProviderStrictConfigFiles(t *testing.T) {

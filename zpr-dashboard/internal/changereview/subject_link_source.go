@@ -157,6 +157,9 @@ func (s *Store) PutSubjectLinkSource(ctx context.Context, org, id, expectedVersi
 		org, id, source.Version, string(evidence)); err != nil {
 		return SubjectLinkSource{}, err
 	}
+	if err := invalidateSubjectLinkPublications(ctx, tx, org, "source", id, actor, reason); err != nil {
+		return SubjectLinkSource{}, err
+	}
 	return source, tx.Commit()
 }
 

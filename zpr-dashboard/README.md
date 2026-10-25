@@ -291,6 +291,15 @@ Run the offline Go contract checks with
 the Go exporter and then checks a Rust-signed payload back in Go. No production
 keys, endpoint, Simulator or directory are required by those tests.
 
+The separately approved
+[internal publication-intent ledger](../MULTISOURCE_POLICY_SUPPORT.md#implemented-internal-publication-intent-and-revocation-ledger)
+adds no route or UI control. Deliberate promotion and revocation are internal
+store methods only; approval still does not activate a link. Registry edits now
+atomically invalidate any affected internal intents and advance their recipient
+sequences, with immutable audit evidence. Production callers must separately
+authorize publication operations; registry/review permissions and their proofs
+do not grant publication. No publisher or signing-key loader calls these methods.
+
 #### Subject-Link Review operator page
 
 Open `/subject-links.html` from **Configuration > Subject-Link Review** in

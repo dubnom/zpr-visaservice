@@ -129,6 +129,9 @@ SET version=?,kind=?,service_id=?,issuer=?,enabled=? WHERE organization=? AND id
 		org, id, a.Version, string(evidence)); err != nil {
 		return SubjectLinkAuthority{}, err
 	}
+	if err := invalidateSubjectLinkPublications(ctx, tx, org, "authority", id, actor, reason); err != nil {
+		return SubjectLinkAuthority{}, err
+	}
 	return a, tx.Commit()
 }
 

@@ -230,6 +230,15 @@ successful installs recover as historical retries, and a revocation survives a
 child-process exit before its result reaches the caller. This is offline
 acceptance evidence, not production delivery or a new operator control.
 
+An explicitly approved internal Control-Service publication-intent ledger now
+supports deliberate promotion of an independently approved review, audited
+revocation, immutable recipient/epoch scope and durable decimal sequences.
+Promotion requires fresh exact-subject validation and current registry fences;
+source/authority edits atomically invalidate affected intents and advance every
+affected recipient. Retained tombstones and principal-bound historical retry
+receipts survive reopen. This is internal persistence only: there are no new
+HTTP/UI actions, signed snapshot exports, delivery or enforcement paths.
+
 Expired lookup identities are indeterminate even if another identity on the
 actor is still live. They cannot fetch fresh enrichment or be silently dropped
 to permit absence-based rules; reauthentication is required. The same guard

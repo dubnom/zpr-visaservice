@@ -2496,10 +2496,11 @@ the same 13 pre-existing Go failures. No dependency manifests or Rust changed.
 Protected configuration, named registry administration/context discovery,
 provider-reference resolution, review HTTP/proxy composition and the review UI
 with native-browser acceptance are implemented, not deployed.
-Active publication/revocation and VS delivery still require daemon integration,
-production trust/recovery operations and the unset timing/enforcement bounds.
-The separately approved offline format and checkpoint below do not enable those
-operations.
+Production publication/revocation and VS delivery still require independently
+authorized transport, signing/delivery and daemon integration, production
+trust/recovery operations and the unset timing/enforcement bounds. The separately
+approved internal intent ledger, offline format and checkpoint below do not
+enable those operations.
 
 #### Implemented: offline signed-snapshot foundation
 
@@ -2720,6 +2721,104 @@ binding ID/version tombstone and empty active set, retries the same candidate as
 historical replay and rejects the older active snapshot. This is lost-result
 recovery at the offline API boundary; it adds no network receipt, production
 publication or gateway withdrawal claim.
+
+#### Implemented: internal publication intent and revocation ledger
+
+The operator explicitly approved this bounded internal Control-Service-owned
+increment after offline snapshot/checkpoint acceptance. It persists publication
+**intent**, not delivered, acknowledged, device-authenticated or enforced state.
+No publication HTTP route, browser control, operator permission/proof purpose,
+signing-key provisioning, snapshot export, delivery worker, VS daemon integration
+or enforcement switch was added. Existing registry edit transactions are wired
+to invalidate affected internal intents; merely approving a review does not
+create one. Schema creation alone provisions no stream or binding.
+
+- `ProvisionSubjectLinkPublication` explicitly creates one organization/exact-VS
+  recipient stream at an immutable caller-supplied epoch and local sequence `"0"`.
+  Provisioning actor/reason/time are retained as immutable sequence-zero evidence.
+  This zero is **not** a valid signed snapshot sequence and cannot be exported as
+  one. Provisioning never overwrites a stream, changes epoch, infers recipients,
+  creates an implicit fallback or resets a lost ordering history. After a lost
+  provisioning result, explicitly read the scoped stream and sequence-zero
+  evidence; there is no provisioning retry receipt.
+- `ChangeSubjectLinkPublicationOnce` requires the exact expected stream sequence
+  and explicit `promote` or `revoke` action. An independently authorized server
+  principal and reason are mandatory. Every future caller must authorize **every**
+  attempt, including historical receipt reads; current registry/read/review grants
+  and signed proofs do not confer publication authority.
+- Promotion binds the exact immutable review ID, approved digest and version
+  `"2"`, checks `review-approved` plus independent approval event evidence,
+  captures the current enabled authority/source pair and permitted enrichment
+  keys transactionally, then requires a fresh exact-subject provider callback.
+  That callback must not reenter the Store; it uses independently provisioned
+  transport and must perform the same exact immutable-subject validation as
+  review. Registry and intent share the Store transaction fence. Expiry is
+  checked before and after provider work. Provider failure/cancellation is an
+  error, never cached approval or success-shaped fallback.
+- Binding ID is the immutable review ID within the recipient stream; initial
+  binding version is `"1"`, state `publication-intent`. The complete approved
+  proposal (including original explicit validity) and review digest are copied;
+  no lease extension, inferred root, default time or transformed subject is
+  introduced. This state is not proof of verified BAS admission or permission
+  to perform enrichment. Future use must check validity at use time: an expired
+  intent may remain in historical readback, never count as current authority.
+- Revocation requires the exact binding version and stream sequence. It changes
+  intent to `revoked`, advances binding version and sequence, and retains all
+  review/evidence. It does not query a disabled/unavailable provider or require
+  current source eligibility. Revoked and registry-invalidated IDs cannot be
+  promoted again, deleted or compacted. A new independently reviewed association
+  requires a new review/binding ID. Each stream conservatively retains at most
+  1,024 binding IDs including tombstones; exhaustion fails, not compaction.
+- Every changed source/authority registration atomically changes all matching
+  `publication-intent` records to `registry-invalidated` tombstones, increments
+  their binding versions and advances **each affected recipient once** with
+  immutable actor/reason/time and affected IDs. This includes configuration
+  replacement and disable; unchanged registry CAS no-ops do not invalidate.
+  Unaffected organizations/recipients and already retired bindings are unchanged.
+  A stream/version overflow or evidence-write failure rolls back the complete
+  registry edit and **all** affected recipients. There is no partial-recipient
+  success or stale intent left behind after the edit commits.
+- Each promotion/revocation commits binding state, monotonic positive decimal
+  u64 sequence, immutable operation audit and principal-bound retry receipt in
+  the same SQLite transaction. Receipt identity is organization, issuer/subject
+  and explicit retry key; its fingerprint binds the complete exact operation,
+  scope, expected versions and reason. Identical retries return the original
+  historical response before fresh registry/provider validation, never renew
+  validity or undo a later revocation/invalidation. Changed request with the same
+  key conflicts. Another principal, organization, recipient or epoch cannot
+  rebind the receipt. Stream CAS has one winner under concurrent mutation;
+  sequence exhaustion fails closed without wrapping.
+
+`GetSubjectLinkPublication` reads the coherent current **intent** set, including
+retired IDs and original validity; `GetSubjectLinkPublicationEvent` reads immutable
+scoped sequence evidence, not a delivery receipt. The service currently has no
+caller connecting these internal methods to the operator UI or external clients.
+The SQLite state remains a single protected writer, not an HA/distributed
+publication service. The existing production directory and protected database
+requirements continue to apply.
+
+Acceptance uses actual protected SQLite stores and reopen, coherent registry and
+independent review records, mandatory exact-subject callback composition,
+principal/key/version isolation, stale/unapproved/expired rejection (including
+expiry during callback), concurrent promotion and registry editing, and injected
+receipt/multi-recipient-audit failures. Registry no-op and u64 sequence exhaustion
+are tested directly. These tests do not claim signed publication, delivery,
+production directory availability, gateway withdrawal or M1 closure.
+
+The existing real TLS LDAP provider fixture also composes the new promotion
+method with the actual protected exact-UUID validator. Missing directory subject
+blocks promotion despite prior independent approval, a subsequent valid lookup
+can use the unconsumed retry key, and source disable durably invalidates intent.
+After reopen and simulated directory outage, exact promotion replay returns only
+its original historical response without LDAP, while current readback retains
+the higher-sequence invalidated tombstone. That composition passes ten repeated
+race-enabled runs. Publication-ledger tests pass repeated race-enabled runs;
+the final suite also checks admission at exactly 1,024 retained IDs and rejection
+of the next ID without discarding tombstones. Changereview, delegation, Control Room,
+operator-auth and targeted review/registry/route tests pass under race, and
+related Go vet passes. Required `make test` passes all 11 operator-stack checks
+and retains exactly the known 13 Go baseline failures; it is not fully green.
+No dependency manifests changed.
 
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 
