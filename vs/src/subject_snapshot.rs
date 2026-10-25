@@ -1,8 +1,11 @@
 //! Offline complete subject-link snapshot verification.
 //!
-//! No listener, device admission, publication, persistence or enforcement is
-//! enabled here. Future callers must atomically persist the accepted envelope
-//! and ordering state before acknowledging delivery.
+//! No listener, device admission, publication or enforcement is enabled here.
+//! The optional offline checkpoint module persists accepted envelopes and their
+//! ordering state; it does not provide a network acknowledgement.
+
+#[cfg(unix)]
+pub mod checkpoint;
 
 use std::collections::{HashMap, HashSet};
 

@@ -2496,15 +2496,16 @@ the same 13 pre-existing Go failures. No dependency manifests or Rust changed.
 Protected configuration, named registry administration/context discovery,
 provider-reference resolution, review HTTP/proxy composition and the review UI
 with native-browser acceptance are implemented, not deployed.
-Active publication/revocation and VS delivery still require durable installation,
+Active publication/revocation and VS delivery still require daemon integration,
 production trust/recovery operations and the unset timing/enforcement bounds.
-The separately approved offline format below does not enable those operations.
+The separately approved offline format and checkpoint below do not enable those
+operations.
 
 #### Implemented: offline signed-snapshot foundation
 
 The operator separately approved this bounded Go/Rust foundation. It introduces
 no publication route, production signing-key loader, active binding export,
-device authentication, VS listener, install/acknowledgement path or enforcement
+device authentication, VS listener, runtime install/acknowledgement path or enforcement
 switch. The Go `internal/subjectsnapshot` package and exported Rust
 `vs::subject_snapshot` library module are deliberately disconnected from service
 composition and the daemon. Existing standard-library Go Ed25519 and existing
@@ -2583,8 +2584,9 @@ at least at its prior version. Tombstones cannot disappear, lower version or
 resurrect the ID; v1 has **no compaction or resurrection**. No epoch transition
 is accepted by comparison, even if each epoch was individually configured.
 
-No disk/Redis write, crash-consistent checkpoint, first-install authorization,
-restore API or acknowledgement is implemented. A future integration must
+The verifier alone performs no persistence or acknowledgement. The separately
+approved offline checkpoint below adds local durable installation only; no
+production first-install authorization or restore API is provided. A future integration must
 atomically persist the accepted complete snapshot with scope/epoch/sequence/
 digest before acknowledging, fail closed on missing/corrupt history, and
 authenticate restored history without renewing its original lease. It must not
@@ -2605,6 +2607,94 @@ decimal precision/overflow, exact version dependencies, independent pin
 overlap/removal, equivocation, rollback, tombstone retention and prohibited
 resurrection. These are offline contract results, not real-directory deployment
 or gateway-withdrawal evidence.
+
+#### Implemented: offline durable snapshot checkpoint
+
+The operator explicitly approved a subsequent bounded offline increment:
+explicitly provisioned initial scope/epoch, atomic persistence of the exact
+accepted envelope and ordering state before success, fail-closed restart and
+crash/replay tests. `vs::subject_snapshot::checkpoint` implements that increment
+on Unix using only existing dependencies and Rust standard-library file locking.
+It is not called by daemon startup, an HTTP route, the Room or Control-Service.
+There is no new production configuration, signing/trust provisioning, binding
+activation, network acknowledgement, strict-mode switch or timing default.
+
+- `Checkpoint::initialize` is an explicit first-install operation requiring an
+  **absolute, nonexistent** directory, independently supplied pins, exact
+  organization/recipient/epoch, a complete signed envelope and explicit `now`.
+  Authentication and current validity are checked before creating state.
+  It creates a private directory (`0700`), syncs its parent, creates the private
+  writer-lock file (`0600`) and takes an exclusive process-held lock.
+  It does not create an empty ordering floor or accept a different epoch.
+- The checkpoint JSON contains a local format version, scope, sequence, original
+  issue/expiry, payload digest and **exact envelope string**. Envelope and
+  ordering state are one atomic unit, not independently updated files. The
+  local checkpoint file is bounded at 5,604,096 bytes; its envelope still obeys
+  the smaller wire limits. Unknown/duplicate/missing fields are rejected.
+- `install` verifies current signature/scope/validity and all existing ordering,
+  registration-version and tombstone rules before writing. It writes a
+  create-new private `pending.json`, syncs the file, renames it to `accepted.json`,
+  then syncs the directory before returning `Advance`. The complete prior or
+  next checkpoint is recovered, never a mixture. Historical replay does not
+  rewrite the checkpoint or extend expiry.
+- Once a write starts, **any** write/sync/rename error poisons that instance.
+  Neither `current_at` nor another install can return success until the owner
+  closes and reopens it. An error after rename may mean the candidate committed:
+  it is an uncertain outcome, not evidence that the prior state remained.
+- `open` never creates a directory, lock, or missing checkpoint. It obtains the
+  existing single-writer lock, reads bounded committed state, reauthenticates its
+  envelope using newly supplied independent pins and exact configured scope,
+  and compares every duplicated metadata field with signed payload evidence.
+  Wrong organization/recipient/epoch, missing lock/state, malformed metadata,
+  invalid/removed signing trust, symlinked paths, nonprivate files/directory and
+  authentication failures block reopen. Corrupt or missing state is never
+  replaced with a temporary snapshot or automatically reset to sequence zero.
+- Reopen authenticates history at its original signed issue instant. This
+  preserves an expired snapshot's anti-rollback floor **without** claiming it
+  is currently usable. `current_at(now)` and every incoming install separately
+  require current validity. A fresh higher-sequence snapshot can advance expired
+  history; replay of that expired envelope still fails.
+- Only after committed state authenticates may reopen discard a private leftover
+  temporary file; it never promotes one. Reopen syncs the directory before
+  returning, completing a rename whose directory sync was interrupted. A crash
+  during first initialization that leaves no committed checkpoint instead
+  requires explicit recovery: neither `open` nor repeating `initialize` resets
+  that directory.
+- Pins are fixed for the instance lifetime. Explicit overlap permits validating
+  old durable evidence while installing a **higher-sequence** snapshot under a
+  retained key. Re-signing the same sequence/digest under the new key is only
+  historical replay and leaves the original stored envelope intact. Removing
+  its old pin before a higher-sequence checkpoint is committed blocks restart;
+  no payload-supplied key or automatic fallback repairs it.
+
+The owner must protect the directory **and its ancestors** against other
+writers, relocation and replacement, and use a local filesystem that honors
+exclusive file locks, atomic same-directory rename and file/directory sync.
+The lock is advisory; it is not protection from a malicious process with the
+same filesystem rights. Symlink/private-mode checks are not a substitute for
+that ownership boundary. This is not HA, a distributed store, remote backup
+reconciliation or a hardware monotonic counter. Replacing the entire directory
+with an older authentic backup cannot be detected by a checkpoint contained in
+that same directory; production recovery must reconcile a separately trusted
+ordering floor. No arbitrary backup restoration, epoch change, automatic
+reinitialization or production recovery procedure is authorized here.
+
+`cargo test -p vs --lib subject_snapshot` includes real subprocess exits after
+write, file sync, rename and directory sync, plus injected I/O failures at each
+boundary. Tests reopen after process death and check prior/next sequence,
+same-candidate recovery, lower-sequence rejection, immutable replay bytes,
+single-writer exclusion, original expiry, metadata corruption, missing state,
+insecure paths, bounded reads, interrupted initialization and pin retirement.
+These are process-crash/local-checkpoint tests, not power-cut testing of a
+particular disk/filesystem or gateway acknowledgement/withdrawal evidence.
+
+Validation for this increment: full `cargo test` passes **1,004 tests**, with
+23 ignored; formatting checks pass. VS-library Clippy passes with dependencies
+excluded and only the pre-existing `needless_return` warning category allowed.
+Ten repeated concurrent crash/interop runs passed after explicit lock-release
+handling was added for transient inherited descriptors during child launch.
+The nested worktree's temporary sibling-dependency path correction was restored;
+no dependency or production startup manifests changed.
 
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 

@@ -281,8 +281,12 @@ registry. The separately approved offline signed-snapshot foundation is
 documented in the
 [shared wire contract](../MULTISOURCE_POLICY_SUPPORT.md#implemented-offline-signed-snapshot-foundation).
 It is not called by these routes or startup composition. Production
-publication, durable VS installation/acknowledgement, timing and rollout remain
-separate gates. Run the offline Go contract checks with
+publication, daemon installation/acknowledgement, timing and rollout remain
+separate gates. A separately approved offline Unix Rust checkpoint now exercises
+durable installation/restart without connecting to these HTTP routes or the VS
+daemon; see the
+[checkpoint contract](../MULTISOURCE_POLICY_SUPPORT.md#implemented-offline-durable-snapshot-checkpoint).
+Run the offline Go contract checks with
 `go test -race ./internal/subjectsnapshot`; the Rust library interop test invokes
 the Go exporter and then checks a Rust-signed payload back in Go. No production
 keys, endpoint, Simulator or directory are required by those tests.

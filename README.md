@@ -215,8 +215,13 @@ offline signed-snapshot foundation now verifies the same Ed25519 payloads in Go
 and Rust, with independent pinned trust, exact organization/VS/epoch binding,
 strict complete records and rollback/equivocation checks. Live cross-language
 tests include overlapping-key rotation and exact size/expiry boundaries.
-It is not connected to publication, durable VS installation or enforcement;
-timing bounds, recovery operations and rollout still require approval. See
+An explicitly approved offline Unix checkpoint now persists the exact envelope
+and ordering state with a single-writer lock, file/directory synchronization,
+atomic replacement and fail-closed restart validation. Subprocess tests exercise
+process death before and after replacement; expired history retains its ordering
+floor without renewing validity. It is not connected to the VS daemon,
+publication, network acknowledgement or enforcement; timing bounds, production
+recovery operations and rollout still require approval. See
 [current implementation and gates](MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 
 Expired lookup identities are indeterminate even if another identity on the
