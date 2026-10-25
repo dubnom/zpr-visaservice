@@ -54,6 +54,8 @@ mod vss_worker;
 #[cfg(test)]
 mod geography_test;
 #[cfg(test)]
+mod source_lifecycle_interop_tests;
+#[cfg(test)]
 mod test_helpers;
 
 use crate::actor_mgr::ActorMgr;

@@ -151,7 +151,11 @@ func immutableDirectory(t *testing.T) *immutableDirectoryFixture {
 					case ldap.ApplicationSearchRequest:
 						fixture.searches.Add(1)
 						filter, err := ldap.DecompileFilter(op.Children[6])
-						if err != nil || filter != "(entryUUID="+providerUUID+")" || op.Children[3].Value != int64(2) || op.Children[0].Value != "dc=company" {
+						subject := providerUUID
+						if filter == "(entryUUID=b6a21ab4-5554-4cde-ae65-41a406a3c07e)" {
+							subject = "b6a21ab4-5554-4cde-ae65-41a406a3c07e"
+						}
+						if err != nil || filter != "(entryUUID="+subject+")" || op.Children[3].Value != int64(2) || op.Children[0].Value != "dc=company" {
 							t.Error("provider violated exact UUID query", filter, err)
 						}
 						if fixture.mode.Load() == 2 {
@@ -159,6 +163,14 @@ func immutableDirectory(t *testing.T) *immutableDirectoryFixture {
 							<-fixture.release
 						}
 						entry := immutableEntry()
+						for _, attribute := range entry.Attributes {
+							if attribute.Name == "entryUUID" {
+								attribute.Values = []string{subject}
+							}
+							if attribute.Name == "mail" && fixture.mode.Load() == 3 {
+								attribute.Values = []string{"contractor@example.test"}
+							}
+						}
 						response := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldap.ApplicationSearchResultEntry, nil, "")
 						response.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, entry.DN, ""))
 						attributes := ber.NewSequence("")

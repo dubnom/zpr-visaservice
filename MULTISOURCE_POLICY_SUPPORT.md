@@ -1,5 +1,86 @@
 # Multiple trusted sources: source-qualified policy support
 
+## Repeatable source lifecycle acceptance
+
+The opt-in [runner](zpr-dashboard/scripts/test-source-lifecycle.sh) connects
+Policy-Service staging, the source-built compiler, the real VS REST consumer,
+the independent Go provider and durable VS state in one automated chain:
+
+1. Save two JSON policy documents sharing `company` in the actual SQLite policy
+   repository, check and compile them, then stage a signed bundle using an
+   ephemeral fixture key. Assert the original saved JSON/revision and independent
+   base-config hashes, one effective source, and conflicting-declaration rejection
+   without replacement of the last-good staged candidate.
+2. Start an actual mTLS HTTPS provider backed by a local TLS LDAP protocol
+   fixture. Explicit synthetic actor identities select exact directory UUIDs.
+   The compiled source-qualified policy permits TCP 80 and denies TCP 81.
+   Assert persisted, source-owned attributes and a real issued visa.
+3. Disable the source through the production durable control functions. Deny new
+   requests and queue the existing visa for revocation at both fixture nodes.
+   Stop and restart a private Valkey/Redis process from its actual AOF files,
+   then start a separate VS test process. Assert that the exact signed artifact,
+   off revision, pending work, actor docking and revoke queues survive.
+4. Re-enable against changed LDAP mail and prove a compiled-policy denial rather
+   than stale permission or a missing-route/docking failure. A further process
+   with LDAP bind failure must deny, report failed source health rather than
+   successful empty absence, and issue no new visa.
+5. Restore LDAP data and start another process. Fresh lookup permits a new visa
+   with a different ID; the old queued revoke remains. Assert exactly two
+   directory searches per successful phase and none during bind failure; the
+   disabled requests must not add directory searches.
+
+Run from this repository's root:
+
+```sh
+ZPR_TEST_ZPLC=/absolute/path/to/source-built/zplc \
+  sh zpr-dashboard/scripts/test-source-lifecycle.sh
+```
+
+Prerequisites: Rust/Cargo, Go, Python 3, an existing source-qualified compiler
+build, and an installed `valkey-server` or Redis 7+ `redis-server`. The runner
+builds the VS test executable using the checkout's configured `zpr-common`
+dependency path. For nested worktrees where that sibling path is unavailable,
+supply `ZPR_TEST_VS_BINARY=/absolute/path/to/current/VS-test-executable`
+alongside `ZPR_TEST_ZPLC`, built from the same current source in a resolvable
+Cargo layout. The runner never rewrites dependency manifests, installs tools,
+contacts an existing database or starts persistent services. Its private
+database has no TCP listener and uses a protected temporary Unix socket;
+processes, AOF files and ephemeral credentials are cleaned up after the test.
+Missing prerequisites, failed compilation or skipped child phases fail explicitly.
+
+Both Go tests skip in ordinary suites unless their opt-in environment is set;
+the Rust child is ignored unless launched by the fixture orchestrator. Output
+must contain each lifecycle marker and a passing Rust child, preventing a
+successful skip from being counted as acceptance. Simulator URLs deliberately
+point to unavailable loopback endpoints, and no simulation manifest is loaded.
+
+**Evidence boundary:** these are real compiler, HTTPS/mTLS, LDAP protocol,
+Redis AOF, production manager/evaluator/visa-worker and OS-process boundaries.
+They are not full Visa Service daemon/listener, node authentication, Admin API
+or Control Room browser acceptance. Actor authority and UUID-valued device CNs
+are explicitly synthetic fixtures, not invented device/person subject links.
+The LDAP server is a bounded protocol fixture, not deployed OpenLDAP. The signed
+candidate is loaded directly by the test harness, not activated through the
+guarded apply/reviewer protocol. Revocation is queued, not gateway-acknowledged.
+No production configuration, keys, permission grants or deployment is created.
+**M1 remains open** for approved-link VS enforcement and the independently
+deployed operator-to-gateway flow.
+
+Validation for this acceptance increment:
+
+- The real four-VS-process lifecycle chain passes, including the database
+  restart, and passes three consecutive reruns with `GOFLAGS=-race` covering
+  both Go orchestrators.
+- Rust workspace: **993 passed, 23 ignored**; the new ignored child is exercised
+  explicitly by the acceptance runner. Rust formatting checks pass.
+- Provider and policy-document race suites, Go vet, changed-file Go formatting
+  and POSIX shell syntax checks pass.
+- Required full `make test`: **11 operator-stack checks pass**, with exactly
+  the same **13 pre-existing dashboard fixture/environment failures**. No
+  unrelated failing tests were changed; the complete Go suite is not green.
+- No production Rust/Go behavior or dependency manifests changed in this
+  increment; changes are acceptance tests, fixture support, runner and docs.
+
 ## Operator controls, shared JSON documents and immutable LDAP provider
 
 This local increment builds on the durable VS controls described below:

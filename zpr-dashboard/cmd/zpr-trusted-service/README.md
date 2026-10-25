@@ -130,6 +130,17 @@ failure, password rotation, cancellation, exact UUID evidence and response
 allowlisting with Simulator unavailable. They are not real-directory or
 VS-to-gateway deployment acceptance.
 
+The opt-in [source lifecycle runner](../../scripts/test-source-lifecycle.sh)
+also drives this provider with the actual Rust VS REST consumer and a real
+signed policy compiled from two saved JSON documents sharing a source ID.
+It tests allow/deny, durable disable and queued revocation, a private AOF
+database/process restart, changed-data denial, bind failure and fresh recovery.
+Simulator is unavailable throughout. Synthetic UUID-valued actor CNs are
+explicitly provisioned as fixture lookup identities; this does not approve or
+implement a device/person subject link. The VS runs production functions in
+test processes, not the full daemon or gateway transport. See
+[prerequisites, reproduction and evidence boundaries](../../../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
+
 ### Optional source validity bound
 
 With an updated VS consumer, start the provider with `-attribute-validity 2m` to

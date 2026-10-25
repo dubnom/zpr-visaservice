@@ -125,8 +125,18 @@ its authenticated production Control-Service bridge, with explicit
 provisional JSON documents with identical shared-ID declarations and rejects
 conflicts. The reference provider accepts independent protected JSON config for
 exact immutable LDAP UUID lookup over the existing mTLS REST contract.
-This does not activate subject links, provision transport/credentials or establish
-live LDAP-to-VS acceptance. Final envelope syntax remains open. See the
+The opt-in [source lifecycle acceptance runner](zpr-dashboard/scripts/test-source-lifecycle.sh)
+now connects saved shared-ID JSON policy, the real compiler, the VS REST consumer
+and an mTLS provider backed by a TLS LDAP protocol fixture. It proves compiled
+allow/deny, durable source-off and queued revocation across real database/process
+restarts, changed-data denial, outage handling and fresh recovery, with Simulator
+unavailable. This uses synthetic actor identities and production VS functions
+inside test processes, not the full daemon/authentication/Control Room flow.
+It does not activate subject links, provision production transport/credentials,
+prove gateway acknowledgement or establish deployed-directory acceptance.
+Final envelope syntax remains open. See the
+[runner prerequisites and evidence](MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance)
+and the
 [implementation contract and evidence](MULTISOURCE_POLICY_SUPPORT.md#policy-declared-sources-and-durable-default-on-controls-2026-10-24).
 
 Expired lookup identities are indeterminate even if another identity on the

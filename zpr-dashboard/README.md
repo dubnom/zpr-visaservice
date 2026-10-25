@@ -91,6 +91,15 @@ association; issuer-qualified active subject-link delivery remains a separate
 milestone. Everything here is local implementation/fixture evidence, not a
 deployment or M1 acceptance.
 
+The opt-in [source lifecycle runner](scripts/test-source-lifecycle.sh) now
+connects saved shared-ID JSON policy and signed compiler output to the real
+Rust VS REST consumer and a local mTLS provider/TLS LDAP fixture. It verifies
+allow/deny, durable disable and queued revocation across database/process
+restart, changed-data denial, outage handling and fresh recovery with Simulator
+unavailable. This is component/process acceptance with explicitly synthetic
+identities, not approved subject-link, full daemon/UI or gateway-delivery
+acceptance. See [prerequisites and exact boundaries](../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
+
 Subject-link authorization groundwork now accepts explicit `subject-link.read`,
 `subject-link.propose`, `subject-link.approve` and `subject-link.revoke`
 operator grants and maps the proposed operator routes to those permissions.
