@@ -167,6 +167,14 @@ evidence commit atomically. Registry-bound review methods check the exact stored
 authority/source pair and scope in the decision transaction, still requiring
 exact provider-subject validation and independent review. Historical retries
 remain historical; source edits cannot silently rewrite an approved proposal.
+An internal provider loader resolves the exact organization/source/version and
+provider reference from an explicitly selected protected JSON file, with
+independent LDAPS CA, base/bind DN and protected password references. The bound
+validator requests only `entryUUID`, requires one exact immutable subject, and
+fails closed on directory errors or ambiguous evidence. Live TLS LDAP fixture
+tests compose submission and independent approval with the real durable store,
+including source-disable fencing and historical approval retry after reopen.
+The loader is not wired to process startup or an environment variable.
 This does not yet enable service configuration, review HTTP/UI, active binding
 publication or VS enforcement, and does not synchronize the assertion-source
 file registry. Signed-snapshot format and timing/rollout remain approval gates.

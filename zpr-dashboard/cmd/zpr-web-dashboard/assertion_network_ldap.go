@@ -112,11 +112,15 @@ func readNetworkAssertionLDAP(ctx context.Context, address string, tlsConfig *tl
 }
 
 func searchNetworkAssertionLDAP(ctx context.Context, address string, tlsConfig *tls.Config, scope assertionSourceScope, filter string, attributes []string, limit int) (*ldap.SearchResult, error) {
-	unavailable := errors.New("Trusted LDAP source read failed")
 	password, err := assertionLDAPCredential(scope.BindPasswordFile)
 	if err != nil {
 		return nil, err
 	}
+	return searchNetworkAssertionLDAPWithPassword(ctx, address, tlsConfig, scope, password, filter, attributes, limit)
+}
+
+func searchNetworkAssertionLDAPWithPassword(ctx context.Context, address string, tlsConfig *tls.Config, scope assertionSourceScope, password, filter string, attributes []string, limit int) (*ldap.SearchResult, error) {
+	unavailable := errors.New("Trusted LDAP source read failed")
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	raw, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", address)

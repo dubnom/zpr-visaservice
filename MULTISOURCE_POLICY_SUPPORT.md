@@ -2277,13 +2277,61 @@ source registration alongside its existing BAS authority registration:
 This is internal production persistence code, not running service composition.
 No HTTP route, operator permission grant, registration file loader, active-link
 publication, source transport change or VS binding consumption is enabled.
-Provider references must be resolved to independently provisioned, version-bound
-configurations by future Control-Service composition. The required validator must
-check exact immutable subject presence and directory evidence; these store tests
-use a fixture validator and do not certify a deployed LDAP directory.
+Provider references now have the internal protected resolver described below;
+future Control-Service composition must explicitly select its configuration and
+preserve version-bound transport intent. Registry-only store tests use a fixture
+validator; the additional live TLS directory tests below exercise the real
+resolver without certifying a deployed LDAP directory.
 The registration does not automatically synchronize or replace the existing
 assertion-source file registry or the policy-owned runtime-source toggle.
 No registry-file/SQLite atomicity or HA guarantee is claimed.
+
+#### Implemented: protected exact-subject provider resolution
+
+`loadSubjectLinkProviders` is an internal command-local loader, not a running
+service configuration switch. It requires an explicit absolute path to a
+private protected JSON file, at most 64 KiB, with exactly `version: 1` and
+`providers` (1-64 mappings). Each mapping requires all nine canonically named
+fields: `organization_id`, `source_id`, `source_version`, `provider_id`, `url`,
+`ca_file`, `base_dn`, `bind_dn`, and `bind_password_file`. Unknown/duplicate
+fields, trailing data, null fields, noncanonical versions, duplicate
+organization/source/version mappings and plaintext LDAP are rejected.
+
+The resolver matches the exact enabled registry capture and provider reference;
+it does not discover identities, create registrations or reuse Simulator
+configuration. CA and password references must be absolute protected files.
+The explicit CA pool replaces system-root trust for this provider. Passwords
+are read through the protected bounded file reader on each lookup, so credential
+rotation is possible without reopening unsafe paths; symlinks and nonprivate
+password files are rejected. Transport identity/configuration is captured when
+the resolver is constructed, not hot-reloaded under an existing registration.
+
+The callback requests only `entryUUID` with an exact escaped canonical nonzero
+lowercase UUID filter, subtree search under the configured base, alias
+dereferencing disabled and size limit two. The shared bounded, cancellable LDAP
+transport retains TLS hostname verification, bind/search deadlines, referral
+rejection and returned-DN scope checks. Exactly one entry, one `entryUUID`
+attribute and one matching value are required. A same-label/different-UUID
+record, missing or ambiguous evidence, transport error or failed bind cannot
+authorize submission or approval. This is read-only subject-presence evidence,
+not enrichment, authenticated root admission or certification of directory ACLs.
+
+Live TLS LDAP protocol fixtures verify exact bind/filter/attribute/limit
+requests, failure recovery, duplicate/missing/wrong UUID evidence, foreign DN
+scope, credential rotation, cancellation, unrelated CA rejection and protected
+credential replacement. Composition tests use actual durable authority/source
+registrations and a coherent store capture: failed presence checks do not consume
+the semantic retry key, independent approval checks the directory, source
+disable fences a new approval before LDAP, and an identical historical approval
+retry after database reopen does not query the directory again.
+
+No review route/UI, startup loader, permission grant, active-link publication,
+snapshot delivery or VS enforcement is enabled. Future HTTP composition must
+authorize every attempt before receipt access and defer current-provider checks
+until after the historical-receipt lookup; a directory outage must not prevent
+retrieving already committed historical evidence. Production directory
+uniqueness/ACL provisioning, signed snapshot contract and timing/rollout decisions
+remain open gates.
 
 #### Verification and next gates
 

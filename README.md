@@ -184,8 +184,13 @@ reviewers and no strict-mode legacy fallback. Its protected review store now
 has versioned source registrations with immutable audit evidence and coherent
 authority/source capture. Registry-bound submission/approval atomically check
 versions and enrichment scope while retaining mandatory exact-subject validation
-and historical retry semantics. These are internal persistence APIs, not enabled
-review endpoints, active links or VS enforcement. Snapshot format, timing bounds
+and historical retry semantics. An internal protected provider loader now binds
+the exact organization/source/version/provider reference to independently
+provisioned LDAPS trust and credentials. Its read-only validator requires one
+exact canonical `entryUUID`, and live TLS fixture tests compose it with durable
+proposal/independent approval and historical retries after database reopen.
+These are internal APIs, not enabled review endpoints, active links or VS
+enforcement. Snapshot format, timing bounds
 and rollout still require approval. See
 [current implementation and gates](MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 
