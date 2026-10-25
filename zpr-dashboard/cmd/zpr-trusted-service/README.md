@@ -144,8 +144,11 @@ root are rejected. The VS runs production components in test processes, not
 the full daemon or gateway transport. Lifecycle controls/readback also traverse
 the actual Control-Service bridge and production Admin transport, with
 server-owned credentials and explicit upstream-credential/trust failure recovery.
-Its inbound loopback HTTP fixture is not production Control-Service mTLS or
-operator authorization. See
+Its inbound CA-signed HTTPS fixture now applies real OIDC session, permission,
+organization and same-origin/CSRF authorization, including logout rejection.
+OIDC uses a signed-token fixture with actual TLS token/JWKS exchange, not a
+production IdP or browser login. This is not deployed Control-Service mTLS
+or full Control Room proxy acceptance. See
 [prerequisites, reproduction and evidence boundaries](../../../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
 
 ### Optional source validity bound

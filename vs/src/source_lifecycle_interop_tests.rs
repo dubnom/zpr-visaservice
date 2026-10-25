@@ -188,13 +188,23 @@ impl AdminClient {
         );
         headers.insert(
             reqwest::header::COOKIE,
-            "browser-fixture=not-an-admin-credential".parse().unwrap(),
+            required("ZPR_TEST_SOURCE_OPERATOR_COOKIE").parse().unwrap(),
         );
+        headers.insert(
+            "X-ZPR-CSRF",
+            required("ZPR_TEST_SOURCE_OPERATOR_CSRF").parse().unwrap(),
+        );
+        headers.insert(reqwest::header::ORIGIN, base.parse().unwrap());
         headers.insert(
             reqwest::header::AUTHORIZATION,
             "Bearer not-an-admin-credential".parse().unwrap(),
         );
         let client = reqwest::Client::builder()
+            .tls_certs_only([reqwest::Certificate::from_pem(
+                required("ZPR_TEST_SOURCE_BRIDGE_CA").as_bytes(),
+            )
+            .unwrap()])
+            .https_only(true)
             .default_headers(headers)
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
@@ -320,6 +330,9 @@ impl AdminClient {
         assert_eq!(bridge.read().await, before);
         println!(
             "SOURCE_LIFECYCLE control-bridge: real Admin TLS transport, server-owned credentials, inventory/readback, explicit credential/CA failures and strict mutations passed"
+        );
+        println!(
+            "SOURCE_LIFECYCLE operator-auth: HTTPS ingress with verified OIDC writer session, permissions, organization and same-origin CSRF; anonymous/reader/foreign/forged mutations denied"
         );
         bridge
     }

@@ -103,10 +103,15 @@ Lifecycle mutations/readback now also traverse the real Control-Service bridge
 and production Admin client transport with server-owned credentials. Invalid
 upstream credentials/CA trust and read-only mutation failures are explicit;
 correct configuration recovers without changing stored state. Browser-provided
-credentials cannot select the Admin key. The bridge's test ingress uses a
-token-gated loopback HTTP fixture, not production mTLS or named-user authorization.
+credentials cannot select the Admin key. The bridge's test ingress now uses
+CA-signed HTTPS and real OIDC-derived operator sessions with production API
+permission, organization and same-origin/CSRF authorization. Anonymous,
+read-only mutation, foreign-organization, malformed CSRF/origin and logged-out
+requests never reach the bridge. OIDC tokens/JWKS/PKCE come from an isolated
+TLS identity-provider fixture; login/callback handlers are driven without a
+browser. This is not the deployed Control-Service mTLS listener or Room proxy.
 This is component/process acceptance with explicitly synthetic identities,
-not approved subject-link, full daemon/Control-Service ingress/UI or gateway-delivery
+not approved subject-link, full daemon/deployed ingress/UI or gateway-delivery
 acceptance. See [prerequisites and exact boundaries](../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
 
 Subject-link authorization groundwork now accepts explicit `subject-link.read`,

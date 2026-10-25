@@ -139,7 +139,11 @@ credentials/trust fail explicitly and correct configuration recovers.
 This uses
 synthetic actor identities inside test processes, not the full daemon/node
 authentication/Control-Service ingress/Control Room flow. The bridge's inbound
-test listener is token-gated loopback HTTP, not production operator authentication.
+test listener now uses CA-signed HTTPS and real OIDC-derived operator sessions
+with production permission, organization and same-origin CSRF checks, including
+logged-out-session rejection. OIDC uses an isolated signed-token provider and
+handler-driven login/callback requests, not a browser or production IdP. This
+does not test the deployed Control-Service mTLS ingress or Control Room proxy.
 It does not activate subject links, provision production transport/credentials,
 prove gateway acknowledgement or establish deployed-directory acceptance.
 Final envelope syntax remains open. See the

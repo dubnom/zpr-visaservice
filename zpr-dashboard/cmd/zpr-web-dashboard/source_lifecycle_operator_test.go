@@ -1,0 +1,252 @@
+package main
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/go-jose/go-jose/v4"
+	"neboagency.com/zpr-dashborad/internal/controlroom"
+	"neboagency.com/zpr-dashborad/internal/operatorauth"
+)
+
+type sourceOperatorSession struct {
+	cookie *http.Cookie
+	csrf   string
+}
+
+func TestSourceLifecycleOperatorAuthorization(t *testing.T) {
+	server := httptest.NewUnstartedServer(nil)
+	origin := "https://" + server.Listener.Addr().String()
+	auth, sessions := sourceLifecycleOperator(t, origin)
+	var forwarded atomic.Int64
+	server.Config.Handler = controlroom.AuthorizeAPI(auth, "fixture-production", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		forwarded.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}), writePolicyError)
+	server.StartTLS()
+	defer server.Close()
+	assertSourceOperatorDenials(t, server, "fixture-owner", sessions)
+	if forwarded.Load() != 0 {
+		t.Fatal("unauthorized operator request reached downstream")
+	}
+	for _, test := range []struct{ subject, method string }{
+		{"source-reader", "GET"}, {"source-writer", "PUT"},
+	} {
+		request, err := http.NewRequest(test.method, origin+"/api/trusted-sources/runtime/company/control", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		session := sessions[test.subject]
+		request.AddCookie(session.cookie)
+		request.Header.Set("Origin", origin)
+		request.Header.Set("X-ZPR-CSRF", session.csrf)
+		response, err := server.Client().Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusNoContent {
+			t.Fatalf("%s %s: %d", test.subject, test.method, response.StatusCode)
+		}
+	}
+	if forwarded.Load() != 2 {
+		t.Fatal("authorized reader/writer requests did not reach downstream")
+	}
+}
+
+func sourceLifecycleOperator(t *testing.T, origin string) (*operatorauth.Auth, map[string]sourceOperatorSession) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: key}, (&jose.SignerOptions{}).WithHeader("kid", "source-fixture"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type login struct{ subject, nonce, challenge string }
+	var mu sync.Mutex
+	codes := map[string]login{}
+	var provider *httptest.Server
+	provider = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			json.NewEncoder(w).Encode(map[string]any{
+				"issuer": provider.URL, "authorization_endpoint": provider.URL + "/authorize",
+				"token_endpoint": provider.URL + "/token", "jwks_uri": provider.URL + "/keys",
+				"id_token_signing_alg_values_supported": []string{"RS256"},
+			})
+		case "/keys":
+			json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "source-fixture", Algorithm: "RS256", Use: "sig"}}})
+		case "/token":
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "invalid token request", http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			flow, ok := codes[r.Form.Get("code")]
+			delete(codes, r.Form.Get("code"))
+			mu.Unlock()
+			challenge := sha256.Sum256([]byte(r.Form.Get("code_verifier")))
+			if !ok || base64.RawURLEncoding.EncodeToString(challenge[:]) != flow.challenge {
+				http.Error(w, "invalid code or PKCE", http.StatusBadRequest)
+				return
+			}
+			data, err := json.Marshal(map[string]any{
+				"iss": provider.URL, "sub": flow.subject, "aud": "source-control-room",
+				"nonce": flow.nonce, "iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix(),
+			})
+			if err != nil {
+				t.Error(err)
+				http.Error(w, "fixture claims unavailable", 500)
+				return
+			}
+			signed, err := signer.Sign(data)
+			if err != nil {
+				t.Error(err)
+				http.Error(w, "fixture signing unavailable", 500)
+				return
+			}
+			token, err := signed.CompactSerialize()
+			if err != nil {
+				t.Error(err)
+				http.Error(w, "fixture token unavailable", 500)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"access_token": "fixture-only", "token_type": "Bearer", "id_token": token})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(provider.Close)
+	grants := []operatorauth.Grant{
+		{Issuer: provider.URL, Subject: "source-writer", Organizations: []string{"fixture-production"}, Permissions: []string{"trusted-source.read", "trusted-source.control"}},
+		{Issuer: provider.URL, Subject: "source-reader", Organizations: []string{"fixture-production"}, Permissions: []string{"trusted-source.read"}},
+		{Issuer: provider.URL, Subject: "foreign-writer", Organizations: []string{"foreign-fixture"}, Permissions: []string{"trusted-source.read", "trusted-source.control"}},
+		{Issuer: provider.URL, Subject: "logged-out-writer", Organizations: []string{"fixture-production"}, Permissions: []string{"trusted-source.read", "trusted-source.control"}},
+	}
+	auth, err := operatorauth.NewWithCertificateAuthorities(t.Context(), operatorauth.Config{
+		Version: 1, Issuer: provider.URL, ClientID: "source-control-room", RedirectURL: origin + "/auth/operator/callback",
+		SessionLifetimeSeconds: 600, Grants: grants,
+	}, "ephemeral-fixture-client-secret", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: provider.Certificate().Raw}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(auth.Close)
+	sessions := map[string]sourceOperatorSession{}
+	for _, grant := range grants {
+		start := httptest.NewRecorder()
+		request := httptest.NewRequest("POST", origin+"/auth/operator/login", nil)
+		request.Header.Set("Origin", origin)
+		auth.ServeHTTP(start, request)
+		if start.Code != http.StatusSeeOther {
+			t.Fatalf("OIDC login: %d %s", start.Code, start.Body)
+		}
+		location, err := url.Parse(start.Header().Get("Location"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if location.Query().Get("code_challenge_method") != "S256" {
+			t.Fatal("OIDC login omitted PKCE")
+		}
+		code := grant.Subject + "-code"
+		mu.Lock()
+		codes[code] = login{grant.Subject, location.Query().Get("nonce"), location.Query().Get("code_challenge")}
+		mu.Unlock()
+		callback := httptest.NewRequest("GET", origin+"/auth/operator/callback?state="+url.QueryEscape(location.Query().Get("state"))+"&code="+code, nil)
+		for _, cookie := range start.Result().Cookies() {
+			callback.AddCookie(cookie)
+		}
+		completed := httptest.NewRecorder()
+		auth.ServeHTTP(completed, callback)
+		if completed.Code != http.StatusSeeOther || completed.Header().Get("Location") != "/" {
+			t.Fatalf("OIDC callback: %d %s", completed.Code, completed.Header().Get("Location"))
+		}
+		read := httptest.NewRequest("GET", origin+"/auth/operator/session", nil)
+		read.Header.Set("Origin", origin)
+		for _, cookie := range completed.Result().Cookies() {
+			if cookie.Value != "" && cookie.MaxAge > 0 {
+				if !cookie.Secure || !cookie.HttpOnly {
+					t.Fatal("unsafe operator session cookie")
+				}
+				read.AddCookie(cookie)
+			}
+		}
+		identity, csrf, err := auth.Session(read)
+		if err != nil || identity.Subject != grant.Subject || csrf == "" {
+			t.Fatalf("verified OIDC session: %+v %v", identity, err)
+		}
+		cookies := read.Cookies()
+		if len(cookies) != 1 {
+			t.Fatal("expected one operator session cookie")
+		}
+		sessions[grant.Subject] = sourceOperatorSession{cookies[0], csrf}
+	}
+	logout := httptest.NewRequest("POST", origin+"/auth/operator/logout", nil)
+	logout.Header.Set("Origin", origin)
+	logout.Header.Set("X-ZPR-CSRF", sessions["logged-out-writer"].csrf)
+	logout.AddCookie(sessions["logged-out-writer"].cookie)
+	loggedOut := httptest.NewRecorder()
+	auth.ServeHTTP(loggedOut, logout)
+	if loggedOut.Code != http.StatusNoContent {
+		t.Fatalf("operator logout: %d %s", loggedOut.Code, loggedOut.Body)
+	}
+	return auth, sessions
+}
+
+func assertSourceOperatorDenials(t *testing.T, server *httptest.Server, secret string, sessions map[string]sourceOperatorSession) {
+	t.Helper()
+	for _, test := range []struct {
+		name, subject, origin, csrf, method, path string
+	}{
+		{name: "anonymous", origin: server.URL, method: "PUT"},
+		{name: "anonymous read", origin: server.URL, method: "GET"},
+		{name: "reader cannot toggle", subject: "source-reader", origin: server.URL, method: "PUT", csrf: "valid"},
+		{name: "foreign organization", subject: "foreign-writer", origin: server.URL, method: "GET", path: "?organization=foreign-fixture"},
+		{name: "foreign writer", subject: "foreign-writer", origin: server.URL, method: "PUT", csrf: "valid"},
+		{name: "missing csrf", subject: "source-writer", origin: server.URL, method: "PUT"},
+		{name: "incorrect csrf", subject: "source-writer", origin: server.URL, method: "PUT", csrf: "wrong"},
+		{name: "cross origin", subject: "source-writer", origin: "https://foreign.example", method: "PUT", csrf: "valid"},
+		{name: "missing origin", subject: "source-writer", method: "PUT", csrf: "valid"},
+		{name: "logged out", subject: "logged-out-writer", origin: server.URL, method: "PUT", csrf: "valid"},
+	} {
+		request, err := http.NewRequest(test.method, server.URL+"/api/trusted-sources/runtime/company/control"+test.path, strings.NewReader(`{"enabled":false}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("X-Source-Fixture", secret)
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Origin", test.origin)
+		request.Header.Set("X-Actor", "source-writer")
+		request.Header.Set("Authorization", "Bearer forged-operator")
+		if session, ok := sessions[test.subject]; ok {
+			request.AddCookie(session.cookie)
+			if test.csrf == "valid" {
+				request.Header.Set("X-ZPR-CSRF", session.csrf)
+			} else {
+				request.Header.Set("X-ZPR-CSRF", test.csrf)
+			}
+		}
+		response, err := server.Client().Do(request)
+		if err != nil {
+			t.Fatalf("%s: %v", test.name, err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusForbidden || response.Header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s: status=%d", test.name, response.StatusCode)
+		}
+	}
+}

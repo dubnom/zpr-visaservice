@@ -30,7 +30,17 @@ the independent Go provider and durable VS state in one automated chain:
    mutation, unknown sources return 404, and responses are `no-store`.
    Browser-supplied API keys/cookies/bearer values cannot select or replace the
    server-owned Admin key; no Admin key appears in returned JSON.
-5. Disable the source through the bridge's HTTP route, crossing real Admin
+5. Put that bridge behind CA-verified HTTPS and the real Control Room API
+   authorization wrapper. The existing operator-auth implementation obtains
+   fixture sessions through OIDC discovery, PKCE token exchange, signed RS256
+   ID-token/JWKS verification and nonce binding. Explicit fixture grants separate
+   a reader, a writer and a foreign-organization writer. Writer requests carry
+   a secure session cookie, same-origin header and session CSRF proof.
+   Anonymous reads/writes, read-only mutations, foreign-organization requests
+   (including a forged organization query), missing/wrong CSRF, missing/foreign
+   origin, forged identity headers and logged-out sessions must return 403 with
+   `no-store` and never reach the bridge. Logout uses the real session revocation.
+6. Disable the source through the bridge's HTTPS route, crossing real Admin
    HTTPS with the server-owned write key, and require a 202 response
    with declared/effective/desired state, pending work and a fresh UUID revision.
    Deny new requests and let the actual event worker queue the existing visa
@@ -40,12 +50,12 @@ the independent Go provider and durable VS state in one automated chain:
    then start a separate VS test process. Assert that the exact signed artifact,
    off revision, pending work, actor docking and revoke queues survive, including
    authenticated HTTPS control readback from the new process.
-6. Re-enable through the bridge against changed LDAP mail, wait for the actual event
+7. Re-enable through the bridge against changed LDAP mail, wait for the actual event
    worker's persisted completion, and prove a compiled-policy denial rather
    than stale permission or a missing-route/docking failure. A further process
    with LDAP bind failure must deny, report failed source health rather than
    successful empty absence, and issue no new visa.
-7. Restore LDAP data and start another process. Re-enable through the bridge, wait for
+8. Restore LDAP data and start another process. Re-enable through the bridge, wait for
    persisted worker completion, and verify fresh lookup permits a new visa
    with a different ID; the old queued revoke remains. Assert exactly two
    directory searches per successful phase and none during bind failure; the
@@ -81,10 +91,14 @@ Redis AOF, production Admin TLS/router/authentication, real event worker,
 manager/evaluator/visa-worker and OS-process boundaries. The Admin listener
 shares the production connection-serving loop, not a substitute HTTP router.
 They are not full Visa Service daemon/startup, node authentication, Control-Service
-ingress/deployment or Control Room browser acceptance. The bridge's inbound
-listener is private loopback HTTP with a random test-owner token, not the
-production Control-Service mTLS listener or named-user/organization/CSRF
-authorization. A test-only bootstrap route supplies each ephemeral Admin
+deployment or Control Room browser acceptance. The bridge's inbound
+listener is private CA-signed loopback HTTPS with real named-user/organization/
+CSRF authorization and an additional random test-owner token. It is not the
+production Control-Service mTLS listener or a deployed Control Room reverse
+proxy. OIDC login/callback requests are driven through the real auth handler
+using HTTP test requests, with actual TLS discovery/token/JWKS traffic to a local
+identity-provider fixture; this is not a real browser login or production IdP.
+A test-only bootstrap route supplies each ephemeral Admin
 endpoint, key and CA; it is not source registration or a production configuration
 API. The actual production bridge and Admin transport handle runtime requests.
 Actor authority and UUID-valued device CNs
@@ -105,6 +119,9 @@ Validation for this acceptance increment:
   explicitly by the acceptance runner. Rust formatting checks pass.
 - Provider and policy-document race suites, Go vet, changed-file Go formatting
   and POSIX shell syntax checks pass.
+- Operator-auth and Control Room race suites pass. An ordinary, non-opt-in
+  OIDC authorization regression also proves that scoped readers and
+  CSRF-authorized writers pass while rejected requests never reach downstream.
 - Required full `make test`: **11 operator-stack checks pass**, with exactly
   the same **13 pre-existing dashboard fixture/environment failures**. No
   unrelated failing tests were changed; the complete Go suite is not green.
@@ -115,6 +132,9 @@ Validation for this acceptance increment:
   or production configuration changed.
 - The bridge increment adds only acceptance/fixture code and documentation;
   no new production endpoint, credentials or permission grants are installed.
+- The operator-authorization increment is also test/fixture-only: fixture
+  users, grants, signing material and sessions do not provision production
+  identities or change production login/session behavior.
 
 ## Operator controls, shared JSON documents and immutable LDAP provider
 
