@@ -335,6 +335,7 @@ fn retained_service_candidates_install_without_reserializing() {
         first_digest: String,
         second_digest: String,
         public_key: String,
+        key_id: String,
         organization: String,
         recipient: String,
         epoch: String,
@@ -350,7 +351,7 @@ fn retained_service_candidates_install_without_reserializing() {
         &export,
     );
     let c: Candidates = serde_json::from_slice(&std::fs::read(&export).unwrap()).unwrap();
-    let pins = HashMap::from([("fixture".into(), hex::decode(c.public_key).unwrap())]);
+    let pins = HashMap::from([(c.key_id, hex::decode(c.public_key).unwrap())]);
     let scope = Scope {
         organization: &c.organization,
         recipient: &c.recipient,

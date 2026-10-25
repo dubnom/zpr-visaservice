@@ -310,6 +310,17 @@ expiry. No HTTP route, browser control, production signing key or delivery worke
 calls this API. Expired intent retirement, candidate bytes, sequence/audit and
 retry reference commit together; errors roll them all back.
 
+The internal
+[signing gate](../MULTISOURCE_POLICY_SUPPORT.md#implemented-internal-current-candidate-signing-gate)
+(`SignSubjectLinkSnapshotOnce`) signs only the exact retained candidate that is
+still current. The stream sequence, expected digest, validity, binding expiry and
+complete registry must all match. The caller injects an Ed25519 `crypto.Signer`
+that must match the pinned key ID; the store never loads keys. Fences are
+rechecked after signing, one immutable envelope is retained per sequence and
+signing does not advance the stream. Exact retries return the historical
+envelope. No HTTP route, production key, delivery worker or enforcement path
+calls it.
+
 #### Subject-Link Review operator page
 
 Open `/subject-links.html` from **Configuration > Subject-Link Review** in

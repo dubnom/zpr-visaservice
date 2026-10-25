@@ -3,10 +3,7 @@ package changereview
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -447,7 +444,8 @@ func TestSubjectLinkCandidateExpiredIntentRetiresAtomically(t *testing.T) {
 	}
 }
 
-// Live Rust interop uses ephemeral test signing only, not a production signer.
+// Live Rust interop signs through the store gate with an ephemeral test key
+// only, not a production signer.
 func TestSubjectLinkCandidateInteropExport(t *testing.T) {
 	path := os.Getenv("ZPR_CANDIDATE_INTEROP_EXPORT")
 	if path == "" {
@@ -458,10 +456,23 @@ func TestSubjectLinkCandidateInteropExport(t *testing.T) {
 	if _, err := store.ChangeSubjectLinkPublicationOnce(ctx, promoteRequest(scope, review), actor, "promote", publicationCheck); err != nil {
 		t.Fatal(err)
 	}
+	pins, private := signingKey(t)
+	signGate := func(c SubjectLinkSnapshotCandidate, key string) string {
+		signed, err := store.SignSubjectLinkSnapshotOnce(ctx, signingRequest(c), pins, private, actor, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := subjectsnapshot.Verify(signed.Envelope, pins,
+			subjectsnapshot.Scope{Organization: scope.Organization, Recipient: scope.Recipient, Epoch: scope.Epoch}, uint64(time.Now().Unix())); err != nil {
+			t.Fatal(err)
+		}
+		return string(signed.Envelope)
+	}
 	first, err := store.CaptureSubjectLinkSnapshotOnce(ctx, candidateRequest(scope, "1"), actor, "capture")
 	if err != nil {
 		t.Fatal(err)
 	}
+	firstEnvelope := signGate(first, "sign-first")
 	revocation := SubjectLinkPublicationRequest{Scope: scope, Action: "revoke", ExpectedSequence: "2", ReviewID: review.ID, BindingVersion: "1", Reason: "Revoke captured intent"}
 	if _, err := store.ChangeSubjectLinkPublicationOnce(ctx, revocation, actor, "revoke", nil); err != nil {
 		t.Fatal(err)
@@ -470,27 +481,10 @@ func TestSubjectLinkCandidateInteropExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	public, private, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	envelope := func(c SubjectLinkSnapshotCandidate) string {
-		raw, err := json.Marshal(map[string]any{
-			"version": 1, "key_id": "fixture", "payload": base64.RawURLEncoding.EncodeToString(c.Payload),
-			"signature": base64.RawURLEncoding.EncodeToString(ed25519.Sign(private, append([]byte(subjectsnapshot.Domain), c.Payload...))),
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := subjectsnapshot.Verify(raw, map[string]ed25519.PublicKey{"fixture": public},
-			subjectsnapshot.Scope{Organization: scope.Organization, Recipient: scope.Recipient, Epoch: scope.Epoch}, uint64(time.Now().Unix())); err != nil {
-			t.Fatal(err)
-		}
-		return string(raw)
-	}
 	data, err := json.Marshal(map[string]any{
-		"first": envelope(first), "second": envelope(second), "first_digest": first.Digest, "second_digest": second.Digest,
-		"public_key": hex.EncodeToString(public), "organization": scope.Organization, "recipient": scope.Recipient, "epoch": scope.Epoch,
+		"first": firstEnvelope, "second": signGate(second, "sign-second"), "first_digest": first.Digest, "second_digest": second.Digest,
+		"public_key": hex.EncodeToString(pins["candidate-signer"]), "key_id": "candidate-signer",
+		"organization": scope.Organization, "recipient": scope.Recipient, "epoch": scope.Epoch,
 		"now": time.Now().Unix(), "binding_id": review.ID,
 	})
 	if err != nil {

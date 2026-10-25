@@ -2,11 +2,17 @@ package subjectsnapshot
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -392,6 +398,74 @@ func TestSignerAndUnauthenticatedState(t *testing.T) {
 	}
 	if _, err := Sign(p, "signer", private); err == nil {
 		t.Fatal("oversized record collection signed")
+	}
+}
+
+// lyingSigner advertises one key but signs with another.
+type lyingSigner struct {
+	public  ed25519.PublicKey
+	private ed25519.PrivateKey
+}
+
+func (s lyingSigner) Public() crypto.PublicKey { return s.public }
+func (s lyingSigner) Sign(r io.Reader, m []byte, o crypto.SignerOpts) ([]byte, error) {
+	return s.private.Sign(r, m, o)
+}
+
+func TestSignEncodedExactBytesAndSignerBoundary(t *testing.T) {
+	public, private := newKey(t)
+	scope := Scope{"org", "vs-1", "epoch-1"}
+	pins := map[string]ed25519.PublicKey{"signer": public}
+	raw, err := EncodePayload(fixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := SignEncoded(raw, "signer", private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := Verify(data, pins, scope, 1000)
+	hash := sha256.Sum256(raw)
+	if err != nil || verified.Digest() != hex.EncodeToString(hash[:]) {
+		t.Fatal("signed exact bytes did not verify", err)
+	}
+	var env envelope
+	if err := json.Unmarshal(data, &env); err != nil || env.Payload != base64.RawURLEncoding.EncodeToString(raw) {
+		t.Fatal("signed bytes were reserialized", err)
+	}
+	for name, payload := range map[string][]byte{
+		"whitespace": append([]byte(" "), raw...),
+		"trailing":   append(append([]byte{}, raw...), '\n'),
+		"reordered":  bytes.Replace(raw, []byte(`{"version":1,"organization_id":"org"`), []byte(`{"organization_id":"org","version":1`), 1),
+		"escaped":    bytes.Replace(raw, []byte(`"org"`), []byte(`"\u006frg"`), 1),
+		"unknown":    bytes.Replace(raw, []byte(`{"version":1`), []byte(`{"extra":1,"version":1`), 1),
+		"invalid":    bytes.Replace(raw, []byte(`"expires_at":"2000"`), []byte(`"expires_at":"999"`), 1),
+	} {
+		if bytes.Equal(payload, raw) {
+			t.Fatal("mutation did not apply", name)
+		}
+		if _, err := SignEncoded(payload, "signer", private); err == nil {
+			t.Fatal("noncanonical payload signed", name)
+		}
+	}
+	ecdsaKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nilKey *ed25519.PrivateKey
+	for name, signer := range map[string]crypto.Signer{
+		"nil": nil, "short": private[:12], "empty": ed25519.PrivateKey(nil), "nil-pointer": nilKey, "ecdsa": ecdsaKey,
+	} {
+		if _, err := SignEncoded(raw, "signer", signer); !errors.Is(err, ErrInvalid) {
+			t.Fatal("unusable signer accepted", name, err)
+		}
+	}
+	_, other := newKey(t)
+	if _, err := SignEncoded(raw, "signer", lyingSigner{public, other}); !errors.Is(err, ErrTrust) {
+		t.Fatal("signature from a different key accepted", err)
+	}
+	if _, err := SignEncoded(raw, "bad id", private); !errors.Is(err, ErrInvalid) {
+		t.Fatal("invalid key id accepted", err)
 	}
 }
 

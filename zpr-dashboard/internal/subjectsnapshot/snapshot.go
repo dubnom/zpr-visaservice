@@ -4,7 +4,9 @@ package subjectsnapshot
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -345,8 +347,54 @@ func Sign(p Payload, keyID string, key ed25519.PrivateKey) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	signature := ed25519.Sign(key, append([]byte(Domain), data...))
-	return json.Marshal(envelope{1, keyID, base64.RawURLEncoding.EncodeToString(data), base64.RawURLEncoding.EncodeToString(signature)})
+	return SignEncoded(data, keyID, key)
+}
+
+// usableSigner rejects nil and short Ed25519 keys whose Public method panics.
+func usableSigner(signer crypto.Signer) bool {
+	if signer == nil {
+		return false
+	}
+	if key, ok := signer.(ed25519.PrivateKey); ok {
+		return len(key) == ed25519.PrivateKeySize
+	}
+	if key, ok := signer.(*ed25519.PrivateKey); ok {
+		return key != nil && len(*key) == ed25519.PrivateKeySize
+	}
+	return true
+}
+
+// UsableSigner reports whether signer can safely be asked for its public key.
+func UsableSigner(signer crypto.Signer) bool { return usableSigner(signer) }
+
+// SignEncoded signs exact canonical payload bytes without reserialization.
+// The signer is caller-provided; this package neither loads nor trusts keys.
+func SignEncoded(payload []byte, keyID string, signer crypto.Signer) ([]byte, error) {
+	if !idPattern.MatchString(keyID) || !usableSigner(signer) || len(payload) > MaxPayload {
+		return nil, ErrInvalid
+	}
+	public, ok := signer.Public().(ed25519.PublicKey)
+	if !ok || len(public) != ed25519.PublicKeySize {
+		return nil, ErrInvalid
+	}
+	var p Payload
+	if err := decode(payload, payloadShape, &p); err != nil || p.validate() != nil {
+		return nil, ErrInvalid
+	}
+	canonical, err := EncodePayload(p)
+	if err != nil || !bytes.Equal(canonical, payload) {
+		return nil, ErrInvalid
+	}
+	message := append([]byte(Domain), payload...)
+	signature, err := signer.Sign(rand.Reader, message, crypto.Hash(0))
+	if err != nil || len(signature) != ed25519.SignatureSize || !ed25519.Verify(public, message, signature) {
+		return nil, ErrTrust
+	}
+	data, err := json.Marshal(envelope{1, keyID, base64.RawURLEncoding.EncodeToString(payload), base64.RawURLEncoding.EncodeToString(signature)})
+	if err != nil || len(data) > MaxEnvelope {
+		return nil, ErrInvalid
+	}
+	return data, nil
 }
 
 // Verify uses only independently provisioned pins and an explicit current time.

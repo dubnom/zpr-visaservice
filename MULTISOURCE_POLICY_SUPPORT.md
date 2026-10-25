@@ -2913,6 +2913,87 @@ failures; it is not fully green. Rust validation temporarily used the existing
 local `zpr-common` checkout at the missing worktree sibling path; the temporary
 link was removed afterward. No dependency manifests changed.
 
+#### Implemented: internal current-candidate signing gate
+
+The operator approved the next bounded step: an internal gate that signs only
+the exact retained **current** candidate. `SignSubjectLinkSnapshotOnce` in the
+Control-Service review store takes explicit scope, candidate sequence, the
+expected candidate digest, key ID, reason, actor and retry key, plus a
+caller-injected `crypto.Signer` and pinned Ed25519 public keys. The signer must
+be Ed25519 and its public key must equal the pin for the requested key ID. The
+store never loads, generates, persists or selects keys. No HTTP route, browser
+control, production key loader, HSM integration, delivery worker, VS daemon or
+enforcement caller is connected. Every caller must independently authorize the
+principal on each attempt, including historical retries.
+
+`subjectsnapshot.SignEncoded` signs supplied payload bytes **without
+reserialization**. It strictly decodes them, validates v1 and requires that
+canonical `EncodePayload` output is byte-identical; whitespace, reordering,
+escaping, unknown fields and invalid content are refused. It rejects nil,
+short or non-Ed25519 signers, verifies the produced signature against the
+signer's public key and enforces the envelope bound. `Sign` delegates to it.
+
+Signing is **fenced against currentness**, not just candidate existence:
+
+- the recipient stream sequence still equals the candidate sequence, so any
+  later promotion, revocation, registry invalidation or capture makes it stale;
+- the retained candidate exists and its digest equals the caller's expected
+  digest;
+- `issued_at <= now < expires_at`, and no included binding has reached its
+  rounded expiry (the operator must recapture, which retires it);
+- the complete current organization registry is byte-equal to the candidate's
+  authorities and sources. Unreferenced registry edits do not advance recipient
+  streams, so without this check a candidate missing a new or changed record
+  could be signed as complete;
+- live intents still pass the exact registry revision/key checks; and
+- no envelope was already retained for that sequence.
+
+The single-connection store serializes transactions. The gate checks these
+fences, releases the transaction, invokes the signer outside the database, then
+re-runs every fence in a new transaction, verifies the envelope with the pins and
+scope, and commits the envelope and receipt atomically. A state change while the
+signer runs therefore conflicts and retains nothing. At most one envelope per
+organization/recipient/epoch/sequence is retained. Signing does **not** advance
+the stream, so the signed candidate stays current until real state changes.
+
+Signed envelopes and principal-bound retry receipts are immutable
+(update/delete triggers). The receipt fingerprint covers the full request,
+including key ID, digest and reason. An identical retry returns the original
+envelope **before** pins, signer or currentness checks, even after expiry,
+revocation or reopen. It is historical evidence, not a renewed or deliverable
+current snapshot. Changed input under the same principal/key conflicts;
+another principal cannot read the receipt and conflicts on the signed sequence.
+`GetSubjectLinkSignedSnapshot` is historical readback by exact scope/sequence;
+it rechecks the envelope's key ID, payload bytes and digest against the retained
+candidate. Signed existence is not delivery, acknowledgement, VS installation
+or enforcement evidence.
+
+Tests cover current signing/verification, unchanged stream sequence, exact
+readback, duplicate and cross-principal attempts, and historical retry after
+revocation/reopen. They also cover changed retry input, stale candidates after
+revocation/recapture, wrong digest, non-candidate sequences, unreferenced
+registry edits, expired candidate and expired binding, invalid inputs, foreign
+scopes, anonymous/unidempotent calls, and missing, wrong, short or unpinned
+keys and signer types. Injected insert failures for the envelope and receipt
+roll back. Further tests cover immutable triggers, revocation and registry
+edits **while the signer runs**, three competing keys with one winner, and
+identical concurrent retries sharing one envelope. Mutation checks confirmed
+that removing the registry, binding-expiry or post-sign recheck fence fails a
+test. The live Rust interop exporter now obtains both envelopes **through this
+gate** with an ephemeral test key: sign 2, revoke, recapture, sign 4. The Rust
+test reads the exported key ID instead of a fixed pin name.
+
+Validation: targeted Go race tests and vet pass for `internal/changereview` and
+`internal/subjectsnapshot`. Signing, `SignEncoded`, competing capture and
+registry-edit race tests pass ten consecutive race-enabled runs. Changed-file Go
+formatting passes. `cargo test --locked --offline` passes 1,008 tests (23
+ignored), including the gate-signed retained-candidate interop test, and
+`cargo fmt --check` passes. Dashboard `make test` passes all 11 operator-stack
+checks and retains exactly the known 13 Go baseline failures; it is not fully
+green. Rust validation again used a temporary `zpr-common` link that was removed
+afterward. No dependency manifests changed. Production key custody, signer
+provisioning, delivery and M1 closure remain open.
+
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 
 Status: **binding contract design only; not approved or implemented**. The M1 reconciliation

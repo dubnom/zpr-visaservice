@@ -244,6 +244,10 @@ explicit issue/expiry, a newly allocated sequence and historical retry evidence.
 It fails rather than omitting wire-incompatible or oversized registry content.
 Live test-only signing verifies those retained bytes through the Rust checkpoint
 and restart path; no production signer or delivery path is connected.
+An internal signing gate now signs only the exact retained current candidate with
+a caller-injected, pinned Ed25519 signer. It refuses stale, expired, digest-
+mismatched or registry-incomplete candidates, rechecks after signing and retains
+one immutable envelope per sequence. It has no key loader, route or delivery.
 
 Expired lookup identities are indeterminate even if another identity on the
 actor is still live. They cannot fetch fresh enrichment or be silently dropped
