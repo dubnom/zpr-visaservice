@@ -98,6 +98,44 @@ This launcher does not launch or relay Simulator. Simulator needs its own
 listener, certificate, issuer/callback and deployment routing on its actual
 host. Exposing Room never requires Simulator availability.
 
+## Optional loopback Visa Service
+
+Without this option, Control Room reports the Visa Service as unavailable. For
+a **new** evaluation, `-visa-service` also runs a native Visa Service (VS) and a
+private Valkey, so that Control Room shows live VS actors, services and visas
+through Control-Service:
+
+```sh
+(cd .. && cargo build -p vs)          # once; any built vs executable works
+sh packaging/evaluation/bootstrap.sh \
+  -state "$PWD/.zpr-evaluation-vs" \
+  -visa-service -vs-binary "$(cd .. && pwd)/target/debug/vs"
+```
+
+- **Loopback only:** VS admin `18182`, VSAPI `15002` and Valkey `16379` bind
+  `127.0.0.1`. Override them with `-vs-admin-port`, `-vs-api-port` and
+  `-valkey-port`. The ports and the option are frozen with the install, like the
+  other ports. Adding the option to an existing install requires a new state
+  directory.
+- **Executables are not frozen.** `-vs-binary` (absolute path) and
+  `-valkey-server` (default `valkey-server` on `PATH`) may be upgraded between
+  starts. Both are checked before ports are reserved or containers start.
+- **Generated, protected `0600` files:** `vs.toml`, `valkey.conf`,
+  `valkey.secret`, the admin API key `vs-admin-api.key`, its hash-only
+  `vs-admin-keys.toml`, and `vs-policy.bin2`. The VS admin API reuses this
+  install's server certificate. Only Control-Service receives `ZPR_ADMIN_*`;
+  Control Room still reaches the VS through Control-Service.
+- **Policy:** the bundled policy is `integration-test/pregen/zpt-test.bin2`
+  (test-signed). A test guards it against drift. It is installed into Valkey
+  on the first healthy start and recorded in `vs-policy.installed`. Later starts
+  keep the stored policy, including any policy applied through Control Room.
+  Valkey persists with an append-only file under `valkey-state/`.
+- **Not enforcing:** there are no nodes, adapters or endpoints, so no traffic is
+  admitted or denied. Policy-Service is still not configured.
+- **Supervision:** the Valkey and VS logs are `logs/valkey.log` and
+  `logs/visa-service.log`. If either process exits, the install stops, like any
+  other operator process.
+
 ## Identity, health and lifecycle
 
 Every install receives a random install/Compose-project ID, its own CA and

@@ -40,6 +40,17 @@ type evaluationConfig struct {
 	ServicePort int    `json:"service_port"`
 	LDAPPort    int    `json:"ldap_port"`
 	LogPort     int    `json:"logging_port"`
+	// Optional loopback Visa Service; zero/false values keep earlier inventories valid.
+	VisaService bool `json:"visa_service,omitempty"`
+	VSAdminPort int  `json:"vs_admin_port,omitempty"`
+	VSAPIPort   int  `json:"vs_api_port,omitempty"`
+	ValkeyPort  int  `json:"valkey_port,omitempty"`
+}
+
+// Runtime-only executables are not frozen: upgrading them keeps install identity.
+type evaluationRuntimeOptions struct {
+	VisaServiceBinary string
+	ValkeyServer      string
 }
 
 type evaluationInventory struct {
@@ -69,14 +80,35 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&config.ServicePort, "service-port", 18790, "loopback Control-Service mTLS port")
 	flags.IntVar(&config.LDAPPort, "ldap-port", 11636, "loopback starter LDAPS port")
 	flags.IntVar(&config.LogPort, "logging-port", 15080, "loopback OpenObserve HTTPS port")
+	flags.BoolVar(&config.VisaService, "visa-service", false, "also run a loopback Visa Service (bundled evaluation policy, private Valkey); not enforcing")
+	flags.IntVar(&config.VSAdminPort, "vs-admin-port", 18182, "with -visa-service: loopback Visa Service admin HTTPS port")
+	flags.IntVar(&config.VSAPIPort, "vs-api-port", 15002, "with -visa-service: loopback Visa Service VSAPI port")
+	flags.IntVar(&config.ValkeyPort, "valkey-port", 16379, "with -visa-service: loopback private Valkey port")
+	runtime := evaluationRuntimeOptions{}
+	flags.StringVar(&runtime.VisaServiceBinary, "vs-binary", "", "with -visa-service: absolute path of a built vs executable (cargo build -p vs)")
+	flags.StringVar(&runtime.ValkeyServer, "valkey-server", "valkey-server", "with -visa-service: valkey-server executable name or absolute path")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
 		return 2
 	}
+	visaOnly := false
+	flags.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "vs-admin-port", "vs-api-port", "valkey-port", "vs-binary", "valkey-server":
+			visaOnly = true
+		}
+	})
+	if !config.VisaService {
+		if visaOnly {
+			fmt.Fprintln(stderr, "Visa Service port/executable flags require -visa-service")
+			return 2
+		}
+		config.VSAdminPort, config.VSAPIPort, config.ValkeyPort = 0, 0, 0
+	}
 	if *state == "" || flags.NArg() != 0 {
-		fmt.Fprintln(stderr, "usage: zpr-lab-bootstrap -evaluation -state DIRECTORY [-render-only | -reset-admin [-password-file FILE]]")
+		fmt.Fprintln(stderr, "usage: zpr-lab-bootstrap -evaluation -state DIRECTORY [-visa-service -vs-binary FILE] [-render-only | -reset-admin [-password-file FILE]]")
 		return 2
 	}
 	if *resetAdmin {
@@ -114,7 +146,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "RENDER ONLY: no services started; protocol readiness NOT verified.")
 		return 0
 	}
-	if err := startEvaluation(absolute, inventory, stdout); err != nil {
+	if err := startEvaluation(absolute, inventory, runtime, stdout); err != nil {
 		fmt.Fprintf(stderr, "Evaluation bootstrap: %v\n", err)
 		return 1
 	}
@@ -138,13 +170,24 @@ func (config evaluationConfig) validate() error {
 		return errors.New("logging platform must be linux/amd64 or linux/arm64")
 	}
 	ports := map[int]bool{}
-	for _, port := range []int{config.OIDCPort, config.RoomPort, config.ServicePort, config.LDAPPort, config.LogPort} {
+	if !config.VisaService && (config.VSAdminPort != 0 || config.VSAPIPort != 0 || config.ValkeyPort != 0) {
+		return errors.New("Visa Service ports require -visa-service")
+	}
+	for _, port := range config.ports() {
 		if port < 1024 || port > 65535 || ports[port] {
 			return errors.New("evaluation ports must be distinct unprivileged TCP ports")
 		}
 		ports[port] = true
 	}
 	return nil
+}
+
+func (config evaluationConfig) ports() []int {
+	ports := []int{config.OIDCPort, config.RoomPort, config.ServicePort, config.LDAPPort, config.LogPort}
+	if config.VisaService {
+		ports = append(ports, config.VSAdminPort, config.VSAPIPort, config.ValkeyPort)
+	}
+	return ports
 }
 
 func (config evaluationConfig) browserHost() string {
@@ -203,7 +246,11 @@ func prepareEvaluation(output string, config evaluationConfig, now time.Time) (e
 		return empty, err
 	}
 	defer root.Close()
-	for _, name := range []string{"ldap-state", "logging-state", "oidc-state", "logs", "build"} {
+	dirs := []string{"ldap-state", "logging-state", "oidc-state", "logs", "build"}
+	if config.VisaService {
+		dirs = append(dirs, "valkey-state", "vs-trusted-services")
+	}
+	for _, name := range dirs {
 		if err := root.Mkdir(name, 0o700); err != nil {
 			return empty, err
 		}
@@ -282,6 +329,9 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 		}
 	}
 	required := []string{"ca.pem", "ca-key.pem", "server-chain.pem", "server-key.pem", "client-chain.pem", "client-key.pem", "ldap-admin.secret", "ldap-reader.secret", "logging-admin.secret", "openobserve.env", "slapd.conf", "directory.ldif", "serve-directory.sh", "compose.json", "dex.json", "operator-admin.secret", "oidc-room-client.secret", "EVALUATION.txt", "source-registration.json"}
+	if config.VisaService {
+		required = append(required, evaluationVisaFiles...)
+	}
 	if len(inventory.Files) != len(required) {
 		return inventory, errors.New("evaluation inventory is missing required files")
 	}
@@ -474,6 +524,12 @@ ZO_LOG_LEVEL=warn
 	files["EVALUATION.txt"] = []byte(evaluationBanner + "\nOpenObserve AGPL-3.0 accepted for evaluation; 7-day retention; admin-only loopback access.\nRegistration and lifecycle logging use ordinary production contracts. No policy enforcement or production install is claimed.\n")
 	if config.BrowserIP != "" {
 		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte("Browser HTTPS/OIDC explicitly enabled at "+config.BrowserIP+"; restrict access to intended clients. Localhost Room redirects to the canonical network origin.\n")...)
+	}
+	if config.VisaService {
+		if err := generateEvaluationVisa(files, state, inventory, now); err != nil {
+			return nil, inventory, err
+		}
+		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte("Loopback Visa Service with the bundled test-signed evaluation policy and private Valkey. No nodes, adapters or enforcement.\n")...)
 	}
 	registration := evaluationSourceRegistration(state, inventory)
 	data, err = json.MarshalIndent(registration, "", "  ")

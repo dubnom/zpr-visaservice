@@ -12,7 +12,7 @@ import (
 
 func (config evaluationConfig) listenAddresses() []string {
 	addresses := []string{}
-	for _, port := range []int{config.OIDCPort, config.RoomPort, config.ServicePort, config.LDAPPort, config.LogPort} {
+	for _, port := range config.ports() {
 		addresses = append(addresses, fmt.Sprintf("127.0.0.1:%d", port))
 	}
 	if config.BrowserIP != "" {

@@ -36,7 +36,7 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 	}
 	file := func(name string) string { return filepath.Join(state, name) }
 	if mode == "control-service" {
-		return append(env,
+		env = append(env,
 			"ZPR_TRUSTED_SOURCE_ORGANIZATION_ID=evaluation-"+inventory.InstallID,
 			"ZPR_ASSERTION_SOURCES_FILE="+file("assertion-sources.json"),
 			"ZPR_ADAPTER_LOG_CONFIG_FILE="+file("adapter-logs.json"),
@@ -44,6 +44,13 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 			"ZPR_CONTROL_SERVICE_CERT_FILE="+file("server-chain.pem"),
 			"ZPR_CONTROL_SERVICE_KEY_FILE="+file("server-key.pem"),
 			"ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="+file("ca.pem"))
+		if config.VisaService {
+			env = append(env,
+				"ZPR_ADMIN_URL="+fmt.Sprintf("https://localhost:%d", config.VSAdminPort),
+				"ZPR_ADMIN_CA_FILE="+file("ca.pem"),
+				"ZPR_ADMIN_KEY_FILE="+file("vs-admin-api.key"))
+		}
+		return env
 	}
 	if config.BrowserIP != "" {
 		env = append(env, "ZPR_CONTROL_ROOM_DIRECT_IP="+config.BrowserIP)
@@ -71,13 +78,17 @@ type evaluationProcess struct {
 	log     *os.File
 }
 
-func startEvaluation(state string, inventory evaluationInventory, out io.Writer) error {
+func startEvaluation(state string, inventory evaluationInventory, runtime evaluationRuntimeOptions, out io.Writer) error {
 	lock, err := lockEvaluation(state)
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
 	if _, err := readEvaluation(state, inventory.Config); err != nil {
+		return err
+	}
+	runtime, err = runtime.resolve(inventory.Config)
+	if err != nil {
 		return err
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -173,26 +184,70 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 	if err := waitEvaluation(startup, "named-operator OIDC (verified token identity)", out, func() error { return configureEvaluationOperator(startup, state, inventory, tlsConfig) }); err != nil {
 		return err
 	}
-	for _, mode := range []string{"control-service", "control-room"} {
-		logFile, err := os.OpenFile(filepath.Join(state, "logs", mode+".log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	launch := func(name, executable string, args, env []string) (*evaluationProcess, error) {
+		logFile, err := os.OpenFile(filepath.Join(state, "logs", name+".log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 		if err != nil {
-			return errors.New("cannot open private service log")
+			return nil, errors.New("cannot open private service log")
 		}
-		args := []string{"-mode", mode}
-		if mode == "control-room" {
-			args = append(args, "-listen", inventory.Config.roomListen())
-		}
-		command := exec.Command(binary, args...)
-		command.Env = evaluationEnvironment(state, inventory, mode)
+		command := exec.Command(executable, args...)
+		command.Env = env
 		command.Dir = state
 		command.Stdout, command.Stderr = logFile, logFile
 		if err := command.Start(); err != nil {
 			logFile.Close()
-			return fmt.Errorf("cannot start %s; inspect private service log", mode)
+			return nil, fmt.Errorf("cannot start %s; inspect private service log", name)
 		}
 		process := &evaluationProcess{command: command, done: make(chan error, 1), log: logFile}
 		processes = append(processes, process)
 		go func() { process.done <- command.Wait(); close(process.done) }()
+		return process, nil
+	}
+	exited := func(process *evaluationProcess) error {
+		select {
+		case <-process.done:
+			return errEvaluationProcessExited
+		default:
+			return nil
+		}
+	}
+	if inventory.Config.VisaService {
+		valkey, err := launch("valkey", runtime.ValkeyServer, []string{filepath.Join(state, "valkey.conf")}, evaluationVisaEnvironment())
+		if err != nil {
+			return err
+		}
+		if err := waitEvaluation(startup, "private Valkey (authenticated)", out, func() error {
+			if err := exited(valkey); err != nil {
+				return err
+			}
+			return checkEvaluationValkey(state, inventory.Config.ValkeyPort)
+		}); err != nil {
+			return err
+		}
+		visa, err := launch("visa-service", runtime.VisaServiceBinary, evaluationVisaArguments(state), evaluationVisaEnvironment())
+		if err != nil {
+			return err
+		}
+		if err := waitEvaluation(startup, "Visa Service admin API (verified TLS, API key)", out, func() error {
+			if err := exited(visa); err != nil {
+				return err
+			}
+			return checkEvaluationVisa(state, inventory.Config.VSAdminPort, tlsConfig)
+		}); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(state, evaluationVisaPolicyMarker), []byte("bundled evaluation policy installed\n"), 0o600); err != nil {
+			return errors.New("cannot record Visa Service policy installation")
+		}
+	}
+	for _, mode := range []string{"control-service", "control-room"} {
+		args := []string{"-mode", mode}
+		if mode == "control-room" {
+			args = append(args, "-listen", inventory.Config.roomListen())
+		}
+		process, err := launch(mode, binary, args, evaluationEnvironment(state, inventory, mode))
+		if err != nil {
+			return err
+		}
 		port, path, mutual := inventory.Config.RoomPort, "/", false
 		if mode == "control-service" {
 			port, path, mutual = inventory.Config.ServicePort, "/api/trusted-sources/change-feeds", true
@@ -202,10 +257,8 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 			return err
 		}
 		if err := waitEvaluation(startup, mode, out, func() error {
-			select {
-			case <-process.done:
-				return errEvaluationProcessExited
-			default:
+			if err := exited(process); err != nil {
+				return err
 			}
 			if mode == "control-room" {
 				serviceTLS = serviceTLS.Clone()
@@ -236,7 +289,11 @@ func startEvaluation(state string, inventory evaluationInventory, out io.Writer)
 	if inventory.Config.BrowserIP != "" {
 		fmt.Fprintf(out, "Local entrypoint https://localhost:%d redirects to the canonical network origin. Restrict browser/OIDC ports to intended clients; other services remain loopback-only.\n", inventory.Config.RoomPort)
 	}
-	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Administrator-scoped evaluation grants; no shared sessions.\nStarter directory registered; lifecycle events ingested into evaluation logging. Upstream Visa/Policy services are NOT configured. Control Room reports unavailable dependencies explicitly.")
+	upstream := "Upstream Visa/Policy services are NOT configured. Control Room reports unavailable dependencies explicitly."
+	if inventory.Config.VisaService {
+		upstream = fmt.Sprintf("Loopback Visa Service admin at https://localhost:%d (bundled evaluation policy; no nodes or enforcement). Policy-Service is NOT configured.", inventory.Config.VSAdminPort)
+	}
+	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Administrator-scoped evaluation grants; no shared sessions.\nStarter directory registered; lifecycle events ingested into evaluation logging. "+upstream)
 	fmt.Fprintln(out, "Foreground supervision active. Ctrl-C stops this install's services/containers; rerun the SAME command to preserve identity and directory/log data.")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()

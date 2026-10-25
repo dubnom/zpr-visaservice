@@ -3249,7 +3249,8 @@ policy. It does not start a second localhost listener or migrate existing
 issuer-bound grants. The
 [evaluation network option](packaging/evaluation/README.md#non-loopback-browser-address)
 provisions a new evaluation and a localhost HTTPS redirecting entrypoint.
-
+The [optional loopback Visa Service](packaging/evaluation/README.md#optional-loopback-visa-service)
+adds a native, non-enforcing VS and private Valkey to a new evaluation.
 For `-mode control-room`, keep the existing Control-Service mTLS environment
 configuration and explicitly add:
 
