@@ -237,7 +237,13 @@ Promotion requires fresh exact-subject validation and current registry fences;
 source/authority edits atomically invalidate affected intents and advance every
 affected recipient. Retained tombstones and principal-bound historical retry
 receipts survive reopen. This is internal persistence only: there are no new
-HTTP/UI actions, signed snapshot exports, delivery or enforcement paths.
+HTTP/UI actions, production signed snapshot exports, delivery or enforcement paths.
+An internal candidate capture now atomically retains the complete scoped
+registry, bindings and tombstones as exact unsigned v1 payload bytes, with
+explicit issue/expiry, a newly allocated sequence and historical retry evidence.
+It fails rather than omitting wire-incompatible or oversized registry content.
+Live test-only signing verifies those retained bytes through the Rust checkpoint
+and restart path; no production signer or delivery path is connected.
 
 Expired lookup identities are indeterminate even if another identity on the
 actor is still live. They cannot fetch fresh enrichment or be silently dropped

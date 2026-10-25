@@ -177,6 +177,9 @@ BEGIN SELECT RAISE(ABORT,'review artifact is immutable'); END;`)
 	if err == nil {
 		_, err = db.Exec(subjectLinkPublicationSchema)
 	}
+	if err == nil {
+		_, err = db.Exec(subjectLinkCandidateSchema)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err

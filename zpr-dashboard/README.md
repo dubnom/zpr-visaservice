@@ -300,6 +300,16 @@ sequences, with immutable audit evidence. Production callers must separately
 authorize publication operations; registry/review permissions and their proofs
 do not grant publication. No publisher or signing-key loader calls these methods.
 
+The internal
+[snapshot-candidate bridge](../MULTISOURCE_POLICY_SUPPORT.md#implemented-immutable-internal-snapshot-candidates)
+now captures complete registry/intent state into immutable unsigned payload bytes.
+Every new capture explicitly supplies issue/expiry and expected stream sequence;
+it allocates a new sequence even for a lease renewal. Exact principal-bound
+retries return retained historical bytes, never recapture changed state or renew
+expiry. No HTTP route, browser control, production signing key or delivery worker
+calls this API. Expired intent retirement, candidate bytes, sequence/audit and
+retry reference commit together; errors roll them all back.
+
 #### Subject-Link Review operator page
 
 Open `/subject-links.html` from **Configuration > Subject-Link Review** in

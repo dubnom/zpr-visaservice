@@ -2728,7 +2728,7 @@ The operator explicitly approved this bounded internal Control-Service-owned
 increment after offline snapshot/checkpoint acceptance. It persists publication
 **intent**, not delivered, acknowledged, device-authenticated or enforced state.
 No publication HTTP route, browser control, operator permission/proof purpose,
-signing-key provisioning, snapshot export, delivery worker, VS daemon integration
+signing-key provisioning, production snapshot export, delivery worker, VS daemon integration
 or enforcement switch was added. Existing registry edit transactions are wired
 to invalidate affected internal intents; merely approving a review does not
 create one. Schema creation alone provisions no stream or binding.
@@ -2819,6 +2819,99 @@ operator-auth and targeted review/registry/route tests pass under race, and
 related Go vet passes. Required `make test` passes all 11 operator-stack checks
 and retains exactly the known 13 Go baseline failures; it is not fully green.
 No dependency manifests changed.
+
+#### Implemented: immutable internal snapshot candidates
+
+The operator approved the next internal bridge: capture complete registry,
+eligible binding intent and tombstones coherently, bind exact recipient/epoch/
+sequence and explicit times, and retain identical payload bytes for retry.
+`CaptureSubjectLinkSnapshotOnce` implements this bridge inside the protected
+Control-Service review store. It neither signs nor delivers a snapshot. No HTTP
+route, browser control, signer/key loader, VS daemon or enforcement caller is
+connected. Test-only ephemeral signing is acceptance evidence, not provisioning.
+
+The caller must independently authorize the principal on every operation/read,
+including historical retries. Inputs are explicit organization, exact recipient,
+epoch, expected stream sequence, canonical positive decimal Unix-second
+`issued_at`/`expires_at`, actor, reason and retry key. A new capture requires an
+already provisioned stream, exact CAS, `issued_at <= current server time <
+expires_at` and issue strictly before expiry. Times have no lease/skew defaults;
+the server samples its clock only to check the supplied interval. Issue cannot
+backdate the previous candidate. The unsigned candidate is not permission to
+extend a binding's original reviewed validity.
+
+Within a **single transaction**, capture reads all current organization-scoped
+authority and source registrations (including disabled/unreferenced records)
+sorted by ID, plus the complete exact-recipient intent/tombstone set sorted by
+binding ID. It rechecks current registry version/revision and key scope for every
+live intent. Future-valid bindings remain explicitly future-valid rather than
+being silently omitted. All retired IDs (`revoked`, `registry-invalidated` and
+`expired`) remain tombstones. Unknown intent states and wire-incompatible
+registrations fail explicitly; complete snapshots never skip bad records,
+truncate collections, use another organization's registrations or substitute
+previous cached context.
+
+Reviewed binding validity can contain subsecond times, while wire v1 uses
+whole seconds. Capture rounds **inward**: start upward, expiry downward.
+It never extends approval. If the resulting interval is empty or expired at
+capture's sampled current time, capture permanently retires the intent as `expired`, advances
+its binding version and emits a tombstone. Expiry retirement, including
+affected IDs in the candidate audit event, commits with the candidate or not at
+all. An expired ID cannot be promoted again; an independently reviewed new
+association needs a new ID. Runtime use remains responsible for intersecting
+binding, authentication, observation and snapshot validity; candidate existence
+does not authorize enrichment.
+
+Each **new** candidate allocates the next stream sequence, including an empty
+initial snapshot or unchanged-intent lease renewal; sequence zero is never on
+the wire. Promotion/revocation/registry invalidation and candidate capture share
+the same monotonically advancing stream counter, so candidate sequences may
+legitimately have gaps. Sequence does not restart per signing key, retry,
+expiry, process or candidate. Capture stores an immutable exact payload BLOB
+and lowercase SHA-256 digest under organization/recipient/epoch/sequence,
+the `snapshot-candidate` audit event and a principal-bound retry reference in
+the same transaction. Full v1 validation/encoding is shared with the offline
+signer via `subjectsnapshot.EncodePayload`; this helper provides **no**
+authentication. Candidate bytes satisfy the existing 1 MiB payload and 1,024
+records-per-array wire limits, not new production capacity/lease defaults.
+
+The fingerprint binds the entire capture request, including explicit times,
+reason, scope and expected sequence. An identical retry reads the original
+candidate **before** current-time/registry/CAS checks: even after expiry,
+revocation, edits or reopen it remains historical bytes, not a renewed lease
+or a newly signable/deliverable current snapshot. Changed input under the same
+principal/key conflicts; another principal cannot access that receipt.
+`GetSubjectLinkSnapshotCandidate` is likewise historical readback by exact
+scope/sequence and checks the stored payload digest. It is not currentness,
+signing authorization, delivery acknowledgement or enforcement evidence.
+Future signing/delivery must retain these exact bytes and independently fence
+current scope/sequence/validity; historical readback must not resurrect a stale
+candidate after registry changes.
+
+Tests cover coherent populated/empty capture, sorted complete disabled registry,
+cross-organization isolation, exact validity narrowing, CAS races with registry
+disable and competing capture, expiry retirement, historical replay after
+expiry/reopen, immutable bytes and retry keys, backdated/future/invalid times,
+unprovisioned or foreign scope, and rollback at candidate/audit/receipt writes.
+Exact registry count and oversized payload failures leave sequences unchanged.
+A live Go store fixture now creates actual independently approved/promoted
+intent, captures its retained candidate, revokes it and captures the next
+tombstone candidate. Ephemeral test keys sign the **stored bytes directly**.
+Rust verifies matching digests and dependency sets without reserialization,
+installs both into its durable checkpoint, reopens, checks the exact tombstone,
+accepts the identical retry and rejects the older binding snapshot. These are
+internal/offline acceptance results, not production publication or M1 closure.
+
+Validation: `cargo test --locked --offline` passes 1,008 tests (23 ignored),
+including live retained-candidate Go/Rust checkpoint interoperability. Targeted
+Go race tests and vet pass for `internal/changereview` and
+`internal/subjectsnapshot`; renewal, expiry, competing capture and registry-edit
+race tests also pass ten consecutive race-enabled runs. `cargo fmt --check`,
+changed-file Go formatting and `git diff --check` pass. Dashboard `make test`
+passes all 11 operator-stack checks and retains exactly the known 13 Go baseline
+failures; it is not fully green. Rust validation temporarily used the existing
+local `zpr-common` checkout at the missing worktree sibling path; the temporary
+link was removed afterward. No dependency manifests changed.
 
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 

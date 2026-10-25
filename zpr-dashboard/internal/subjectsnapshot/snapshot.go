@@ -324,13 +324,26 @@ func decode(data []byte, shape any, out any) error {
 	return nil
 }
 
-func Sign(p Payload, keyID string, key ed25519.PrivateKey) ([]byte, error) {
-	if !idPattern.MatchString(keyID) || len(key) != ed25519.PrivateKeySize || p.validate() != nil {
+// EncodePayload validates and encodes an unsigned candidate. It supplies no
+// authentication or authorization; retain the returned bytes before signing.
+func EncodePayload(p Payload) ([]byte, error) {
+	if p.validate() != nil {
 		return nil, ErrInvalid
 	}
 	data, err := json.Marshal(p)
 	if err != nil || len(data) > MaxPayload {
 		return nil, ErrInvalid
+	}
+	return data, nil
+}
+
+func Sign(p Payload, keyID string, key ed25519.PrivateKey) ([]byte, error) {
+	if !idPattern.MatchString(keyID) || len(key) != ed25519.PrivateKeySize {
+		return nil, ErrInvalid
+	}
+	data, err := EncodePayload(p)
+	if err != nil {
+		return nil, err
 	}
 	signature := ed25519.Sign(key, append([]byte(Domain), data...))
 	return json.Marshal(envelope{1, keyID, base64.RawURLEncoding.EncodeToString(data), base64.RawURLEncoding.EncodeToString(signature)})

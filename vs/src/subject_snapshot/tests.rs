@@ -20,14 +20,12 @@ struct Vector {
 }
 
 fn go_test(name: &str, env: &str, path: &Path) {
+    go_package_test("./internal/subjectsnapshot", name, env, path);
+}
+
+fn go_package_test(package: &str, name: &str, env: &str, path: &Path) {
     let output = Command::new("go")
-        .args([
-            "test",
-            "./internal/subjectsnapshot",
-            "-run",
-            &format!("^{name}$"),
-            "-count=1",
-        ])
+        .args(["test", package, "-run", &format!("^{name}$"), "-count=1"])
         .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../zpr-dashboard"))
         .env(env, path)
         .output()
@@ -325,6 +323,76 @@ fn live_go_snapshots_survive_durable_installation_and_restart() {
             "missing durable case {required}"
         );
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn retained_service_candidates_install_without_reserializing() {
+    #[derive(Deserialize)]
+    struct Candidates {
+        first: String,
+        second: String,
+        first_digest: String,
+        second_digest: String,
+        public_key: String,
+        organization: String,
+        recipient: String,
+        epoch: String,
+        now: u64,
+        binding_id: String,
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let export = temp.path().join("candidates.json");
+    go_package_test(
+        "./internal/changereview",
+        "TestSubjectLinkCandidateInteropExport",
+        "ZPR_CANDIDATE_INTEROP_EXPORT",
+        &export,
+    );
+    let c: Candidates = serde_json::from_slice(&std::fs::read(&export).unwrap()).unwrap();
+    let pins = HashMap::from([("fixture".into(), hex::decode(c.public_key).unwrap())]);
+    let scope = Scope {
+        organization: &c.organization,
+        recipient: &c.recipient,
+        epoch: &c.epoch,
+    };
+    let first = verify(c.first.as_bytes(), &pins, &scope, c.now).unwrap();
+    let second = verify(c.second.as_bytes(), &pins, &scope, c.now).unwrap();
+    assert_eq!(first.digest(), c.first_digest);
+    assert_eq!(second.digest(), c.second_digest);
+    assert_eq!(first.payload.sequence, "2");
+    assert_eq!(second.payload.sequence, "4");
+    assert_eq!(first.payload.bindings.len(), 1);
+    assert_eq!(first.payload.bindings[0].binding_id, c.binding_id);
+    assert_eq!(first.payload.authorities.len(), 1);
+    assert_eq!(first.payload.sources.len(), 1);
+    assert_eq!(compare(&first, &second).unwrap(), Decision::Advance);
+    let directory = temp.path().join("checkpoint");
+    let mut store = checkpoint::Checkpoint::initialize(
+        &directory,
+        pins.clone(),
+        &scope,
+        c.first.as_bytes(),
+        c.now,
+    )
+    .unwrap();
+    assert_eq!(
+        store.install(c.second.as_bytes(), c.now).unwrap(),
+        Decision::Advance
+    );
+    drop(store);
+    let mut store = checkpoint::Checkpoint::open(&directory, pins, &scope).unwrap();
+    let restored = store.current_at(c.now).unwrap();
+    assert_eq!(restored.digest(), c.second_digest);
+    assert!(restored.payload.bindings.is_empty());
+    assert_eq!(restored.payload.tombstones.len(), 1);
+    assert_eq!(restored.payload.tombstones[0].binding_id, c.binding_id);
+    assert_eq!(restored.payload.tombstones[0].version, "2");
+    assert_eq!(
+        store.install(c.second.as_bytes(), c.now).unwrap(),
+        Decision::HistoricalReplay
+    );
+    assert!(store.install(c.first.as_bytes(), c.now).is_err());
 }
 
 #[cfg(unix)]
