@@ -12,11 +12,7 @@
   --teal: var(--accent-primary);
 }
 
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 14px; }
 .topbar { position: fixed; inset: 0 auto 0 0; width: 238px; height: 100vh; padding: 28px 22px; background: var(--ink); color: var(--text-on-strong); display: flex; flex-direction: column; gap: 34px; z-index: 5; }
-.brand { color: var(--text-on-strong); text-decoration: none; display: flex; align-items: baseline; gap: 12px; padding: 0 4px; }
-.brand strong { font-size: 27px; letter-spacing: .08em; }
 .brand span, .eyebrow, .hint, .status, .pill, .service-row span, .agent-card small, .log-title, .component-kind { font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .topbar nav { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--simulator-navigation-divider); padding-top: 18px; }
 .topbar nav a { color: var(--simulator-navigation-text); text-decoration: none; padding: 11px 10px; border-left: 3px solid transparent; font: 11px var(--mono); text-transform: uppercase; }
@@ -102,15 +98,11 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
   .actions { flex-wrap: wrap; margin-top: 20px; }
   .grid, .log-grid, .component-grid { grid-template-columns: 1fr; }
 }
-.app-shell { min-height: 100vh; }
-.sidebar { position: fixed; z-index: 5; inset: 0 auto 0 0; width: 230px; display: flex; flex-direction: column; padding: 18px 17px; }
-.brand { display: flex; align-items: center; gap: 12px; padding: 0 9px 19px; color: var(--sidebar-text); }
-.brand-mark { width: 31px; height: 31px; display: grid; place-content: center; grid-template-columns: repeat(3, 4px); align-items: center; gap: 3px; border-radius: 9px 3px 9px 3px; transform: rotate(-6deg); }
-.brand-mark i { display: block; width: 4px; border-radius: 3px; transform: rotate(6deg); }
-.brand-mark i:nth-child(1) { height: 10px; opacity: .65; }.brand-mark i:nth-child(2) { height: 18px; }.brand-mark i:nth-child(3) { height: 13px; opacity: .8; }
-.brand strong { display: block; font-size: 16px; line-height: 1.05; font-weight: 750; letter-spacing: .04em; }.brand small { display: block; margin-top: 5px; font: 11px var(--mono); letter-spacing: .15em; }
-.primary-nav { display: grid; gap: 2px; }.nav-link { display: flex; align-items: center; padding: 9px 10px; border-radius: 4px; font-size: 13px; text-decoration: none; }.nav-link.active { box-shadow: inset 4px 0 var(--sidebar-active-edge); font-weight: 650; }
-.sidebar-foot { margin-top: auto; display: flex; align-items: center; gap: 9px; padding: 13px 9px 2px; font: 11px var(--mono); letter-spacing: .09em; }.tiny-dot { width: 7px; height: 7px; border-radius: 50%; }
+.sidebar { width: 230px; }
+.brand { color: var(--sidebar-text); }
+.primary-nav { gap: 2px; }
+.nav-link.active { box-shadow: inset 4px 0 var(--sidebar-active-edge); }
+.tiny-dot { width: 7px; height: 7px; }
 .main-content { margin-left: 230px; padding: 0 39px 70px; }.main-content .topbar { position: sticky; inset: auto; width: auto; height: auto; margin: 0 -39px; padding: 0 39px; min-height: 62px; background: var(--surface-topbar); border-bottom: 1px solid var(--line); color: var(--ink); display: flex; flex-direction: row; align-items: center; justify-content: space-between; z-index: 4; }.topbar-status { display: flex; align-items: center; gap: 18px; }.connection-state { display: flex; align-items: center; gap: 10px; }.state-lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 4px var(--simulator-active-surface); }.connection-state strong { display: block; font-size: 13px; }.connection-state small { display: block; color: var(--muted); font: 11px var(--mono); margin-top: 3px; }.uptime-status { display: grid; gap: 3px; }.uptime-status span { color: var(--muted); font: 11px var(--mono); letter-spacing: .1em; }.uptime-status strong { font: 12px var(--mono); }.main-content .top-actions { margin: 0; display: flex; flex-direction: row; }.main-content .hero { margin-top: 26px; }
 .main-content .topbar { gap: 12px; }
 .simulator-page-status { display: flex; min-height: 62px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); }

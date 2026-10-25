@@ -2111,6 +2111,12 @@ Root overrides affect both applications; overrides on a particular `.sidebar`
 affect its brand, links and controls together. Navigation surfaces/text remain
 distinct from page surfaces/text so a dark sidebar can accompany a light page.
 
+Simulator also inherits the base shell, brand geometry and navigation layout
+instead of restating those rules. Its explicit overrides retain the wider
+sidebar at tablet sizes, two-pixel navigation gap, seven-pixel indicator and
+active-link alert precedence. Load `app.css` before `simulator.css`; standalone
+Simulator pages are not independent copies of the application shell.
+
 Gateway and node error states, trusted-source table headings, Security Review
 indicators, assistant controls and log panels also use component-role tokens.
 Log terminal text/background/error/focus tokens are independent of page

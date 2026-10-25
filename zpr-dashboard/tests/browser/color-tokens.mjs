@@ -116,6 +116,18 @@ export function registerColorTokenTests(test, expect) {
         document.querySelector(".sidebar").removeAttribute("style");
       });
     }
+    for (const width of [1280, 834, 600]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(page.locator(".sidebar")).toHaveCSS("width", width <= 700 ? `${width}px` : "230px");
+      await expect(page.locator(".brand strong")).toHaveCSS("font-size", "16px");
+      await expect(page.locator(".brand-mark")).toHaveCSS("width", "31px");
+      await expect(page.locator(".brand-mark i")).toHaveCSS("width", "4px");
+      await expect(page.locator(".tiny-dot")).toHaveCSS("width", "7px");
+      await page.evaluate(() => document.body.classList.add("sidebar-condensed"));
+      await expect(page.locator(".sidebar")).toHaveCSS("width", width <= 700 ? `${width}px` : "104px");
+      await expect(page.locator(".sidebar-foot")).toHaveCSS("display", "none");
+      await page.evaluate(() => document.body.classList.remove("sidebar-condensed"));
+    }
   });
 
   test("CSS semantic component tokens share surfaces and focus across both applications", async ({ page, appURL, api }) => {
