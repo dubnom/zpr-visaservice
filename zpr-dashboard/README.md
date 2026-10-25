@@ -318,8 +318,14 @@ complete registry must all match. The caller injects an Ed25519 `crypto.Signer`
 that must match the pinned key ID; the store never loads keys. Fences are
 rechecked after signing, one immutable envelope is retained per sequence and
 signing does not advance the stream. Exact retries return the historical
-envelope. No HTTP route, production key, delivery worker or enforcement path
-calls it.
+envelope. No HTTP route, delivery worker or enforcement path calls it.
+
+Control-Service can load the
+[snapshot signing key](../MULTISOURCE_POLICY_SUPPORT.md#implemented-protected-snapshot-signing-key-custody)
+at startup from absolute `ZPR_SUBJECT_SNAPSHOT_SIGNING_FILE` (active `key_id`
+plus rotation pins) and `ZPR_SUBJECT_SNAPSHOT_SIGNING_KEY_FILE` (0600 PKCS#8
+Ed25519 PEM). Omitting both disables signing; partial or invalid configuration
+fails startup. Room never reads either file.
 
 #### Subject-Link Review operator page
 

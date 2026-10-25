@@ -17,7 +17,14 @@ func configuredSubjectLinkReviews() (http.Handler, func() error, error) {
 	database := strings.TrimSpace(os.Getenv("ZPR_SUBJECT_LINK_REVIEW_DB_PATH"))
 	providersPath := strings.TrimSpace(os.Getenv("ZPR_SUBJECT_LINK_PROVIDERS_FILE"))
 	trustPath := strings.TrimSpace(os.Getenv("ZPR_OPERATOR_DELEGATION_TRUST_FILE"))
+	signing, err := configuredSubjectSnapshotSigning()
+	if err != nil {
+		return nil, nil, err
+	}
 	if database == "" && providersPath == "" {
+		if signing != nil {
+			return nil, nil, errors.New("subject-link snapshot signing requires the subject-link review store")
+		}
 		log.Print("Subject-link review is disabled: database and providers are not configured")
 		return (*subjectReviewAPI)(nil), func() error { return nil }, nil
 	}
@@ -50,5 +57,5 @@ func configuredSubjectLinkReviews() (http.Handler, func() error, error) {
 		}
 		return nil, nil, err
 	}
-	return &subjectReviewAPI{store: store, providers: providers, verifier: verifier}, store.Close, nil
+	return &subjectReviewAPI{store: store, providers: providers, verifier: verifier, signing: signing}, store.Close, nil
 }

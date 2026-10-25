@@ -152,6 +152,7 @@ type subjectReviewAPI struct {
 	store     *changereview.Store
 	verifier  *operatordelegation.Verifier
 	providers *subjectLinkProviders
+	signing   *subjectSnapshotSigning
 }
 
 // Resolve outside the Store transaction, but defer errors to its callback:

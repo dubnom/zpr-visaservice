@@ -2994,6 +2994,35 @@ green. Rust validation again used a temporary `zpr-common` link that was removed
 afterward. No dependency manifests changed. Production key custody, signer
 provisioning, delivery and M1 closure remain open.
 
+#### Implemented: protected snapshot signing-key custody
+
+Operator decision: the Control-Service signing key is a protected file loaded
+once at startup, with an explicit active key ID and rotation through multiple
+pins. Split Control-Service startup reads two absolute paths:
+
+- `ZPR_SUBJECT_SNAPSHOT_SIGNING_FILE`: strict JSON
+  `{"version":1,"key_id":"<active>","pins":[{"key_id":"…","public_key":"…"}]}`
+  with 1-64 pins. Public keys are canonical unpadded base64url Ed25519 keys. Key
+  IDs and public keys must be unique. The file may not be group/other-writable.
+- `ZPR_SUBJECT_SNAPSHOT_SIGNING_KEY_FILE`: exactly one PKCS#8 Ed25519
+  `PRIVATE KEY` PEM block with no headers or trailing data. It must be a regular,
+  single-link, owner-only (0600) file; symlinks are rejected.
+
+The private key's public half must equal the pin for the active key ID. To rotate,
+add the new pin, switch `key_id` and restart; previously signed envelopes stay
+verifiable while their pin remains listed. Omitting both variables leaves
+signing disabled (logged). Partial, relative or invalid configuration fails
+startup, as does enabling signing without the subject-link review store. Errors
+never include key material. The loaded key is held by the Control-Service
+review handler only; Room never reads it. No route calls it yet; it exists for
+the authorized capture/sign API that follows.
+
+Tests cover disabled and valid rotation configuration plus rejection of
+partial/relative paths, group-readable, symlinked, non-Ed25519 or
+trailing-data keys, unpinned/missing active IDs, duplicate IDs or public keys,
+padded keys, invalid IDs, wrong versions, empty pins, unknown fields,
+world-writable configuration and signing without the review store.
+
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 
 Status: **binding contract design only; not approved or implemented**. The M1 reconciliation
