@@ -110,6 +110,15 @@ read-only mutation, foreign-organization, malformed CSRF/origin and logged-out
 requests never reach the bridge. OIDC tokens/JWKS/PKCE come from an isolated
 TLS identity-provider fixture; login/callback handlers are driven without a
 browser. This is not the deployed Control-Service mTLS listener or Room proxy.
+Set `ZPR_TEST_SOURCE_BROWSER=1` when running the lifecycle script to additionally
+exercise the embedded production login/request/runtime-control assets in real
+Chromium against the live bridge/Admin/VS chain. Confirmation cancel makes no
+mutation; confirmed disable/readback and re-enable drive the final fresh-data
+recovery. This requires existing Playwright/Chromium, uses a minimal fixture
+page and imports the verified OIDC session cookie; it is not browser login or
+full navigation/deployed ingress acceptance. The login widget recognizes
+`trusted-source.*` application permissions, so source-only operators can use
+their explicit grants and receive mutation CSRF without unrelated privileges.
 This is component/process acceptance with explicitly synthetic identities,
 not approved subject-link, full daemon/deployed ingress/UI or gateway-delivery
 acceptance. See [prerequisites and exact boundaries](../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).

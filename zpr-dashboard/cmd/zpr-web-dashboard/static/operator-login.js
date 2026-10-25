@@ -163,7 +163,7 @@
         const simulator = widget.dataset.operatorApplication === "simulator";
         const appPermissions = simulator
           ? ["simulator.", "organization.", "scenario.", "directory.", "device."]
-          : ["monitor.", "policy.", "gateway."];
+          : ["monitor.", "policy.", "gateway.", "trusted-source."];
         const hasAppPermission = identity.permissions.includes("read") || identity.permissions.some((permission) =>
           appPermissions.some((prefix) => permission.startsWith(prefix))) ||
           (!simulator && identity.permissions.some((permission) => ["create", "cancel", "approve", "reject"].includes(permission)));

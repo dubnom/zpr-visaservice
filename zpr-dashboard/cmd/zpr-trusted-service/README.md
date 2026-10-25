@@ -150,6 +150,11 @@ OIDC uses a signed-token fixture with actual TLS token/JWKS exchange, not a
 production IdP or browser login. This is not deployed Control-Service mTLS
 or full Control Room proxy acceptance. See
 [prerequisites, reproduction and evidence boundaries](../../../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
+The optional `ZPR_TEST_SOURCE_BROWSER=1` path also drives actual Chromium with
+the production source-control/login/request components against these live APIs.
+Browser disable/readback/re-enable completes before the real worker's fresh
+lookup and new visa. The cookie comes from fixture OIDC; no browser IdP login
+or full deployed Control Room is claimed.
 
 ### Optional source validity bound
 

@@ -642,6 +642,13 @@ async fn source_lifecycle_process_interop() {
         admin.assert_rejected_mutations().await;
         admin.assert_untrusted_tls_rejected().await;
         let admin = admin.bridge().await;
+        if phase == "recover" && std::env::var("ZPR_TEST_SOURCE_BROWSER").as_deref() == Ok("1") {
+            let response = admin.client.post(format!("{}/fixture/browser", required("ZPR_TEST_SOURCE_BRIDGE")))
+                .timeout(std::time::Duration::from_secs(23)).send().await.unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT, "real browser acceptance failed");
+            assert!(admin.read().await.enabled, "browser must finish with source enabled");
+            println!("SOURCE_LIFECYCLE browser: real UI disable/readback/re-enable completed before fresh-data recovery");
+        }
         let event_asm = asm.clone();
         tasks.spawn(crate::event_mgr::launch(event_asm, events));
         println!("SOURCE_LIFECYCLE admin-http: verified TLS, authenticated readback, rejected missing/invalid/revoked/read-only credentials and malformed mutations");
@@ -693,7 +700,11 @@ async fn source_lifecycle_process_interop() {
                 println!("SOURCE_LIFECYCLE provider-down: LDAP bind failure denies without a new visa or empty-observation fallback");
             }
             "recover" => {
-                let accepted = admin.set(true).await;
+                let accepted = if std::env::var("ZPR_TEST_SOURCE_BROWSER").as_deref() == Ok("1") {
+                    admin.read().await
+                } else {
+                    admin.set(true).await
+                };
                 admin.wait_completed(&accepted.revision).await;
                 let VisaDecision::Allow(visa, _) = request(&asm, 80).await else { panic!("fresh restored data must allow"); };
                 assert_observation(&asm, "person@example.test").await;

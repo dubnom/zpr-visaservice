@@ -1,20 +1,27 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"neboagency.com/zpr-dashborad/internal/controlroom"
 	"neboagency.com/zpr-dashborad/internal/controlservice/adminapi"
@@ -64,6 +71,8 @@ func sourceLifecycleBridge(t *testing.T) {
 	ready := make(chan struct{})
 	var runtime http.Handler
 	var configure http.HandlerFunc
+	var browserRun http.HandlerFunc
+	var assets http.Handler
 	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-ready
 		if r.Header.Get("X-Source-Fixture") != secret {
@@ -74,6 +83,14 @@ func sourceLifecycleBridge(t *testing.T) {
 			configure.ServeHTTP(w, r)
 			return
 		}
+		if r.URL.Path == "/fixture/browser" && r.Method == http.MethodPost {
+			browserRun.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/fixture/ui" || r.URL.Path == "/trusted-source.js" || r.URL.Path == "/operator-request.js" || r.URL.Path == "/operator-login.js" || strings.HasPrefix(r.URL.Path, "/auth/operator/") {
+			assets.ServeHTTP(w, r)
+			return
+		}
 		runtime.ServeHTTP(w, r)
 	})
 	// Publish the handler only after setup; no fixture address is exposed before
@@ -81,6 +98,52 @@ func sourceLifecycleBridge(t *testing.T) {
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	auth, sessions := sourceLifecycleOperator(t, server.URL)
+	assets = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/operator/config":
+			writeJSON(w, http.StatusOK, map[string]bool{"enabled": true})
+		case "/fixture/ui":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, `<script src="/operator-request.js"></script><div class="operator-login"><p id="operator-login-status"></p><form id="operator-login-form" method="post" action="/auth/operator/login"></form><button id="operator-logout" hidden>Sign out</button><span id="operator-scope" hidden></span></div><runtime-source-controls></runtime-source-controls><script src="/operator-login.js"></script><script src="/trusted-source.js"></script>`)
+		case "/trusted-source.js", "/operator-request.js", "/operator-login.js":
+			data, err := staticFiles.ReadFile("static" + r.URL.Path)
+			if err != nil {
+				t.Error(err)
+				http.Error(w, "fixture asset unavailable", 500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/javascript")
+			w.Write(data)
+		default:
+			auth.ServeHTTP(w, r)
+		}
+	})
+	browserRun = func(w http.ResponseWriter, r *http.Request) {
+		if os.Getenv("ZPR_TEST_SOURCE_BROWSER") != "1" {
+			http.Error(w, "browser acceptance not enabled", 400)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		defer cancel()
+		leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+		if err != nil {
+			t.Error(err)
+			http.Error(w, "fixture certificate unavailable", 500)
+			return
+		}
+		pin := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
+		command := exec.CommandContext(ctx, "node", "scripts/test-source-lifecycle-browser.mjs")
+		command.Dir = filepath.Join("..", "..")
+		command.Env = append(os.Environ(), "ZPR_TEST_SOURCE_BROWSER_SPKI="+base64.StdEncoding.EncodeToString(pin[:]))
+		output, err := command.CombinedOutput()
+		if err != nil || !strings.Contains(string(output), "SOURCE_LIFECYCLE browser:") {
+			t.Errorf("real browser acceptance failed: %v\n%s", err, output)
+			http.Error(w, "browser acceptance failed", 500)
+			return
+		}
+		t.Logf("%s", output)
+		w.WriteHeader(http.StatusNoContent)
+	}
 	runtime = controlroom.AuthorizeAPI(auth, "fixture-production", mux, writePolicyError)
 	configure = func(w http.ResponseWriter, r *http.Request) {
 		var config struct {

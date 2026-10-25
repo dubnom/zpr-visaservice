@@ -110,4 +110,7 @@ func TestPolicyDocumentsSourceLifecycleInterop(t *testing.T) {
 		}
 	}
 	t.Logf("%s", output)
+	if os.Getenv("ZPR_TEST_SOURCE_BROWSER") == "1" && !strings.Contains(string(output), "SOURCE_LIFECYCLE browser:") {
+		t.Fatal("browser acceptance was requested but not executed")
+	}
 }
