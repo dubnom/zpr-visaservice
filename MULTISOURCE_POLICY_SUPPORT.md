@@ -21,7 +21,17 @@ the independent Go provider and durable VS state in one automated chain:
    malformed and revoked keys cannot read or mutate; read-only keys cannot
    mutate. Malformed/duplicate/extra-field toggle JSON cannot change the stored
    control. A client trusting an unrelated CA cannot connect.
-4. Disable the source over HTTPS with the write key and require a 202 response
+4. Connect the actual Go Control-Service trusted-source bridge and production
+   Admin client transport to that listener. Inventory and control readback must
+   agree with direct Admin readback. Deliberately invalid server-owned credentials
+   and unrelated CA trust return 502 JSON errors, not successful readback; a
+   read-only server key returns 403 on mutation. Correct configuration recovers
+   without changing stored controls. Malformed toggles return 400 without
+   mutation, unknown sources return 404, and responses are `no-store`.
+   Browser-supplied API keys/cookies/bearer values cannot select or replace the
+   server-owned Admin key; no Admin key appears in returned JSON.
+5. Disable the source through the bridge's HTTP route, crossing real Admin
+   HTTPS with the server-owned write key, and require a 202 response
    with declared/effective/desired state, pending work and a fresh UUID revision.
    Deny new requests and let the actual event worker queue the existing visa
    for revocation at both fixture nodes; the test does not call the control
@@ -30,12 +40,12 @@ the independent Go provider and durable VS state in one automated chain:
    then start a separate VS test process. Assert that the exact signed artifact,
    off revision, pending work, actor docking and revoke queues survive, including
    authenticated HTTPS control readback from the new process.
-5. Re-enable over HTTPS against changed LDAP mail, wait for the actual event
+6. Re-enable through the bridge against changed LDAP mail, wait for the actual event
    worker's persisted completion, and prove a compiled-policy denial rather
    than stale permission or a missing-route/docking failure. A further process
    with LDAP bind failure must deny, report failed source health rather than
    successful empty absence, and issue no new visa.
-6. Restore LDAP data and start another process. Re-enable over HTTPS, wait for
+7. Restore LDAP data and start another process. Re-enable through the bridge, wait for
    persisted worker completion, and verify fresh lookup permits a new visa
    with a different ID; the old queued revoke remains. Assert exactly two
    directory searches per successful phase and none during bind failure; the
@@ -71,7 +81,13 @@ Redis AOF, production Admin TLS/router/authentication, real event worker,
 manager/evaluator/visa-worker and OS-process boundaries. The Admin listener
 shares the production connection-serving loop, not a substitute HTTP router.
 They are not full Visa Service daemon/startup, node authentication, Control-Service
-bridge or Control Room browser acceptance. Actor authority and UUID-valued device CNs
+ingress/deployment or Control Room browser acceptance. The bridge's inbound
+listener is private loopback HTTP with a random test-owner token, not the
+production Control-Service mTLS listener or named-user/organization/CSRF
+authorization. A test-only bootstrap route supplies each ephemeral Admin
+endpoint, key and CA; it is not source registration or a production configuration
+API. The actual production bridge and Admin transport handle runtime requests.
+Actor authority and UUID-valued device CNs
 are explicitly synthetic fixtures, not invented device/person subject links.
 The LDAP server is a bounded protocol fixture, not deployed OpenLDAP. The signed
 candidate is loaded directly by the test harness, not activated through the
@@ -97,6 +113,8 @@ Validation for this acceptance increment:
   use a prebound private listener without a port reservation race. Other changes
   are acceptance tests, fixture support, runner and docs; no dependency manifests
   or production configuration changed.
+- The bridge increment adds only acceptance/fixture code and documentation;
+  no new production endpoint, credentials or permission grants are installed.
 
 ## Operator controls, shared JSON documents and immutable LDAP provider
 

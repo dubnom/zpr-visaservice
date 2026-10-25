@@ -28,6 +28,7 @@ func TestPolicyDocumentsSourceLifecycleInterop(t *testing.T) {
 	t.Setenv("ZPR_SIMULATOR_URL", "http://127.0.0.1:0")
 	t.Setenv("SIMULATOR_URL", "http://127.0.0.1:0")
 	t.Setenv("SIMULATION_MANIFEST", "/unavailable/source-lifecycle-manifest")
+	sourceLifecycleBridge(t)
 	directory := privatePolicyTestDir(t)
 	config, signing := filepath.Join(directory, "base.zplc"), filepath.Join(directory, "fixture-signing.pem")
 	if err := os.WriteFile(config, []byte("[nodes.n0]\nprovider = [[\"device.zpr.adapter.cn\", \"fixture-node-0\"]]\nzpr_address = \"fd5a:5052:3000::1\"\n"), 0o600); err != nil {
@@ -103,7 +104,7 @@ func TestPolicyDocumentsSourceLifecycleInterop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("provider/VS lifecycle failed: %v\n%s", err, output)
 	}
-	for _, marker := range []string{"SOURCE_LIFECYCLE admin-http:", "SOURCE_LIFECYCLE initial:", "SOURCE_LIFECYCLE restart-off:", "SOURCE_LIFECYCLE changed:", "SOURCE_LIFECYCLE provider-down:", "SOURCE_LIFECYCLE recover:"} {
+	for _, marker := range []string{"SOURCE_LIFECYCLE admin-http:", "SOURCE_LIFECYCLE control-bridge:", "SOURCE_LIFECYCLE initial:", "SOURCE_LIFECYCLE restart-off:", "SOURCE_LIFECYCLE changed:", "SOURCE_LIFECYCLE provider-down:", "SOURCE_LIFECYCLE recover:"} {
 		if !strings.Contains(string(output), marker) {
 			t.Fatalf("missing acceptance marker %q:\n%s", marker, output)
 		}

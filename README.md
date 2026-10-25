@@ -132,9 +132,14 @@ allow/deny, durable source-off and queued revocation across real database/proces
 restarts, changed-data denial, outage handling and fresh recovery, with Simulator
 unavailable. Toggles and readback cross the production authenticated Admin HTTPS
 listener; the real event worker handles reconciliation. Rejected credentials,
-malformed toggles and an unrelated TLS trust root are checked. This uses
+malformed toggles and an unrelated TLS trust root are checked. Lifecycle
+mutations and readback now also cross the actual Control-Service bridge using
+its production Admin transport and server-owned credentials; bad upstream
+credentials/trust fail explicitly and correct configuration recovers.
+This uses
 synthetic actor identities inside test processes, not the full daemon/node
-authentication/Control-Service/Control Room flow.
+authentication/Control-Service ingress/Control Room flow. The bridge's inbound
+test listener is token-gated loopback HTTP, not production operator authentication.
 It does not activate subject links, provision production transport/credentials,
 prove gateway acknowledgement or establish deployed-directory acceptance.
 Final envelope syntax remains open. See the

@@ -179,6 +179,151 @@ struct AdminClient {
 }
 
 impl AdminClient {
+    async fn bridge(&self) -> Self {
+        let base = required("ZPR_TEST_SOURCE_BRIDGE");
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "X-Source-Fixture",
+            required("ZPR_TEST_SOURCE_BRIDGE_TOKEN").parse().unwrap(),
+        );
+        headers.insert(
+            reqwest::header::COOKIE,
+            "browser-fixture=not-an-admin-credential".parse().unwrap(),
+        );
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            "Bearer not-an-admin-credential".parse().unwrap(),
+        );
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(3))
+            .build()
+            .unwrap();
+        let bridge = Self {
+            client,
+            url: format!(
+                "{base}/api/trusted-sources/runtime/{SOURCE}/control?organization=foreign-fixture"
+            ),
+            read_key: "browser-cannot-select-admin-key".into(),
+            write_key: "browser-cannot-select-admin-key".into(),
+            revoked_key: String::new(),
+        };
+        let before = self.read().await;
+        let ca = std::fs::read_to_string(required("ZPR_TEST_SOURCE_CA")).unwrap();
+        let admin_url = self.url.split("/admin/").next().unwrap();
+        for (key, trust, expected) in [
+            (
+                "not-an-api-key",
+                ca.clone(),
+                reqwest::StatusCode::BAD_GATEWAY,
+            ),
+            (
+                self.write_key.as_str(),
+                rcgen::generate_simple_self_signed(vec!["localhost".into()])
+                    .unwrap()
+                    .cert
+                    .pem(),
+                reqwest::StatusCode::BAD_GATEWAY,
+            ),
+            (self.read_key.as_str(), ca.clone(), reqwest::StatusCode::OK),
+            (self.write_key.as_str(), ca.clone(), reqwest::StatusCode::OK),
+        ] {
+            let configured = bridge
+                .client
+                .post(format!("{base}/fixture/config"))
+                .json(&serde_json::json!({"url": admin_url, "key": key, "ca": trust}))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(configured.status(), reqwest::StatusCode::NO_CONTENT);
+            let response = bridge
+                .client
+                .get(&bridge.url)
+                .header("X-API-Key", &bridge.read_key)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+            assert_eq!(response.headers().get("Cache-Control").unwrap(), "no-store");
+            let body = response.text().await.unwrap();
+            assert!(
+                serde_json::from_str::<serde_json::Value>(&body)
+                    .unwrap()
+                    .is_object()
+            );
+            assert!(
+                !body.contains(&self.write_key) && !body.contains(&self.read_key),
+                "bridge leaked server-owned credentials"
+            );
+            if key == self.read_key {
+                let response = bridge
+                    .client
+                    .put(&bridge.url)
+                    .header("X-API-Key", &bridge.write_key)
+                    .json(&serde_json::json!({"enabled": !before.enabled}))
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), reqwest::StatusCode::FORBIDDEN);
+            }
+            assert_eq!(
+                self.read().await,
+                before,
+                "bridge failure changed durable controls"
+            );
+        }
+        for body in [
+            r#"{}"#,
+            r#"{"enabled":null}"#,
+            r#"{"enabled":false,"extra":true}"#,
+            r#"{"enabled":false,"enabled":true}"#,
+        ] {
+            let response = bridge
+                .client
+                .put(&bridge.url)
+                .header("X-API-Key", &bridge.write_key)
+                .header("Content-Type", "application/json")
+                .body(body)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+            assert_eq!(
+                self.read().await,
+                before,
+                "malformed bridge mutation changed durable controls"
+            );
+        }
+        let response = bridge
+            .client
+            .get(format!(
+                "{base}/api/trusted-sources/runtime/unknown-fixture/control"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+        let response = bridge
+            .client
+            .get(format!("{base}/api/trusted-sources/runtime"))
+            .header("X-API-Key", &bridge.read_key)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let inventory: Vec<serde_json::Value> = response.json().await.unwrap();
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0]["name"], SOURCE);
+        assert_eq!(inventory[0]["enabled"], before.enabled);
+        assert_eq!(bridge.read().await, before);
+        println!(
+            "SOURCE_LIFECYCLE control-bridge: real Admin TLS transport, server-owned credentials, inventory/readback, explicit credential/CA failures and strict mutations passed"
+        );
+        bridge
+    }
+
     async fn start(asm: &Arc<Assembly>, tasks: &mut tokio::task::JoinSet<()>) -> Self {
         let mut keys = Vec::new();
         for (id, permission, status) in [
@@ -483,6 +628,7 @@ async fn source_lifecycle_process_interop() {
         let admin = AdminClient::start(&asm, &mut tasks).await;
         admin.assert_rejected_mutations().await;
         admin.assert_untrusted_tls_rejected().await;
+        let admin = admin.bridge().await;
         let event_asm = asm.clone();
         tasks.spawn(crate::event_mgr::launch(event_asm, events));
         println!("SOURCE_LIFECYCLE admin-http: verified TLS, authenticated readback, rejected missing/invalid/revoked/read-only credentials and malformed mutations");

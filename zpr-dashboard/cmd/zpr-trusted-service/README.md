@@ -141,7 +141,11 @@ implement a device/person subject link. Source controls use the actual Admin
 HTTPS listener and API-key checks, and the real event worker performs queued
 reconciliation. Unauthorized/malformed mutations and an unrelated TLS trust
 root are rejected. The VS runs production components in test processes, not
-the full daemon, Control-Service bridge or gateway transport. See
+the full daemon or gateway transport. Lifecycle controls/readback also traverse
+the actual Control-Service bridge and production Admin transport, with
+server-owned credentials and explicit upstream-credential/trust failure recovery.
+Its inbound loopback HTTP fixture is not production Control-Service mTLS or
+operator authorization. See
 [prerequisites, reproduction and evidence boundaries](../../../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
 
 ### Optional source validity bound

@@ -99,8 +99,14 @@ restart, changed-data denial, outage handling and fresh recovery with Simulator
 unavailable. Controls cross the real authenticated Admin HTTPS API; the actual
 event worker reconciles accepted changes. Missing/invalid/revoked/read-only
 credentials, malformed mutations and an unrelated TLS trust root are rejected.
+Lifecycle mutations/readback now also traverse the real Control-Service bridge
+and production Admin client transport with server-owned credentials. Invalid
+upstream credentials/CA trust and read-only mutation failures are explicit;
+correct configuration recovers without changing stored state. Browser-provided
+credentials cannot select the Admin key. The bridge's test ingress uses a
+token-gated loopback HTTP fixture, not production mTLS or named-user authorization.
 This is component/process acceptance with explicitly synthetic identities,
-not approved subject-link, full daemon/Control-Service/UI or gateway-delivery
+not approved subject-link, full daemon/Control-Service ingress/UI or gateway-delivery
 acceptance. See [prerequisites and exact boundaries](../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).
 
 Subject-link authorization groundwork now accepts explicit `subject-link.read`,

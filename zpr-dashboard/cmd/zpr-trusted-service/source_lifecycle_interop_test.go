@@ -85,6 +85,9 @@ func TestSourceLifecycleVSInterop(t *testing.T) {
 		if !strings.Contains(string(output), "SOURCE_LIFECYCLE admin-http:") {
 			t.Fatalf("VS fixture skipped authenticated HTTPS controls in phase %s:\n%s", phase, output)
 		}
+		if !strings.Contains(string(output), "SOURCE_LIFECYCLE control-bridge:") {
+			t.Fatalf("VS fixture skipped Control-Service bridge in phase %s:\n%s", phase, output)
+		}
 		if phase != "provider-down" && fixture.searches.Load()-before != 2 {
 			t.Fatalf("phase %s made %d directory searches; expected exactly two endpoint refreshes and no disabled-source lookups", phase, fixture.searches.Load()-before)
 		}
