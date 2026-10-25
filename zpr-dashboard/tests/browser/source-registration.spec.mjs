@@ -215,3 +215,31 @@ test("Source registration V03 explicitly designates one durable policy default",
   expect(fixture.operations.filter(operation => operation.body.policy_default === true)).toHaveLength(2);
   fixture.verify();
 });
+
+test("Source registration preserves explicit selector declaration without claiming verification", async ({ page, context }) => {
+  const fixture = await registrationFixture(page, context);
+  const { browser, registry } = fixture;
+  const form = await fillLDAP(browser, "company_directory");
+  const selector = form.locator('[name="subject_selector"]');
+  await expect(selector).toHaveValue("");
+  await selector.selectOption("ldap_entry_uuid");
+  await expect(form).toContainText("Not verified by connection tests; does not enable subject links.");
+  await form.getByRole("button", { name: "Test connection (read-only)", exact: true }).click();
+  await expect(browser.locator("[data-registration-message]")).toContainText("Connection test succeeded");
+  expect(registry.sources).toHaveLength(0);
+  await form.getByRole("button", { name: "Save configuration", exact: true }).click();
+  await expect(browser.locator("[data-registration-message]")).toContainText("saved durably");
+  expect(registry.sources[0].config.subject_selector).toBe("ldap_entry_uuid");
+  await page.reload();
+  await browser.getByRole("button", { name: "Edit selected source", exact: true }).click();
+  await expect(selector).toHaveValue("ldap_entry_uuid");
+  await form.getByLabel("Display name", { exact: true }).fill("Renamed directory");
+  await form.getByRole("button", { name: "Save configuration", exact: true }).click();
+  await expect(browser.locator("[data-registration-message]")).toContainText("saved durably");
+  expect(registry.sources[0].config.subject_selector).toBe("ldap_entry_uuid");
+  await selector.selectOption("");
+  await form.getByRole("button", { name: "Save configuration", exact: true }).click();
+  await expect(browser.locator("[data-registration-message]")).toContainText("saved durably");
+  expect(registry.sources[0].config).not.toHaveProperty("subject_selector");
+  fixture.verify();
+});

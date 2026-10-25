@@ -38,6 +38,83 @@ application or an external-network policy.
 
 ## Enable explicitly
 
+### Subject-link review groundwork
+
+Opening the same protected store also initializes separate subject-link review
+tables. Internal APIs persist immutable device/LDAP-entryUUID proposals and
+transactional independent review decisions, with exact digest/version/registry
+revision matching. There is no self-approval override for these records.
+`review-approved` means review evidence only, not an active subject binding.
+
+These records cannot enter the existing policy/gateway queue or authorize a
+policy installation. Internal `SubmitSubjectLinkOnce` and
+`ApproveSubjectLinkOnce` methods persist original-response retry receipts
+atomically with review/audit writes. Keys are scoped to organization and exact
+issuer/subject; changed content conflicts, and identical retries return the
+original response rather than current review status. The original unkeyed
+methods retain their prior behavior.
+
+No subject-link HTTP handlers, UI, publication or VS delivery are enabled by
+this configuration. Receipt replay still requires caller authorization and
+does not renew a review or create an active binding. Durable retry receipts
+currently have no compaction/retention policy. See the
+[retry contract and limits](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-review-retry-receipts-2026-10-24).
+Future handlers must authorize the dedicated subject-link permissions, capture
+proposer/organization/registry context server-side, and revalidate actual
+source/authority registrations atomically before publishing a binding. See the
+[scope and validation evidence](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-subject-link-review-foundation-2026-10-24).
+
+The proposed [Control-Service integration](../MULTISOURCE_POLICY_SUPPORT.md#s05-control-service-review-integration-contract-2026-10-24)
+keeps this generic policy/gateway queue in Control Room, but places future
+subject-link review HTTP/state in a separately configured Control-Service
+store. Existing local subject-link tables are not automatically promoted or
+shared between services. Distinct review-only routes must not masquerade as
+active-binding approval, and require an independently approved request-proof
+scope; enrollment delegation and the generic proxy alone are insufficient.
+This is a documentation proposal, not enabled configuration or endpoints.
+
+An approved [internal proof foundation](../MULTISOURCE_POLICY_SUPPORT.md#s05-isolated-review-request-proof-foundation-2026-10-24)
+now signs/verifies the three proposed review routes with a distinct purpose,
+exact organization/permission/request/retry-key binding, pinned mTLS caller,
+independent backend grants and single-use nonces. Existing enrollment routes
+are not broadened. No handler or trust provisioning uses the new methods yet;
+enabling this generic queue does not enable them.
+
+The [durable proof/review composition groundwork](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-proof-and-review-composition-groundwork-2026-10-24)
+now adds a separate bounded SQLite nonce table and exact review-only permission
+mappings. Proof consumption commits before review writes; a failed/uncertain
+review requires fresh proof with the original retry key. Tests cover reopen,
+concurrent retry, removed grants, self-review denial and audit rollback. There
+is still no subject-link HTTP handler, configured proof verifier, authoritative
+authority capture or active-binding publication. This configuration must not
+be treated as enabling those features or sharing a database with Control-Service.
+
+The [internal BAS authority registry](../MULTISOURCE_POLICY_SUPPORT.md#s05-internal-bas-authority-registration-and-capture-2026-10-24)
+now provides organization-scoped IDs, version-CAS configuration edits, immutable
+audit history and exact enabled-version root capture. BAS service IDs/issuers
+are explicit opaque mappings; bootstrap/local-VS and human authorities are not
+supported. This is not trust provisioning or device-possession verification.
+Review submit/approve does not yet integrate registration capture, and no
+authority-management HTTP API, permission or production configuration is enabled.
+
+Opt-in [authority-guarded review methods](../MULTISOURCE_POLICY_SUPPORT.md#s05-transaction-guarded-authority-review-integration-2026-10-24)
+now check registration in the same transaction as new review mutations.
+Their retry fingerprints cannot reuse weaker legacy receipts; exact successful
+replays remain historical after authority edits. Legacy APIs keep their prior
+behavior. Source validation, caller authorization, active publication and HTTP
+composition are still separate requirements, not supplied by this configuration.
+
+An internal [exact-source composition path](../MULTISOURCE_POLICY_SUPPORT.md#s05-exact-ldap-subject-lookup-and-source-guarded-review-2026-10-24)
+now checks source revision/version, selector, approved LDAP attribute names and
+exact UUID presence for new mutations alongside the authority transaction
+guard. It fences API-managed source edits through commit; external file writers
+are detected, not transactionally controlled. Historical retries avoid new
+provider reads. These methods are not configured/exposed by this UI or a
+Control-Service handler, and do not publish bindings or dynamically install VS
+sources. Production delivery/policy identity and credential ownership remain gates.
+
+### Existing policy/gateway workflow
+
 Provide an operator-owned protected JSON configuration:
 
 ```json

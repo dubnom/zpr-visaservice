@@ -2371,6 +2371,10 @@ function formatZPL(source) {
 function formatPolicySource() {
   const textarea = byId("policy-source");
   if (textarea.disabled || textarea.readOnly) return;
+  if (textarea.value.trimStart().startsWith("{")) {
+    setPolicyFileStatus("Policy-document JSON formatting is not supported; edit the JSON directly.", true);
+    return;
+  }
   const formatted = formatZPL(textarea.value);
   if (formatted === textarea.value) return;
   window.ZPREditorPage.editText(textarea, formatted, true);

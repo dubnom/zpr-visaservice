@@ -54,6 +54,86 @@ production enrollment, or update previously published downloads.
 
 # Development
 
+## Policy-owned source controls and provisional documents
+
+Control Room's Trusted Sources page now separates runtime source enable/disable
+from directory registrations. Runtime controls use only the production VS Admin
+API through Control-Service; Simulator is not required. GET
+`/api/trusted-sources/runtime` and GET
+`/api/trusted-sources/runtime/{source}/control` require `trusted-source.read`;
+PUT on the latter requires `trusted-source.control` and the normal named-user,
+organization and CSRF checks. Grant both permissions explicitly to an operator
+who needs readback and mutation; existing directory/policy permissions imply
+neither. No grant is installed automatically. Control-Service's independently
+provisioned VS admin key must permit writes. State is deployment-wide, not a
+per-organization override: authorize only operators responsible for that VS.
+The browser never receives that key. Redirects and malformed success readbacks
+fail closed. The UI confirms mutations, reads back stored desired/effective/
+pending state, and blocks stale buttons after mutation or readback failure.
+Neither acceptance nor an idle reconciliation queue proves gateway delivery.
+
+Policy records can now contain provisional JSON `documents` with document `id`,
+ZPL `source`, and `trusted_sources` declarations. Identical stable source IDs
+share one effective declaration; differing API, TTL or ordered return mappings
+fail before compilation. Check, candidate test and stage use one private composed
+compiler context; review binds the original JSON and independent base config.
+This composes documents **within one saved revision**, not arbitrary catalog
+records or remote includes. Source diagnostics refer to composed ZPL, never
+invented JSON editor lines. The deployment attribute catalog remains separate;
+JSON-aware completion, formatting and assistant editing are not implemented.
+Format/assistant requests explicitly refuse this provisional format rather than
+silently discarding declarations.
+
+See [examples and limits](../MULTISOURCE_POLICY_SUPPORT.md#operator-controls-shared-json-documents-and-immutable-ldap-provider)
+and the [immutable LDAP provider configuration](cmd/zpr-trusted-service/README.md#immutable-ldap-source-configuration).
+Neither source declaration nor provider configuration approves a device/person
+association; issuer-qualified active subject-link delivery remains a separate
+milestone. Everything here is local implementation/fixture evidence, not a
+deployment or M1 acceptance.
+
+Subject-link authorization groundwork now accepts explicit `subject-link.read`,
+`subject-link.propose`, `subject-link.approve` and `subject-link.revoke`
+operator grants and maps the proposed operator routes to those permissions.
+The independent-reviewer check compares verified issuer/subject pairs, not
+display names. The existing protected SQLite review store now has isolated
+subject-link proposal/decision tables and checks the persisted proposer inside
+the approval transaction. `review-approved` is review evidence, not an active
+binding. There are no subject-link HTTP handlers or snapshot delivery yet.
+Enrollment delegation cannot sign these routes and no permissions are
+automatically granted. See the
+[S05 authorization scope](../MULTISOURCE_POLICY_SUPPORT.md#s05-operator-authorization-foundation-2026-10-24).
+See also the
+[durable review foundation](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-subject-link-review-foundation-2026-10-24).
+Its [keyed retry APIs](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-review-retry-receipts-2026-10-24)
+now replay original committed review responses after lost replies/reopen,
+without duplicating review records or audit decisions. This is internal
+persistence behavior, not an enabled subject-link HTTP workflow.
+The [isolated review request-proof API](../MULTISOURCE_POLICY_SUPPORT.md#s05-isolated-review-request-proof-foundation-2026-10-24)
+also provides internal signing/verification with exact request, organization,
+permission and retry-key binding, independent grants and single-use nonces.
+It does not expand enrollment delegation or enable subject-link handlers.
+The [durable proof/review batch](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-proof-and-review-composition-groundwork-2026-10-24)
+adds bounded persistent nonce consumption, exact review-only permission
+mappings and restart/concurrent-retry composition tests. No production handler,
+trust configuration, authority registration or active binding is enabled.
+An [internal BAS authority registry/capture API](../MULTISOURCE_POLICY_SUPPORT.md#s05-internal-bas-authority-registration-and-capture-2026-10-24)
+now persists organization-scoped exact service/issuer mappings with versioned
+edits and immutable history. It rejects disabled/stale root captures, but is
+not configured or exposed by a running service and does not authorize links.
+The [guarded review variants](../MULTISOURCE_POLICY_SUPPORT.md#s05-transaction-guarded-authority-review-integration-2026-10-24)
+now check that authority inside new review transactions while preserving
+historical retry responses. They do not validate the separate source registry,
+enable HTTP handlers or publish active bindings.
+Network LDAPS registrations also support an optional
+[`subject_selector` declaration](ASSERTIONS.md#production-network-ldap-and-source-identity-packet-a).
+It is versioned configuration intent, not connection-test certification or
+permission to perform UUID lookups. The source editor labels this distinction explicitly.
+An [internal exact UUID reader and guarded review composition](../MULTISOURCE_POLICY_SUPPORT.md#s05-exact-ldap-subject-lookup-and-source-guarded-review-2026-10-24)
+now exercise that declaration against local LDAPS fixtures, with no mutable-name
+fallback and no extra provider reads for historical retry receipts. They are
+not exposed by review HTTP or VS enforcement. Dynamic runtime installation
+still needs an approved source-to-policy delivery/credential contract.
+
 To setup your development environment, run `go mod download` to install the local dependencies. Finally, run `make run` to start the TUI.
 
 ## Independent operator startup (C03/C06)

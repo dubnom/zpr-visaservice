@@ -71,9 +71,6 @@ func (workspace *policyWorkspace) compileAndStagePolicyRecord(ctx context.Contex
 	if record.Kind != "policy" || record.CurrentRevision <= 0 || strings.TrimSpace(record.Content) == "" {
 		return nil, errors.New("A saved, non-empty policy record is required for staging.")
 	}
-	if diagnostic := validateSourceQualifiedPolicy(record.Content, loadPolicyAttributeMappings(workspace.stageConfigPath)); diagnostic != "" {
-		return nil, errors.New(diagnostic)
-	}
 	configPath, err := resolvedRegularFile(workspace.stageConfigPath)
 	if err != nil {
 		return nil, errors.New("Runtime ZPLC config is unavailable for staging.")
@@ -111,14 +108,24 @@ func (workspace *policyWorkspace) compileAndStagePolicyRecord(ctx context.Contex
 		return nil, errors.New("Unable to create a temporary policy staging workspace.")
 	}
 	defer os.RemoveAll(temporaryDirectory)
+	composedSource, compilerConfig, err := preparePolicyDocumentsFromBase(record.Content, configPath, temporaryDirectory, configContents)
+	if err != nil {
+		return nil, err
+	}
+	if diagnostic := sourceQualifiedConfigurationError(compilerConfig); diagnostic != "" {
+		return nil, errors.New(diagnostic)
+	}
+	if diagnostic := validateSourceQualifiedPolicy(composedSource, loadPolicyAttributeMappings(compilerConfig)); diagnostic != "" {
+		return nil, errors.New(diagnostic)
+	}
 	sourcePath := filepath.Join(temporaryDirectory, "candidate.zpl")
 	bundlePath := filepath.Join(temporaryDirectory, "candidate.bin2")
-	if err := os.WriteFile(sourcePath, []byte(record.Content), 0o600); err != nil {
+	if err := os.WriteFile(sourcePath, []byte(composedSource), 0o600); err != nil {
 		return nil, errors.New("Unable to prepare the staged policy source.")
 	}
 	compileContext, cancel := context.WithTimeout(ctx, policyStageTimeout)
 	defer cancel()
-	command := exec.CommandContext(compileContext, workspace.compiler, "-c", configPath, "-k", signingKeyPath, "-f", "v2", "-o", bundlePath, sourcePath)
+	command := exec.CommandContext(compileContext, workspace.compiler, "-c", compilerConfig, "-k", signingKeyPath, "-f", "v2", "-o", bundlePath, sourcePath)
 	command.Args = policyCompilerSourceArgs(command.Args, defaultSource)
 	command.Dir = filepath.Dir(configPath)
 	bindingDigest := ""

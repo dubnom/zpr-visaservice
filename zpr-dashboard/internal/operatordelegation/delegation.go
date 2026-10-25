@@ -47,17 +47,21 @@ type Config struct {
 }
 
 type assertion struct {
-	Version  int    `json:"version"`
-	KeyID    string `json:"key_id"`
-	Audience string `json:"audience"`
-	Issuer   string `json:"issuer"`
-	Subject  string `json:"subject"`
-	Method   string `json:"method"`
-	Target   string `json:"target"`
-	BodyHash string `json:"body_sha256"`
-	Issued   int64  `json:"issued_unix_nano"`
-	Expires  int64  `json:"expires_unix_nano"`
-	Nonce    string `json:"nonce"`
+	Version      int    `json:"version"`
+	KeyID        string `json:"key_id"`
+	Audience     string `json:"audience"`
+	Issuer       string `json:"issuer"`
+	Subject      string `json:"subject"`
+	Method       string `json:"method"`
+	Target       string `json:"target"`
+	BodyHash     string `json:"body_sha256"`
+	Issued       int64  `json:"issued_unix_nano"`
+	Expires      int64  `json:"expires_unix_nano"`
+	Nonce        string `json:"nonce"`
+	Purpose      string `json:"purpose,omitempty"`
+	Organization string `json:"organization,omitempty"`
+	Permission   string `json:"permission,omitempty"`
+	RetryKey     string `json:"retry_key,omitempty"`
 }
 
 type ReplayStore interface {
@@ -180,10 +184,15 @@ func (s *Signer) Sign(r *http.Request, body []byte, id operatorauth.Identity, no
 	if !boundRequest(r, body) || !https(id.Issuer, false) || !text(id.Subject) || len(AuditIdentity(id.Issuer, id.Subject)) > 256 {
 		return "", errors.New("invalid named operator delegation request")
 	}
+	return s.sign(r, body, id, now, reviewProofScope{})
+}
+
+func (s *Signer) sign(r *http.Request, body []byte, id operatorauth.Identity, now time.Time, scope reviewProofScope) (string, error) {
 	hash := sha256.Sum256(body)
 	token := assertion{Version: 1, KeyID: s.config.KeyID, Audience: s.config.Audience,
 		Issuer: id.Issuer, Subject: id.Subject, Method: r.Method, Target: r.URL.RequestURI(),
-		BodyHash: hex.EncodeToString(hash[:]), Issued: now.UnixNano(), Expires: now.Add(30 * time.Second).UnixNano(), Nonce: rand.Text()}
+		BodyHash: hex.EncodeToString(hash[:]), Issued: now.UnixNano(), Expires: now.Add(30 * time.Second).UnixNano(), Nonce: rand.Text(),
+		Purpose: scope.purpose, Organization: scope.organization, Permission: scope.permission, RetryKey: scope.retryKey}
 	payload, err := json.Marshal(token)
 	if err != nil {
 		return "", err
@@ -607,9 +616,16 @@ func VerifyPolicyPair(trust PolicyTrust, method, route string, body []byte, proo
 }
 
 func (v *Verifier) Verify(r *http.Request, body []byte, now time.Time) (operatorauth.Grant, error) {
+	if !boundRequest(r, body) {
+		return operatorauth.Grant{}, errors.New("operator delegation unavailable or denied")
+	}
+	return v.verify(r, body, now, reviewProofScope{})
+}
+
+func (v *Verifier) verify(r *http.Request, body []byte, now time.Time, scope reviewProofScope) (operatorauth.Grant, error) {
 	denied := errors.New("operator delegation unavailable or denied")
 	values := r.Header.Values(Header)
-	if !boundRequest(r, body) || len(values) != 1 || len(values[0]) > 8192 ||
+	if len(values) != 1 || len(values[0]) > 8192 ||
 		r.TLS == nil || len(r.TLS.VerifiedChains) == 0 || len(r.TLS.PeerCertificates) == 0 {
 		return operatorauth.Grant{}, denied
 	}
@@ -656,6 +672,8 @@ func (v *Verifier) Verify(r *http.Request, body []byte, now time.Time) (operator
 	hash := sha256.Sum256(body)
 	issued, expires := time.Unix(0, token.Issued), time.Unix(0, token.Expires)
 	if public == nil || !ed25519.Verify(public, payload, signature) || token.Version != 1 ||
+		token.Purpose != scope.purpose || token.Organization != scope.organization ||
+		token.Permission != scope.permission || token.RetryKey != scope.retryKey ||
 		token.Audience != v.config.Audience || token.Method != r.Method || token.Target != r.URL.RequestURI() ||
 		token.BodyHash != hex.EncodeToString(hash[:]) || len(token.Nonce) != 26 ||
 		token.Issued <= 0 || issued.After(now.Add(2*time.Second)) || !expires.After(issued) ||
@@ -664,7 +682,15 @@ func (v *Verifier) Verify(r *http.Request, body []byte, now time.Time) (operator
 	}
 	for _, grant := range v.config.Grants {
 		if grant.Issuer == token.Issuer && grant.Subject == token.Subject {
-			replayKey := sha256.Sum256([]byte(token.KeyID + ":" + token.Nonce))
+			if scope.purpose != "" && (!slices.Contains(grant.Organizations, scope.organization) ||
+				!slices.Contains(grant.Permissions, scope.permission)) {
+				return operatorauth.Grant{}, denied
+			}
+			replayInput := token.KeyID + ":" + token.Nonce
+			if scope.purpose != "" {
+				replayInput = scope.purpose + ":" + replayInput
+			}
+			replayKey := sha256.Sum256([]byte(replayInput))
 			if err := v.replay.ConsumeOperatorDelegation(r.Context(), hex.EncodeToString(replayKey[:]), expires, now); err != nil {
 				log.Printf("Operator delegation replay protection denied request: %T", err)
 				return operatorauth.Grant{}, denied

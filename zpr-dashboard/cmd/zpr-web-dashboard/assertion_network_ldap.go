@@ -19,43 +19,10 @@ import (
 const assertionLDAPFilter = "(|(objectClass=person)(objectClass=inetOrgPerson)(objectClass=posixAccount)(objectClass=posixGroup)(objectClass=groupOfNames)(objectClass=groupOfUniqueNames))"
 
 func networkAssertionLDAPReader(entry assertionSourceConfig, attributes []string) (func(context.Context, string, string, string) (assertionDirectory, error), error) {
-	endpoint, err := url.Parse(entry.URL)
-	if err != nil || endpoint.Scheme != "ldaps" || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.Path != "" || endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" || entry.Container != "" || entry.TokenFile != "" || len(entry.Organizations) == 0 || len(entry.Attributes) == 0 {
-		return nil, errors.New("Network LDAP requires an LDAPS origin, explicit organizations and approved attributes; container and token configuration are not allowed")
-	}
-	if port := endpoint.Port(); port != "" {
-		number, err := strconv.Atoi(port)
-		if err != nil || number < 1 || number > 65535 {
-			return nil, errors.New("Network LDAP port is invalid")
-		}
-	} else if strings.HasSuffix(endpoint.Host, ":") {
-		return nil, errors.New("Network LDAP port is invalid")
-	}
-	for organizationID, scope := range entry.Organizations {
-		base, baseErr := ldap.ParseDN(scope.BaseDN)
-		bind, bindErr := ldap.ParseDN(scope.BindDN)
-		if strings.TrimSpace(organizationID) == "" || strings.TrimSpace(organizationID) != organizationID || baseErr != nil || len(base.RDNs) == 0 || bindErr != nil || len(bind.RDNs) == 0 || scope.URL != "" {
-			return nil, errors.New("Network LDAP organization requires valid base and bind DNs and no URL override")
-		}
-		if _, err := assertionLDAPCredential(scope.BindPasswordFile); err != nil {
-			return nil, err
-		}
-	}
-	roots, err := x509.SystemCertPool()
+	address, tlsConfig, err := networkAssertionLDAPConnection(entry)
 	if err != nil {
-		return nil, errors.New("Cannot load trusted LDAP CA certificates")
+		return nil, err
 	}
-	if entry.CAFile != "" {
-		data, err := os.ReadFile(entry.CAFile)
-		if err != nil || !roots.AppendCertsFromPEM(data) {
-			return nil, errors.New("Trusted LDAP CA file is invalid")
-		}
-	}
-	address := endpoint.Host
-	if endpoint.Port() == "" {
-		address = net.JoinHostPort(endpoint.Hostname(), "636")
-	}
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots, ServerName: endpoint.Hostname()}
 	return func(ctx context.Context, organizationID, _, _ string) (assertionDirectory, error) {
 		scope, exists := entry.Organizations[organizationID]
 		if !exists {
@@ -63,6 +30,47 @@ func networkAssertionLDAPReader(entry assertionSourceConfig, attributes []string
 		}
 		return readNetworkAssertionLDAP(ctx, address, tlsConfig, scope, attributes)
 	}, nil
+}
+
+func networkAssertionLDAPConnection(entry assertionSourceConfig) (string, *tls.Config, error) {
+	endpoint, err := url.Parse(entry.URL)
+	if err != nil || endpoint.Scheme != "ldaps" || endpoint.Hostname() == "" || endpoint.User != nil || endpoint.Path != "" || endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" || entry.Container != "" || entry.TokenFile != "" || len(entry.Organizations) == 0 || len(entry.Attributes) == 0 {
+		return "", nil, errors.New("Network LDAP requires an LDAPS origin, explicit organizations and approved attributes; container and token configuration are not allowed")
+	}
+	if port := endpoint.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return "", nil, errors.New("Network LDAP port is invalid")
+		}
+	} else if strings.HasSuffix(endpoint.Host, ":") {
+		return "", nil, errors.New("Network LDAP port is invalid")
+	}
+	for organizationID, scope := range entry.Organizations {
+		base, baseErr := ldap.ParseDN(scope.BaseDN)
+		bind, bindErr := ldap.ParseDN(scope.BindDN)
+		if strings.TrimSpace(organizationID) == "" || strings.TrimSpace(organizationID) != organizationID || baseErr != nil || len(base.RDNs) == 0 || bindErr != nil || len(bind.RDNs) == 0 || scope.URL != "" {
+			return "", nil, errors.New("Network LDAP organization requires valid base and bind DNs and no URL override")
+		}
+		if _, err := assertionLDAPCredential(scope.BindPasswordFile); err != nil {
+			return "", nil, err
+		}
+	}
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		return "", nil, errors.New("Cannot load trusted LDAP CA certificates")
+	}
+	if entry.CAFile != "" {
+		data, err := os.ReadFile(entry.CAFile)
+		if err != nil || !roots.AppendCertsFromPEM(data) {
+			return "", nil, errors.New("Trusted LDAP CA file is invalid")
+		}
+	}
+	address := endpoint.Host
+	if endpoint.Port() == "" {
+		address = net.JoinHostPort(endpoint.Hostname(), "636")
+	}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots, ServerName: endpoint.Hostname()}
+	return address, tlsConfig, nil
 }
 
 func assertionLDAPCredential(path string) (string, error) {
@@ -88,21 +96,37 @@ func assertionLDAPCredential(path string) (string, error) {
 }
 
 func readNetworkAssertionLDAP(ctx context.Context, address string, tlsConfig *tls.Config, scope assertionSourceScope, attributes []string) (assertionDirectory, error) {
+	requested := append([]string{"objectClass", "uid", "cn", "memberUid", "member", "uniqueMember"}, attributes...)
+	result, err := searchNetworkAssertionLDAP(ctx, address, tlsConfig, scope, assertionLDAPFilter, requested, 2000)
+	if err != nil {
+		return assertionDirectory{}, err
+	}
+	directory, err := assertionLDAPDirectory(result.Entries, attributes)
+	if errors.Is(err, errAssertionLDAPEmpty) {
+		return directory, err
+	}
+	if err != nil {
+		return assertionDirectory{}, errors.New("Trusted LDAP source read failed")
+	}
+	return directory, nil
+}
+
+func searchNetworkAssertionLDAP(ctx context.Context, address string, tlsConfig *tls.Config, scope assertionSourceScope, filter string, attributes []string, limit int) (*ldap.SearchResult, error) {
 	unavailable := errors.New("Trusted LDAP source read failed")
 	password, err := assertionLDAPCredential(scope.BindPasswordFile)
 	if err != nil {
-		return assertionDirectory{}, err
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	raw, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", address)
 	if err != nil {
-		return assertionDirectory{}, unavailable
+		return nil, unavailable
 	}
 	defer raw.Close()
 	deadline, _ := ctx.Deadline()
 	if err := raw.SetDeadline(deadline); err != nil {
-		return assertionDirectory{}, unavailable
+		return nil, unavailable
 	}
 	// Closing the socket also interrupts bind/search when the caller cancels.
 	stopped := make(chan struct{})
@@ -116,26 +140,25 @@ func readNetworkAssertionLDAP(ctx context.Context, address string, tlsConfig *tl
 	}()
 	secure := tls.Client(raw, tlsConfig.Clone())
 	if err := secure.HandshakeContext(ctx); err != nil {
-		return assertionDirectory{}, unavailable
+		return nil, unavailable
 	}
 	connection := ldap.NewConn(&assertionLDAPReadConn{Conn: secure, reader: io.LimitReader(secure, maxPolicyLDAPScanOutput)}, true)
 	connection.Start()
 	defer connection.Close()
 	connection.SetTimeout(10 * time.Second)
 	if err := connection.Bind(scope.BindDN, password); err != nil {
-		return assertionDirectory{}, unavailable
+		return nil, unavailable
 	}
-	requested := append([]string{"objectClass", "uid", "cn", "memberUid", "member", "uniqueMember"}, attributes...)
-	result, err := connection.Search(ldap.NewSearchRequest(scope.BaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 2000, 8, false, assertionLDAPFilter, requested, nil))
-	if err != nil || ctx.Err() != nil || len(result.Referrals) != 0 || len(result.Entries) > 2000 {
-		return assertionDirectory{}, unavailable
+	result, err := connection.Search(ldap.NewSearchRequest(scope.BaseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, limit, 8, false, filter, attributes, nil))
+	if err != nil || ctx.Err() != nil || len(result.Referrals) != 0 || len(result.Entries) > limit {
+		return nil, unavailable
 	}
 	base, _ := ldap.ParseDN(scope.BaseDN)
 	size := 0
 	for _, entry := range result.Entries {
 		dn, err := ldap.ParseDN(entry.DN)
 		if err != nil || !base.EqualFold(dn) && !base.AncestorOfFold(dn) {
-			return assertionDirectory{}, unavailable
+			return nil, unavailable
 		}
 		size += len(entry.DN)
 		for _, attr := range entry.Attributes {
@@ -145,17 +168,10 @@ func readNetworkAssertionLDAP(ctx context.Context, address string, tlsConfig *tl
 			}
 		}
 		if size > maxPolicyLDAPScanOutput {
-			return assertionDirectory{}, unavailable
+			return nil, unavailable
 		}
 	}
-	directory, err := assertionLDAPDirectory(result.Entries, attributes)
-	if errors.Is(err, errAssertionLDAPEmpty) {
-		return directory, err
-	}
-	if err != nil {
-		return assertionDirectory{}, unavailable
-	}
-	return directory, nil
+	return result, nil
 }
 
 // Bound aggregate decrypted LDAP response bytes without changing the BER library's global limits.

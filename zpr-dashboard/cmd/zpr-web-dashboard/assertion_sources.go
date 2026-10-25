@@ -34,20 +34,32 @@ type assertionSourceScope struct {
 }
 
 type assertionSourceConfig struct {
-	Version       uint64                          `json:"version,omitempty"`
-	WatchChanges  bool                            `json:"watch_changes,omitempty"`
-	Name          string                          `json:"name"`
-	DisplayName   string                          `json:"display_name,omitempty"`
-	Kind          string                          `json:"kind"`
-	Container     string                          `json:"container,omitempty"`
-	URL           string                          `json:"url,omitempty"`
-	CAFile        string                          `json:"ca_file,omitempty"`
-	TokenFile     string                          `json:"token_file,omitempty"`
-	Attributes    []string                        `json:"attributes,omitempty"`
-	Organizations map[string]assertionSourceScope `json:"organizations,omitempty"`
+	Version         uint64                          `json:"version,omitempty"`
+	WatchChanges    bool                            `json:"watch_changes,omitempty"`
+	Name            string                          `json:"name"`
+	DisplayName     string                          `json:"display_name,omitempty"`
+	SubjectSelector string                          `json:"subject_selector,omitempty"`
+	Kind            string                          `json:"kind"`
+	Container       string                          `json:"container,omitempty"`
+	URL             string                          `json:"url,omitempty"`
+	CAFile          string                          `json:"ca_file,omitempty"`
+	TokenFile       string                          `json:"token_file,omitempty"`
+	Attributes      []string                        `json:"attributes,omitempty"`
+	Organizations   map[string]assertionSourceScope `json:"organizations,omitempty"`
 }
 
 var assertionSourceName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+func validateAssertionSubjectSelector(entry assertionSourceConfig) error {
+	if entry.SubjectSelector == "" {
+		return nil
+	}
+	if entry.SubjectSelector != "ldap_entry_uuid" || entry.Kind != "ldap" || entry.Container != "" ||
+		!strings.HasPrefix(entry.URL, "ldaps://") {
+		return errors.New("Subject selector must be ldap_entry_uuid on a network LDAPS source; declaration does not verify directory support")
+	}
+	return nil
+}
 
 func (runtime *assertionRuntime) configureSources(filePath string) error {
 	if filePath == "" {
@@ -92,6 +104,9 @@ func (runtime *assertionRuntime) buildSources(config assertionSourcesConfig) err
 		}}
 	}
 	for _, entry := range config.Sources {
+		if err := validateAssertionSubjectSelector(entry); err != nil {
+			return err
+		}
 		if !assertionSourceName.MatchString(entry.Name) || strings.Contains(entry.Name, sourceAttributeSeparator) || sources[entry.Name].read != nil {
 			return errors.New("Assertion source names must be unique identifiers")
 		}

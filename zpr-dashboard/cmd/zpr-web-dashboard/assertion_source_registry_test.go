@@ -104,6 +104,93 @@ func TestSourceRegistryDurableMultipleSourcesWithoutSimulator(t *testing.T) {
 	}
 }
 
+func TestSourceRegistryRestartOutageAndRecoveryPreserveSourceIdentity(t *testing.T) {
+	runtime, entries, company, lab := registryEmpty(t)
+	for _, entry := range entries {
+		if saved := registryRequest(runtime, http.MethodPost, "/api/assertions/sources", registryPayload(runtime, entry)); saved.Code != http.StatusOK {
+			t.Fatalf("register %s: %d %s", entry.Name, saved.Code, saved.Body)
+		}
+	}
+	payload := registryPayload(runtime, entries[0])
+	policyDefault := true
+	payload.PolicyDefault = &policyDefault
+	if saved := registryRequest(runtime, http.MethodPut, "/api/assertions/sources", payload); saved.Code != http.StatusOK {
+		t.Fatalf("policy default: %d %s", saved.Code, saved.Body)
+	}
+	persisted, err := os.ReadFile(runtime.sourcesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := runtime.sourcesRevision
+	store := runtime.settingsStore
+	restart := func() {
+		t.Helper()
+		reloaded, err := newAssertionRuntime()
+		if err != nil {
+			t.Fatal(err)
+		}
+		reloaded.settingsStore = store
+		if err := reloaded.refreshSettings(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		runtime = reloaded
+		if len(runtime.sources) != 2 || runtime.sourcesRevision != revision ||
+			runtime.defaultSource != entries[0].Name ||
+			runtime.sourcesConfig.PolicyDefaults["northstar"] != entries[0].Name {
+			t.Fatal("restart changed source identities, revision or defaults")
+		}
+	}
+	read := func(source string) {
+		t.Helper()
+		response := packetARead(runtime, "?source="+source)
+		if response.Code != http.StatusOK {
+			t.Fatalf("read %s: %d %s", source, response.Code, response.Body)
+		}
+		var result struct {
+			SourceID       string `json:"source_id"`
+			OrganizationID string `json:"organization_id"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.SourceID != source || result.OrganizationID != "northstar" {
+			t.Fatalf("read lost source/organization identity: %+v", result)
+		}
+	}
+	read(entries[0].Name)
+	read(entries[1].Name)
+	company.mode.Store(1)
+	defer company.mode.Store(0)
+	for attempt := 0; attempt < 2; attempt++ {
+		restart()
+		labBinds := lab.binds.Load()
+		failed := packetARead(runtime, "?source="+entries[0].Name)
+		if failed.Code != http.StatusBadGateway {
+			t.Fatalf("failed provider returned cached/successful data: %d %s", failed.Code, failed.Body)
+		}
+		if lab.binds.Load() != labBinds {
+			t.Fatal("failed company lookup fell back to lab")
+		}
+		companyBinds := company.binds.Load()
+		read(entries[1].Name)
+		if company.binds.Load() != companyBinds {
+			t.Fatal("independent lab lookup contacted failed company provider")
+		}
+	}
+	company.mode.Store(0)
+	read(entries[0].Name)
+	restart()
+	read(entries[0].Name)
+	read(entries[1].Name)
+	after, err := os.ReadFile(runtime.sourcesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(persisted, after) {
+		t.Fatal("restart, provider outage or recovery mutated source registrations")
+	}
+}
+
 func TestSourceRegistryFailClosedConfigurationAndIdentity(t *testing.T) {
 	runtime, entries, _, _ := registryEmpty(t)
 	entry := entries[0]

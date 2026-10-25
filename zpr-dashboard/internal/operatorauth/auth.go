@@ -34,6 +34,7 @@ func ValidPermission(permission string) bool {
 	return slices.Contains([]string{
 		"read", "create", "cancel", "approve", "reject", "budget.approve",
 		"monitor.read", "logs.read", "policy.read", "policy.analyze", "policy.edit", "policy.apply",
+		"trusted-source.read", "trusted-source.control",
 		"gateway.read", "gateway.analyze", "gateway.edit",
 		"change.read", "change.submit", "change.review",
 		"simulator.read", "simulator.control",
@@ -41,7 +42,28 @@ func ValidPermission(permission string) bool {
 		"scenario.read", "scenario.analyze", "scenario.edit", "scenario.publish", "scenario.archive", "scenario.run", "scenario.cancel", "scenario.reset",
 		"directory.read", "directory.edit", "directory.publish",
 		"device.lifecycle", "device.session", "device.workloads",
+		"subject-link.read", "subject-link.propose", "subject-link.approve", "subject-link.revoke",
 	}, permission)
+}
+
+// RequireIndependentReviewer takes the proposer from the authoritative proposal,
+// never from the approval request. Permission and CSRF checks remain required.
+func RequireIndependentReviewer(reviewer, proposer Identity) error {
+	for _, identity := range []Identity{reviewer, proposer} {
+		if !ValidPrincipal(identity) {
+			return errors.New("verified reviewer and proposer identities are required")
+		}
+	}
+	if reviewer.Issuer == proposer.Issuer && reviewer.Subject == proposer.Subject {
+		return errors.New("subject-link approval requires an independent reviewer")
+	}
+	return nil
+}
+
+// ValidPrincipal validates identity shape, not authentication or permission.
+func ValidPrincipal(identity Identity) bool {
+	_, ok := httpsURL(identity.Issuer)
+	return ok && text(identity.Subject)
 }
 
 type Config struct {

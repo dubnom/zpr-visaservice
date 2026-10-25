@@ -3,6 +3,7 @@ package controlroom
 import (
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
@@ -12,7 +13,75 @@ type Authorizer interface {
 	Authorize(*http.Request, string, string) (operatorauth.Identity, error)
 }
 
+var subjectLinkRecordID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+func subjectLinkPermission(method, path string) (string, bool) {
+	if rest, ok := strings.CutPrefix(path, "/api/subject-link-reviews/"); ok {
+		switch method {
+		case http.MethodGet:
+			if subjectLinkRecordID.MatchString(rest) {
+				return "subject-link.read", true
+			}
+		case http.MethodPost:
+			if rest == "proposals" {
+				return "subject-link.propose", true
+			}
+			if id, ok := strings.CutSuffix(rest, "/approve"); ok && subjectLinkRecordID.MatchString(id) {
+				return "subject-link.approve", true
+			}
+		}
+		return "", false
+	}
+	if method == http.MethodGet || method == http.MethodHead {
+		if path == "/api/subject-links" {
+			return "subject-link.read", true
+		}
+		if id, ok := strings.CutPrefix(path, "/api/subject-link-operations/"); ok && subjectLinkRecordID.MatchString(id) {
+			return "subject-link.read", true
+		}
+	}
+	if method == http.MethodPost {
+		if path == "/api/subject-links/proposals" {
+			return "subject-link.propose", true
+		}
+		if rest, ok := strings.CutPrefix(path, "/api/subject-links/"); ok {
+			id, action, found := strings.Cut(rest, "/")
+			if found && subjectLinkRecordID.MatchString(id) {
+				switch action {
+				case "approve":
+					return "subject-link.approve", true
+				case "revoke":
+					return "subject-link.revoke", true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
 func APIPermission(method, path string) (string, bool) {
+	if path == "/api/trusted-sources/runtime" {
+		if method == http.MethodGet {
+			return "trusted-source.read", true
+		}
+		return "", false
+	}
+	if rest, ok := strings.CutPrefix(path, "/api/trusted-sources/runtime/"); ok {
+		source, control := strings.CutSuffix(rest, "/control")
+		if !control || len(source) > 64 || !subjectLinkRecordID.MatchString(source) || strings.Contains(source, "__source__") {
+			return "", false
+		}
+		switch method {
+		case http.MethodGet:
+			return "trusted-source.read", true
+		case http.MethodPut:
+			return "trusted-source.control", true
+		}
+		return "", false
+	}
+	if strings.HasPrefix(path, "/api/subject-link") {
+		return subjectLinkPermission(method, path)
+	}
 	if method == http.MethodGet || method == http.MethodHead {
 		switch path {
 		case "/api/snapshot", "/api/diagnostics", "/api/adapter-logs", "/api/dns/records", "/bind9.xsl":

@@ -260,6 +260,7 @@
             <label data-ldap-field>Base DN<input name="base_dn"></label>
             <label data-ldap-field>Read-only bind DN<input name="bind_dn"></label>
             <label data-ldap-field>Password file reference<input name="bind_password_file" autocomplete="off"></label>
+            <label data-ldap-selector>Subject selector declaration<select name="subject_selector"><option value="">None</option><option value="ldap_entry_uuid">LDAP entryUUID (operator-declared only)</option></select><small>Not verified by connection tests; does not enable subject links.</small></label>
             <label data-https-field hidden>Token file reference<input name="token_file" autocomplete="off"></label>
           </div>
           <div class="trusted-source-registration-actions">
@@ -294,6 +295,8 @@
 
     renderRegistrationKind() {
       const ldap = this.registrationForm.elements.kind.value === "ldap";
+      this.registrationForm.querySelector("[data-ldap-selector]").hidden = !ldap;
+      this.registrationForm.elements.subject_selector.disabled = !ldap;
       for (const field of this.registrationForm.querySelectorAll("[data-ldap-field]")) { field.hidden = !ldap; field.querySelector("input").required = ldap; }
       for (const field of this.registrationForm.querySelectorAll("[data-https-field]")) { field.hidden = ldap; field.querySelector("input").required = !ldap; }
     }
@@ -320,6 +323,7 @@
         const scope = config.organizations?.[registry.organization_id] || {};
         for (const name of ["display_name", "kind", "url", "ca_file", "token_file"]) fields[name].value = config[name] || (name === "kind" ? "ldap" : "");
         fields.source_id.value = config.name || "";
+        fields.subject_selector.value = config.subject_selector || "";
         fields.policy_default.checked = registry.policy_default_source === config.name;
         fields.attributes.value = (config.attributes || []).join(",");
         for (const name of ["base_dn", "bind_dn", "bind_password_file"]) fields[name].value = scope[name] || "";
@@ -342,7 +346,10 @@
       const scope = fields.kind.value === "ldap" ? { base_dn: fields.base_dn.value, bind_dn: fields.bind_dn.value, bind_password_file: fields.bind_password_file.value } : { url: fields.url.value };
       const config = { name: sourceID, display_name: fields.display_name.value, kind: fields.kind.value, ca_file: fields.ca_file.value,
         attributes: fields.attributes.value.split(",").map(value => value.trim()).filter(Boolean), organizations: { [organizationID]: scope } };
-      if (config.kind === "ldap") config.url = fields.url.value;
+      if (config.kind === "ldap") {
+        config.url = fields.url.value;
+        if (fields.subject_selector.value) config.subject_selector = fields.subject_selector.value;
+      }
       else config.token_file = fields.token_file.value;
       const generation = ++this.registrationGeneration;
       const message = this.querySelector("[data-registration-message]");
@@ -975,4 +982,89 @@
   }
 
   customElements.define("trusted-source-browser", TrustedSourceBrowser);
+})();
+
+(() => {
+  class RuntimeSourceControls extends HTMLElement {
+    connectedCallback() {
+      if (this.ready) return;
+      this.ready = true;
+      this.innerHTML = `<section class="panel" aria-label="Policy-declared runtime sources">
+        <h3>Runtime source controls</h3>
+        <p>Sources come from effective policy. Off blocks lookups; re-enable requires fresh data. Accepted changes do not prove gateway revocation delivery.</p>
+        <button type="button" class="button" data-runtime-refresh>Refresh runtime state</button>
+        <p role="status" aria-live="polite" data-runtime-message></p>
+        <div class="table-scroll"><table><thead><tr><th>SOURCE</th><th>STATE</th><th>CONTROL</th></tr></thead><tbody></tbody></table></div>
+      </section>`;
+      this.querySelector("[data-runtime-refresh]").addEventListener("click", () => this.load());
+      this.load();
+    }
+
+    async request(path, options = {}) {
+      const response = await window.zprOperatorFetch(path, { cache: "no-store", ...options });
+      if (!response.ok) throw new Error(`Runtime source request failed (HTTP ${response.status}). Read back state before retrying.`);
+      return response.json();
+    }
+
+    async load() {
+      if (this.busy) return;
+      this.busy = true;
+      this.querySelector("[data-runtime-refresh]").disabled = true;
+      for (const node of this.querySelectorAll("tbody button")) node.disabled = true;
+      const message = this.querySelector("[data-runtime-message]");
+      message.textContent = "Reading Visa Service source state...";
+      try {
+        const sources = await this.request("/api/trusted-sources/runtime");
+        if (!Array.isArray(sources)) throw new Error("Invalid runtime source inventory.");
+        const controls = await Promise.all(sources.map(async source => {
+          if (!/^[A-Za-z0-9_-]{1,64}$/.test(source.name) || source.name.includes("__source__")) throw new Error("Invalid runtime source ID.");
+          return { source, control: await this.request(`/api/trusted-sources/runtime/${encodeURIComponent(source.name)}/control`) };
+        }));
+        const rows = document.createDocumentFragment();
+        for (const { source, control } of controls) {
+          if (typeof control.enabled !== "boolean" || typeof control.effective_enabled !== "boolean" || typeof control.pending !== "boolean") throw new Error("Invalid runtime source control readback.");
+          const row = document.createElement("tr");
+          const name = document.createElement("td");
+          name.textContent = source.name;
+          const state = document.createElement("td");
+          state.textContent = `${control.enabled ? "Desired on" : "Desired off"} / ${control.effective_enabled ? "effective on" : "effective off"}${control.pending ? " / reconciliation pending" : ""}`;
+          const action = document.createElement("td");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "button";
+          button.textContent = control.enabled ? "Disable" : "Enable";
+          button.setAttribute("aria-label", `${button.textContent} runtime source ${source.name}`);
+          button.addEventListener("click", async () => {
+            if (this.busy) return;
+            if (!window.confirm(`${control.enabled ? "Disable" : "Enable"} runtime source ${source.name}? Existing-visa reconciliation is asynchronous.`)) return;
+            for (const node of this.querySelectorAll("button")) node.disabled = true;
+            try {
+              await this.request(`/api/trusted-sources/runtime/${encodeURIComponent(source.name)}/control`, {
+                method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !control.enabled }),
+              });
+              if (await this.load()) message.textContent = "Change accepted. State read back; gateway revocation delivery is separate.";
+            } catch (error) {
+              message.textContent = error.message;
+              // Keep old mutation buttons disabled until explicit successful readback.
+              this.querySelector("[data-runtime-refresh]").disabled = false;
+            }
+          });
+          action.append(button);
+          row.append(name, state, action);
+          rows.append(row);
+        }
+        this.querySelector("tbody").replaceChildren(rows);
+        message.textContent = controls.length ? "Current runtime state read back." : "No policy-declared runtime sources.";
+        return true;
+      } catch (error) {
+        message.textContent = error.message;
+        for (const node of this.querySelectorAll("tbody button")) node.disabled = true;
+        return false;
+      } finally {
+        this.busy = false;
+        this.querySelector("[data-runtime-refresh]").disabled = false;
+      }
+    }
+  }
+  if (!customElements.get("runtime-source-controls")) customElements.define("runtime-source-controls", RuntimeSourceControls);
 })();

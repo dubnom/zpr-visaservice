@@ -747,6 +747,11 @@ func (a *application) validatePolicyRecordContent(ctx context.Context, kind, con
 			return result
 		}
 	case "policy":
+		if isPolicyDocuments(content) {
+			if _, err := decodePolicyDocuments(content); err != nil {
+				return &policyCheckResponse{Diagnostics: err.Error()}
+			}
+		}
 		return nil
 	case organizationAssertionsKind:
 		if contentType != assertionRecordSourceContentType {
@@ -934,7 +939,7 @@ func (a *application) handlePolicyRecordRevisions(w http.ResponseWriter, r *http
 		writePolicyError(w, http.StatusConflict, "Restore the archived record before editing it.")
 		return
 	}
-	if record.Kind != "policy" {
+	if record.Kind != "policy" || isPolicyDocuments(request.Content) {
 		if validation := a.validatePolicyRecordContent(r.Context(), record.Kind, record.ContentType, request.Content); validation != nil {
 			writeJSON(w, http.StatusUnprocessableEntity, validation)
 			return
@@ -1038,6 +1043,26 @@ func validateSourceQualifiedPolicy(source string, mappings []policyAttributeMapp
 }
 
 func (p *policyWorkspace) checkUnlocked(ctx context.Context, source string) policyCheckResponse {
+	if isPolicyDocuments(source) {
+		directory, err := os.MkdirTemp("", "zpr-document-check-")
+		if err != nil {
+			return policyCheckResponse{Diagnostics: "Unable to prepare policy-document check."}
+		}
+		defer os.RemoveAll(directory)
+		var result policyCheckResponse
+		for _, configPath := range p.policyConfigPaths() {
+			composed, preparedConfig, err := preparePolicyDocuments(source, configPath, directory)
+			if err != nil {
+				return policyCheckResponse{Diagnostics: err.Error()}
+			}
+			prepared := &policyWorkspace{configPath: preparedConfig, compiler: p.compiler, compilerErr: p.compilerErr, checkSource: p.checkSource}
+			result = prepared.checkUnlocked(ctx, composed)
+			if result.Valid {
+				break
+			}
+		}
+		return policyDocumentCheckResult(source, result)
+	}
 	if diagnostic := sourceQualifiedConfigurationError(p.configPath); diagnostic != "" {
 		return policyCheckResponse{Diagnostics: diagnostic}
 	}
@@ -1165,6 +1190,10 @@ func (a *application) handlePolicyAssistant(w http.ResponseWriter, r *http.Reque
 	}
 	if request.Editor != "" && request.Editor != "policy" && request.Editor != "assertion" && request.Editor != "zpr-config" {
 		writePolicyError(w, http.StatusBadRequest, "Unsupported assistant editor.")
+		return
+	}
+	if (request.Editor == "" || request.Editor == "policy") && isPolicyDocuments(request.Source) {
+		writePolicyError(w, http.StatusUnprocessableEntity, "Policy-document JSON is supported by save, check, test and stage; assistant editing is not supported. Edit the JSON directly.")
 		return
 	}
 	if message := validateAssistantRequest(&request, a.assistant.model); message != "" {

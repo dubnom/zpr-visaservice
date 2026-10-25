@@ -36,6 +36,9 @@ func policySourceRegistry() (assertionSourcesConfig, error) {
 	}
 	names := make(map[string]assertionSourceConfig)
 	for _, source := range config.Sources {
+		if err := validateAssertionSubjectSelector(source); err != nil {
+			return config, err
+		}
 		if !assertionSourceName.MatchString(source.Name) || strings.Contains(source.Name, sourceAttributeSeparator) {
 			return config, errors.New("Trusted source registry contains an invalid source ID.")
 		}

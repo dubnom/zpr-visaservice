@@ -217,7 +217,8 @@
         <section class="page-view" id="page-sources" data-page="sources" aria-label="Trusted sources">
           <section class="section-block">
             <div class="table-scroll"><table data-sort-page="sources"><thead><tr><th data-sort-key="name">SOURCE</th><th data-sort-key="provider">HOW IT SUPPLIES</th><th data-sort-key="actor">USED BY</th><th data-sort-key="health">LAST RESULT</th><th data-sort-key="last_lookup">LAST CHECKED</th><th>MANAGE</th></tr></thead><tbody id="trusted-list"><tr><td colspan="6" class="empty-row">Waiting for service data…</td></tr></tbody></table></div>
-            <p class="trusted-source-read-only-note">Source registrations are read-only here; registration, edit, test, and disable workflows are not available in this Control Room.</p>
+            <p class="trusted-source-read-only-note">Directory registrations below are read-only. Policy-declared runtime sources have independent operational controls.</p>
+            <runtime-source-controls></runtime-source-controls>
             <trusted-source-browser data-endpoint="/api/assertions/source"></trusted-source-browser>
           </section>
         </section>
@@ -630,13 +631,13 @@
     <script src="/safe-display.js?v=3" defer></script>
     <script src="/polling-display.js?v=1" defer></script>
     <script src="/table-sort.js?v=2" defer></script>
-    <script src="/trusted-source.js?v=14" defer></script>
+    <script src="/trusted-source.js?v=15" defer></script>
     <script src="/editor-page.js?v=21" defer></script>
     <script src="/assistant-core.js?v=7" defer></script>
     <script src="/node-stats.js?v=9" defer></script>
     <script src="/node-logs.js?v=4" defer></script>
     <script src="/map-traffic.js?v=1" defer></script>
-    <script src="/app.js?v=168" defer></script>
+    <script src="/app.js?v=169" defer></script>
     <script src="/log-format.js?v=1" defer></script>
     <script src="/machine-logs.js?v=27" defer></script>
     <script src="/assertions.js?v=30" defer></script>

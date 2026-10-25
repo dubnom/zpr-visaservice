@@ -209,7 +209,7 @@ func (a *application) handlePolicyTest(w http.ResponseWriter, r *http.Request) {
 	if a.policy.configPath != "" {
 		mappings = loadPolicyAttributeMappings(a.policy.configPath)
 	}
-	if diagnostic := validateSourceQualifiedPolicy(request.Source, mappings); diagnostic != "" {
+	if diagnostic := validateSourceQualifiedPolicy(request.Source, mappings); !isPolicyDocuments(request.Source) && diagnostic != "" {
 		writePolicyError(w, http.StatusUnprocessableEntity, diagnostic)
 		return
 	}
@@ -362,6 +362,29 @@ func (workspace *policyWorkspace) testCandidate(ctx context.Context, request pol
 	if err != nil {
 		return policyTestResult{}, err
 	}
+	if isPolicyDocuments(request.Source) {
+		original := request.Source
+		envelope, err := decodePolicyDocuments(original)
+		if err != nil {
+			return policyTestResult{}, err
+		}
+		request.Source = policyDocumentsSource(envelope)
+		result, err := summarizePolicyTest(request, targets, messages)
+		result.SourceSHA256 = hashPolicyTestSource(original)
+		for index := range result.Services {
+			for ruleIndex := range result.Services[index].Rules {
+				rule := &result.Services[index].Rules[ruleIndex]
+				rule.Source = fmt.Sprintf("Composed ZPL line %d (not JSON editor line): %s", rule.Line, rule.Source)
+				rule.Line = 0
+			}
+		}
+		for index := range result.Warnings {
+			warning := &result.Warnings[index]
+			warning.Message = fmt.Sprintf("Composed ZPL line %d: %s", warning.Line, warning.Message)
+			warning.Line = 0
+		}
+		return result, err
+	}
 	return summarizePolicyTest(request, targets, messages)
 }
 
@@ -383,10 +406,20 @@ func (workspace *policyWorkspace) compilePolicyTestCandidate(ctx context.Context
 	diagnostics := ""
 	compiled := false
 	for _, configPath := range workspace.policyConfigPaths() {
+		composed, compilerConfig, err := preparePolicyDocuments(source, configPath, directory)
+		if err != nil {
+			return "", err
+		}
+		if diagnostic := validateSourceQualifiedPolicy(composed, loadPolicyAttributeMappings(compilerConfig)); diagnostic != "" {
+			return "", errors.New(diagnostic)
+		}
+		if err := os.WriteFile(sourcePath, []byte(composed), 0o600); err != nil {
+			return "", err
+		}
 		if err := os.Remove(candidatePath); err != nil && !os.IsNotExist(err) {
 			return "", errors.New("Unable to reset the candidate policy output.")
 		}
-		command := exec.CommandContext(compileContext, workspace.compiler, "-c", configPath, "-k", keyPath, "-f", "v2", "-o", candidatePath, sourcePath)
+		command := exec.CommandContext(compileContext, workspace.compiler, "-c", compilerConfig, "-k", keyPath, "-f", "v2", "-o", candidatePath, sourcePath)
 		command.Args = appendPolicyDefaultArgs(command.Args)
 		command.Dir = filepath.Dir(configPath)
 		output := &limitedBuffer{limit: maxPolicyOutputBytes}

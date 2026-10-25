@@ -40,6 +40,7 @@ type Handlers struct {
 	BudgetAuthorityCurrent, BudgetAuthorityOperator                   http.Handler
 	Assertions                                                        Assertions
 	TrustedChanges                                                    TrustedChanges
+	TrustedSourceControl                                              http.Handler
 }
 
 // NewMux requires every handler, including explicit unavailable-feature handlers.
@@ -60,6 +61,11 @@ func NewMux(handlers Handlers) *http.ServeMux {
 	mux.Handle("/api/operator-enrollment/v1/budget-authority/", budgetOperator)
 	handlers.Assertions.Register(mux)
 	handlers.TrustedChanges.Register(mux)
+	if handlers.TrustedSourceControl != nil {
+		mux.Handle("GET /api/trusted-sources/runtime", handlers.TrustedSourceControl)
+		mux.Handle("GET /api/trusted-sources/runtime/{source}/control", handlers.TrustedSourceControl)
+		mux.Handle("PUT /api/trusted-sources/runtime/{source}/control", handlers.TrustedSourceControl)
+	}
 	mux.Handle("/api/gateways/", handlers.Gateways)
 	mux.Handle("GET /api/snapshot", handlers.Snapshot)
 	mux.Handle("GET /api/diagnostics", handlers.Diagnostics)

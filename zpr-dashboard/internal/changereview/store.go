@@ -165,6 +165,12 @@ CREATE TRIGGER IF NOT EXISTS immutable_review_policy_artifact BEFORE UPDATE ON r
 BEGIN SELECT RAISE(ABORT,'review artifact is immutable'); END;
 CREATE TRIGGER IF NOT EXISTS immutable_review_policy_artifact_delete BEFORE DELETE ON review_policy_artifacts
 BEGIN SELECT RAISE(ABORT,'review artifact is immutable'); END;`)
+	if err == nil {
+		_, err = db.Exec(subjectLinkSchema)
+	}
+	if err == nil {
+		_, err = db.Exec(subjectLinkAuthoritySchema)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err

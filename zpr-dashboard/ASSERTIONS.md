@@ -378,6 +378,29 @@ to system roots; hostname verification and TLS 1.2+ are mandatory. No insecure
 mode, URL credentials, URL paths/queries/fragments, StartTLS/plain LDAP downgrade,
 organization URL override or HTTPS token configuration is accepted.
 
+**Optional subject-selector declaration:** network LDAPS sources may set
+`"subject_selector": "ldap_entry_uuid"` in their source configuration. The
+registration editor offers the same optional declaration and preserves it on
+ordinary edits. Omit it (or use an empty string) for no declaration. Other
+selector names, container LDAP and HTTPS sources reject a nonempty declaration.
+Adding/removing it changes source identity and advances the server-owned source
+version; display-only edits do not. Existing configuration without it retains
+its serialized identity/digest. Registry reads and restart preserve the value.
+
+This is **operator-declared intent only**. Connection tests still test the
+existing read path; they do not certify entryUUID support, uniqueness, immutability
+or exact-subject lookup. The declaration alone enables no lookup, active link or
+VS enforcement. Username/group browsing behavior is unchanged.
+
+An internal exact-subject lookup and review-composition path now uses this
+declaration: it searches the configured organization base for exactly one
+`entryUUID`, verifies the returned single canonical UUID and rejects incomplete,
+duplicate, referral or out-of-scope results. Only explicitly approved/requested
+LDAP attributes are returned; no username/email/DN fallback or group expansion
+is performed. This path is not called by connection tests or exposed through
+review HTTP, and does not change browsing or VS enforcement. See the
+[integration scope and dynamic-binding blocker](../MULTISOURCE_POLICY_SUPPORT.md#s05-exact-ldap-subject-lookup-and-source-guarded-review-2026-10-24).
+
 Only simple bind and subtree search are sent. The bind account must be granted
 **read-only** directory ACLs by the directory owner; this client never sends LDAP
 writes but cannot prove that the account lacks write privileges. No alias
