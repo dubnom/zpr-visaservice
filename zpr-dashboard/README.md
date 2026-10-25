@@ -159,6 +159,18 @@ binding. There are no subject-link HTTP handlers or snapshot delivery yet.
 Enrollment delegation cannot sign these routes and no permissions are
 automatically granted. See the
 [S05 authorization scope](../MULTISOURCE_POLICY_SUPPORT.md#s05-operator-authorization-foundation-2026-10-24).
+
+The approved initial subject-link direction now also has an internal durable
+source registry in the Control-Service-owned review store. Source versions,
+exact `ldap_entry_uuid` selectors, permitted enrichment keys and immutable audit
+evidence commit atomically. Registry-bound review methods check the exact stored
+authority/source pair and scope in the decision transaction, still requiring
+exact provider-subject validation and independent review. Historical retries
+remain historical; source edits cannot silently rewrite an approved proposal.
+This does not yet enable service configuration, review HTTP/UI, active binding
+publication or VS enforcement, and does not synchronize the assertion-source
+file registry. Signed-snapshot format and timing/rollout remain approval gates.
+See [implementation and limits](../MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 See also the
 [durable review foundation](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-subject-link-review-foundation-2026-10-24).
 Its [keyed retry APIs](../MULTISOURCE_POLICY_SUPPORT.md#s05-durable-review-retry-receipts-2026-10-24)

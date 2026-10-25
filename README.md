@@ -178,6 +178,17 @@ Final envelope syntax remains open. See the
 and the
 [implementation contract and evidence](MULTISOURCE_POLICY_SUPPORT.md#policy-declared-sources-and-durable-default-on-controls-2026-10-24).
 
+The initial subject-link direction is now approved: Control-Service ownership,
+verified device roots, exact LDAP `entryUUID` targets, independent scoped
+reviewers and no strict-mode legacy fallback. Its protected review store now
+has versioned source registrations with immutable audit evidence and coherent
+authority/source capture. Registry-bound submission/approval atomically check
+versions and enrichment scope while retaining mandatory exact-subject validation
+and historical retry semantics. These are internal persistence APIs, not enabled
+review endpoints, active links or VS enforcement. Snapshot format, timing bounds
+and rollout still require approval. See
+[current implementation and gates](MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
+
 Expired lookup identities are indeterminate even if another identity on the
 actor is still live. They cannot fetch fresh enrichment or be silently dropped
 to permit absence-based rules; reauthentication is required. The same guard

@@ -114,7 +114,7 @@ func validSubjectLinkProposal(p SubjectLinkProposal) bool {
 }
 
 func (s *Store) SubmitSubjectLink(ctx context.Context, p SubjectLinkProposal) (SubjectLinkReview, error) {
-	return s.submitSubjectLink(ctx, p, "", false, nil)
+	return s.submitSubjectLink(ctx, p, "", false, false, nil)
 }
 
 // SubmitSubjectLinkOnce returns the original committed response on an identical
@@ -123,7 +123,7 @@ func (s *Store) SubmitSubjectLinkOnce(ctx context.Context, p SubjectLinkProposal
 	if !identifier.MatchString(retryKey) {
 		return SubjectLinkReview{}, ErrInvalid
 	}
-	return s.submitSubjectLink(ctx, p, retryKey, false, nil)
+	return s.submitSubjectLink(ctx, p, retryKey, false, false, nil)
 }
 
 // SubmitSubjectLinkWithAuthorityOnce checks the current enabled authority inside
@@ -133,7 +133,7 @@ func (s *Store) SubmitSubjectLinkWithAuthorityOnce(ctx context.Context, p Subjec
 	if !identifier.MatchString(retryKey) {
 		return SubjectLinkReview{}, ErrInvalid
 	}
-	return s.submitSubjectLink(ctx, p, retryKey, true, nil)
+	return s.submitSubjectLink(ctx, p, retryKey, true, false, nil)
 }
 
 // SubjectLinkSourceCheck must validate authoritative source context and exact
@@ -147,10 +147,20 @@ func (s *Store) SubmitSubjectLinkWithSourceOnce(ctx context.Context, p SubjectLi
 	if !identifier.MatchString(retryKey) || check == nil {
 		return SubjectLinkReview{}, ErrInvalid
 	}
-	return s.submitSubjectLink(ctx, p, retryKey, true, check)
+	return s.submitSubjectLink(ctx, p, retryKey, true, false, check)
 }
 
-func (s *Store) submitSubjectLink(ctx context.Context, p SubjectLinkProposal, retryKey string, requireAuthority bool, check SubjectLinkSourceCheck) (SubjectLinkReview, error) {
+// SubmitSubjectLinkWithRegistryOnce atomically checks the authoritative stored
+// authority/source pair and enrichment scope. check must still verify the exact
+// immutable subject with the independently provisioned provider, without Store calls.
+func (s *Store) SubmitSubjectLinkWithRegistryOnce(ctx context.Context, p SubjectLinkProposal, retryKey string, check SubjectLinkSourceCheck) (SubjectLinkReview, error) {
+	if !identifier.MatchString(retryKey) || check == nil {
+		return SubjectLinkReview{}, ErrInvalid
+	}
+	return s.submitSubjectLink(ctx, p, retryKey, true, true, check)
+}
+
+func (s *Store) submitSubjectLink(ctx context.Context, p SubjectLinkProposal, retryKey string, requireAuthority, requireRegistry bool, check SubjectLinkSourceCheck) (SubjectLinkReview, error) {
 	if !identifier.MatchString(p.Organization) || !subjectLinkPrincipal(p.Author) {
 		return SubjectLinkReview{}, ErrInvalid
 	}
@@ -165,6 +175,9 @@ func (s *Store) submitSubjectLink(ctx context.Context, p SubjectLinkProposal, re
 	}
 	if check != nil {
 		action = "submit-with-source-authority"
+	}
+	if requireRegistry {
+		action = "submit-with-stored-registry"
 	}
 	retry, err := newSubjectLinkRetry(p.Organization, p.Author, retryKey, struct {
 		Action   string
@@ -186,8 +199,13 @@ func (s *Store) submitSubjectLink(ctx context.Context, p SubjectLinkProposal, re
 	if !validSubjectLinkProposal(p) {
 		return SubjectLinkReview{}, ErrInvalid
 	}
-	if requireAuthority {
+	if requireAuthority && !requireRegistry {
 		if _, err := captureSubjectLinkAuthority(ctx, tx, p.Organization, p.Root); err != nil {
+			return SubjectLinkReview{}, err
+		}
+	}
+	if requireRegistry {
+		if err := checkSubjectLinkRegistry(ctx, tx, p); err != nil {
 			return SubjectLinkReview{}, err
 		}
 	}
@@ -289,7 +307,7 @@ func appendSubjectLinkEvent(ctx context.Context, tx *sql.Tx, id string, event Ev
 // and supply a current server-side registry capture, never browser assertions.
 // Publication still requires atomic source/authority validation and delivery.
 func (s *Store) ApproveSubjectLink(ctx context.Context, org, id, reviewedDigest, version, registryRevision, reason string, reviewer Principal) (SubjectLinkReview, error) {
-	return s.approveSubjectLink(ctx, org, id, reviewedDigest, version, registryRevision, reason, reviewer, "", false, nil)
+	return s.approveSubjectLink(ctx, org, id, reviewedDigest, version, registryRevision, reason, reviewer, "", false, false, nil)
 }
 
 // ApproveSubjectLinkOnce replays review evidence only, never activation. Its
@@ -298,7 +316,7 @@ func (s *Store) ApproveSubjectLinkOnce(ctx context.Context, org, id, reviewedDig
 	if !identifier.MatchString(retryKey) {
 		return SubjectLinkReview{}, ErrInvalid
 	}
-	return s.approveSubjectLink(ctx, org, id, reviewedDigest, version, registryRevision, reason, reviewer, retryKey, false, nil)
+	return s.approveSubjectLink(ctx, org, id, reviewedDigest, version, registryRevision, reason, reviewer, retryKey, false, false, nil)
 }
 
 // ApproveSubjectLinkWithAuthorityOnce guards the persisted proposal's authority
@@ -308,7 +326,7 @@ func (s *Store) ApproveSubjectLinkWithAuthorityOnce(ctx context.Context, org, id
 	if !identifier.MatchString(retryKey) {
 		return SubjectLinkReview{}, ErrInvalid
 	}
-	return s.approveSubjectLink(ctx, org, id, reviewedDigest, version, registryRevision, reason, reviewer, retryKey, true, nil)
+	return s.approveSubjectLink(ctx, org, id, reviewedDigest, version, registryRevision, reason, reviewer, retryKey, true, false, nil)
 }
 
 // ApproveSubjectLinkWithSourceOnce validates the persisted proposal's source and
@@ -317,10 +335,19 @@ func (s *Store) ApproveSubjectLinkWithSourceOnce(ctx context.Context, org, id, r
 	if !identifier.MatchString(retryKey) || check == nil {
 		return SubjectLinkReview{}, ErrInvalid
 	}
-	return s.approveSubjectLink(ctx, org, id, reviewedDigest, version, registryRevision, reason, reviewer, retryKey, true, check)
+	return s.approveSubjectLink(ctx, org, id, reviewedDigest, version, registryRevision, reason, reviewer, retryKey, true, false, check)
 }
 
-func (s *Store) approveSubjectLink(ctx context.Context, org, id, reviewedDigest, version, registryRevision, reason string, reviewer Principal, retryKey string, requireAuthority bool, check SubjectLinkSourceCheck) (SubjectLinkReview, error) {
+// ApproveSubjectLinkWithRegistryOnce commits independent review evidence, not an
+// active binding. Current registry validation and subject checks follow receipt lookup.
+func (s *Store) ApproveSubjectLinkWithRegistryOnce(ctx context.Context, org, id, reviewedDigest, version, registryRevision, reason string, reviewer Principal, retryKey string, check SubjectLinkSourceCheck) (SubjectLinkReview, error) {
+	if !identifier.MatchString(retryKey) || check == nil {
+		return SubjectLinkReview{}, ErrInvalid
+	}
+	return s.approveSubjectLink(ctx, org, id, reviewedDigest, version, registryRevision, reason, reviewer, retryKey, true, true, check)
+}
+
+func (s *Store) approveSubjectLink(ctx context.Context, org, id, reviewedDigest, version, registryRevision, reason string, reviewer Principal, retryKey string, requireAuthority, requireRegistry bool, check SubjectLinkSourceCheck) (SubjectLinkReview, error) {
 	if !subjectLinkPrincipal(reviewer) || !cleanText(reason, 1024) {
 		return SubjectLinkReview{}, ErrInvalid
 	}
@@ -330,6 +357,9 @@ func (s *Store) approveSubjectLink(ctx context.Context, org, id, reviewedDigest,
 	}
 	if check != nil {
 		action = "approve-review-with-source-authority"
+	}
+	if requireRegistry {
+		action = "approve-review-with-stored-registry"
 	}
 	retry, err := newSubjectLinkRetry(org, reviewer, retryKey, struct {
 		Action, ID, Digest, Version, RegistryRevision, Reason string
@@ -361,8 +391,13 @@ func (s *Store) approveSubjectLink(ctx context.Context, org, id, reviewedDigest,
 	); err != nil {
 		return record, ErrSelfReview
 	}
-	if requireAuthority {
+	if requireAuthority && !requireRegistry {
 		if _, err := captureSubjectLinkAuthority(ctx, tx, record.Proposal.Organization, record.Proposal.Root); err != nil {
+			return record, err
+		}
+	}
+	if requireRegistry {
+		if err := checkSubjectLinkRegistry(ctx, tx, record.Proposal); err != nil {
 			return record, err
 		}
 	}

@@ -2221,6 +2221,94 @@ durable repair remain outside this change.
 
 ## Explicit subject links: required follow-up
 
+### Approved initial direction and transactional source registry (2026-10-25)
+
+The operator explicitly approved the following initial implementation direction:
+
+- Control-Service owns versioned authority/source registrations and links.
+- Initial roots are devices established by verified authentication; no inferred
+  human identity, field-match association or transitive link.
+- Initial provider targets use exact immutable LDAP `entryUUID` selectors.
+- Proposers and independent approvers require explicit organization-scoped
+  permissions. The verified issuer/subject pair identifies the reviewer.
+- Strict mode has no implicit legacy fallback.
+- Snapshot delivery is to use independently provisioned pinned signing trust,
+  mutual TLS, organization/VS-recipient binding and durable anti-rollback.
+  A new shared cryptographic contract still requires separate approval.
+
+This approves the initial direction, not every field or API in the historical
+proposals below. Snapshot lease, clock skew, gateway revocation SLA and
+production rollout remain **unset**. Strict runtime enforcement is not enabled;
+neither S05 nor M1 is complete.
+
+#### Implemented: authoritative registry-bound review persistence
+
+The protected `changereview.Store` now provides an internal, Control-Service-owned
+source registration alongside its existing BAS authority registration:
+
+- `PutSubjectLinkSource` creates at decimal-string version `"1"` and requires
+  exact version compare-and-swap for edits. Changes to provider identity,
+  selector, permitted enrichment keys or enabled state advance the version.
+  An unchanged key set, including reordered input, is a no-op. Disable/re-enable
+  is versioned; deletion and identity renaming are forbidden.
+- Configurations contain a bounded provider configuration reference, selector
+  kind `ldap_entry_uuid`, 1-128 distinct permitted enrichment keys and an explicit
+  enabled flag. Keys are stored in sorted order. No URI, bind credential, token,
+  signing key or directory record is stored in this registration.
+- Version change and immutable principal/reason/time audit evidence commit in
+  the same SQLite transaction. `GetSubjectLinkSourceEvent` reads historical
+  evidence; historical events are not proof that a source remains enabled.
+- `CaptureSubjectLinkRegistry` reads an enabled, exact-version authority/source
+  pair coherently and returns its SHA-256 review-context digest. This is a digest
+  of the referenced registration pair, **not** a global registry sequence,
+  authenticated snapshot, lease, trust assertion or proof of directory presence.
+- `SubmitSubjectLinkWithRegistryOnce` and
+  `ApproveSubjectLinkWithRegistryOnce` validate that pair, captured digest and
+  permitted enrichment scope inside the review transaction. Both still require
+  the exact-subject provider validator; an absent validator is rejected.
+  New review approval rechecks the stored proposal, independent reviewer,
+  authority/source versions and provider subject. Source edits through this
+  single Store cannot interleave with the validation/commit boundary.
+- Exact retry receipts are looked up before current registry/provider validation
+  and replay original historical evidence, not renewed approval. Registry-bound
+  receipts have separate fingerprints from older authority-only and externally
+  source-checked methods; neither can impersonate the other.
+
+This is internal production persistence code, not running service composition.
+No HTTP route, operator permission grant, registration file loader, active-link
+publication, source transport change or VS binding consumption is enabled.
+Provider references must be resolved to independently provisioned, version-bound
+configurations by future Control-Service composition. The required validator must
+check exact immutable subject presence and directory evidence; these store tests
+use a fixture validator and do not certify a deployed LDAP directory.
+The registration does not automatically synchronize or replace the existing
+assertion-source file registry or the policy-owned runtime-source toggle.
+No registry-file/SQLite atomicity or HA guarantee is claimed.
+
+#### Verification and next gates
+
+New race tests cover unsupported selectors/configurations, exact CAS and one
+concurrent winner, audit rollback, immutable evidence, foreign organization and
+unregistered-source isolation, out-of-scope keys, stale captures, independent
+approval, provider-check ordering, source-edit fencing/cancellation, receipt-write
+rollback and historical replay after source replacement and database reopen.
+Existing signed operator proofs plus persistent nonce consumption compose with
+the new review methods: old proof replay fails after reopen, fresh proof permits
+the original semantic retry, and reconstructed backend grants deny removed
+principals before receipt access. This is internal proof composition, not live
+HTTP/mTLS or production identity admission.
+
+All changereview race tests pass; the six new registry tests pass ten consecutive
+race-enabled runs. Delegation, operator-auth and Control Room race tests and Go
+vet pass. Required `make test` passes 11 operator-stack checks and retains exactly
+the same 13 pre-existing Go failures. No dependency manifests or Rust changed.
+
+Next: protected Control-Service configuration/provisioning, authoritative
+provider-reference resolution and exact directory validation, then the review
+HTTP/UI path. Active publication/revocation and VS delivery require a separately
+approved shared signed-snapshot format, key rotation/recovery rules and the
+still-unset timing/enforcement bounds. No numeric defaults are invented here.
+
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 
 Status: **binding contract design only; not approved or implemented**. The M1 reconciliation
