@@ -165,6 +165,12 @@ only after Admin stores a disable: the browser reports 502 without retrying,
 then explicit refresh reveals the changed off revision before confirmed
 re-enable. Unrelated handlers are explicitly unavailable; this is not full
 service startup or a deployed service crash/restart test.
+Reload and a second same-session tab read the exact stored off revision without
+another mutation or login. Logout also rejects the already-open tab's cached
+CSRF mutation. A superseded concurrent sign-in attempt shows the existing
+expired-attempt UI; normal Sign in recovers a new session without changing
+source state. This is shared-session logout evidence, not independent-session
+revocation or concurrent-write arbitration.
 It does not activate subject links, provision production transport/credentials,
 prove gateway acknowledgement or establish deployed-directory acceptance.
 Final envelope syntax remains open. See the

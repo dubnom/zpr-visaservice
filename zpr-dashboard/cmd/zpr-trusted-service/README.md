@@ -170,6 +170,11 @@ durable Admin acceptance: the UI shows 502 without automatically retrying,
 then explicit readback reveals the stored off revision before confirmed
 re-enable. This is local response-loss acceptance, not full service startup,
 service crash/restart or gateway acknowledgement.
+Browser reload and a second same-session tab read the same stored off revision
+without a mutation or new callback. Logout rejects the already-open tab's
+cached-CSRF mutation. A superseded pending login is rejected, and normal Sign in
+recovers a fresh session without changing source state. This is shared-session
+logout evidence, not independent-session revocation or write arbitration.
 
 ### Optional source validity bound
 

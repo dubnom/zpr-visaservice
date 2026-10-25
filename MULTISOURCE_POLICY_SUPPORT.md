@@ -98,12 +98,22 @@ the independent Go provider and durable VS state in one automated chain:
    receives 502 even though the change is stored. Require visible failure and
    disabled stale controls with no automatic retry. An explicit refresh must
    show desired/effective off, reconciliation pending and a new stored revision.
-   Refresh must not send another mutation. Explicitly confirm re-enable and
-   require another revision before continuing.
+   Refresh must not send another mutation. Reload the entire HTML document and
+   open a second same-session tab; both must read exactly the same stored off
+   control/revision without another OIDC callback or PUT. Explicitly confirm
+   re-enable and require another revision, then refresh the second tab to on.
    Then use the real logout button,
    require 204, and leave the fresh IdP consent unaccepted. Replay the former
    cookie and CSRF proof in a separate browser context: session read must return
-   401 and mutation must return 403 with `no-store`. Complete a new browser login
+   401 and mutation must return 403 with `no-store`. A mutation from the already
+   open second tab, using its cached session CSRF, must also return 403 with
+   `no-store` and must not retry; the real request helper rechecks the session
+   and the login widget navigates back to fixture consent. Leave that consent
+   unaccepted and close the tab. Its newer browser-bound login flow supersedes
+   the first tab's pending flow: submitting the older consent must show the real
+   expired-attempt recovery UI with no authenticated scope. Click Sign in and
+   complete fresh consent/callback without editing cookies or session storage.
+   Complete that new browser login
    and require a different session cookie with the same stored source revision,
    proving the rejected replay did not mutate state. Browser requests must stay
    on the two independent loopback application/IdP origins without Simulator
@@ -244,6 +254,15 @@ Validation for this acceptance increment:
   An ordinary non-opt-in regression verifies that an accepted PUT whose service
   response is aborted returns 502 exactly once, GET still works and the next
   explicit PUT succeeds. No production code or dependency manifests changed.
+- Full document reload and a second same-session tab read the exact stored off
+  control after response loss without a mutation or another callback. Logout
+  rejects an already-open tab's cached-CSRF mutation and triggers real session
+  recovery. Competing pending tab logins reject the superseded callback; native
+  Sign in recovers a new session with unchanged source revision. Three
+  consecutive race-enabled full browser chains pass. Only the browser harness,
+  fixture HTML submit button and docs change; production login/session code,
+  Rust and dependency manifests remain unchanged. This tests shared-session
+  logout, not independent logins, tab synchronization or concurrent-write arbitration.
 
 ## Operator controls, shared JSON documents and immutable LDAP provider
 

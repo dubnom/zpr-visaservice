@@ -13,15 +13,15 @@ try {
     extraHTTPHeaders: { "X-Source-Fixture": process.env.ZPR_TEST_SOURCE_BRIDGE_TOKEN },
   });
   assert.deepEqual(await context.cookies(), [], "browser must begin without an imported session");
-  const page = await context.newPage();
-  page.setDefaultTimeout(5000);
   const errors = [], requests = [], mutations = [];
-  page.on("pageerror", error => errors.push(error.message));
-  page.on("request", request => {
+  context.setDefaultTimeout(5000);
+  context.on("page", page => page.on("pageerror", error => errors.push(error.message)));
+  context.on("request", request => {
     const url = new URL(request.url());
     requests.push(url);
     if (request.method() === "PUT") mutations.push(request.postDataJSON());
   });
+  const page = await context.newPage();
   const document = await page.goto(`${origin}/fixture/ui.html`);
   assert.equal(document.headers()["referrer-policy"], "same-origin");
   assert.equal(document.headers()["x-content-type-options"], "nosniff");
@@ -139,6 +139,27 @@ try {
   assert.equal(acceptedDespiteError.pending, true);
   assert.notEqual(acceptedDespiteError.revision, on.revision, "accepted mutation did not change durable revision");
   assert.equal(mutations.length, 4, "explicit readback retried the ambiguous mutation");
+  await page.reload();
+  await expect(enable).toBeEnabled();
+  assert.match(await page.locator("tbody").textContent(), /Desired off \/ effective off \/ reconciliation pending/);
+  const reloaded = await page.evaluate(async () => {
+    const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control");
+    if (!response.ok) throw new Error(`Reloaded source read failed: ${response.status}`);
+    return response.json();
+  });
+  assert.deepEqual(reloaded, acceptedDespiteError, "document reload changed stored off control");
+  const secondTab = await context.newPage();
+  await secondTab.goto(`${origin}/fixture/ui.html`);
+  await expect(secondTab.getByRole("button", { name: "Enable runtime source company" })).toBeEnabled();
+  const secondTabState = await secondTab.evaluate(async () => {
+    const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control");
+    if (!response.ok) throw new Error(`Second-tab source read failed: ${response.status}`);
+    return response.json();
+  });
+  assert.deepEqual(secondTabState, acceptedDespiteError, "second tab did not read the same stored off control");
+  assert.equal(requests.filter(url => url.origin === origin && url.pathname === "/auth/operator/callback").length, 1,
+    "reload or second tab unexpectedly performed another OIDC callback");
+  assert.equal(mutations.length, 4, "reload or second tab retried the ambiguous mutation");
   page.once("dialog", dialog => dialog.accept());
   await enable.click();
   await expect(disable).toBeEnabled();
@@ -152,12 +173,32 @@ try {
   assert.deepEqual(mutations, [
     { enabled: false }, { enabled: true }, { enabled: false }, { enabled: false }, { enabled: true },
   ]);
+  await secondTab.getByRole("button", { name: "Refresh runtime state" }).click();
+  await expect(secondTab.getByRole("button", { name: "Disable runtime source company" })).toBeEnabled();
+  const secondSession = await secondTab.evaluate(async () => {
+    const response = await fetch("/auth/operator/session", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Second-tab session read failed: ${response.status}`);
+    return response.json();
+  });
+  assert.equal(secondSession.csrf, session.csrf, "second tab must share the original operator session");
   const logout = page.waitForResponse(response => new URL(response.url()).pathname === "/auth/operator/logout");
   await page.locator("#operator-logout").click();
   assert.equal((await logout).status(), 204);
   // Direct-sign-in intentionally starts a new login after logout. Leave the
   // fixture consent unaccepted and replay the old cookie in a separate browser.
   await page.getByRole("button", { name: "Continue as fixture source writer" }).waitFor();
+  const secondTabRejected = await secondTab.evaluate(async () => {
+    const response = await window.zprOperatorFetch("/api/trusted-sources/runtime/company/control", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    return { status: response.status, cache: response.headers.get("Cache-Control") };
+  });
+  assert.deepEqual(secondTabRejected, { status: 403, cache: "no-store" },
+    "already-open tab retained mutation authority after logout in another tab");
+  await secondTab.getByRole("button", { name: "Continue as fixture source writer" }).waitFor();
+  assert.equal(mutations.length, 6, "already-open tab retried a rejected mutation");
+  await secondTab.close();
   const stale = await browser.newContext({
     extraHTTPHeaders: { "X-Source-Fixture": process.env.ZPR_TEST_SOURCE_BRIDGE_TOKEN },
   });
@@ -178,6 +219,10 @@ try {
     await stale.close();
   }
   await page.getByRole("button", { name: "Continue as fixture source writer" }).click();
+  await expect(page.locator("#operator-login-status")).toContainText("previous sign-in attempt expired");
+  await expect(page.locator("#operator-scope")).toBeHidden();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByRole("button", { name: "Continue as fixture source writer" }).click();
   await expect(page).toHaveURL(`${origin}/fixture/ui.html`);
   await expect(disable).toBeEnabled();
   const afterLogout = await page.evaluate(async () => {
@@ -188,9 +233,11 @@ try {
   assert.equal(afterLogout.revision, on.revision, "stale-session denial changed durable revision");
   const refreshed = (await context.cookies(origin)).find(cookie => cookie.name === sessionCookie.name);
   assert.ok(refreshed && refreshed.value !== sessionCookie.value, "reauthentication reused logged-out session");
+  assert.equal(requests.filter(url => url.origin === origin && url.pathname === "/auth/operator/callback").length, 3,
+    "expected initial, superseded and fresh OIDC callbacks");
   assert.deepEqual(errors, []);
   assert.ok(requests.every(url => [origin, idp].includes(url.origin) && !url.pathname.includes("simulator")));
-  console.log("SOURCE_LIFECYCLE browser: real Chromium OIDC navigation/callback, source-only login/request/control assets, confirmation cancel, durable disable/readback/re-enable, service-mTLS failure/recovery, accepted-response-loss readback without retry and logout/stale-session denial passed");
+  console.log("SOURCE_LIFECYCLE browser: real Chromium OIDC navigation/callback, source-only login/request/control assets, confirmation cancel, durable disable/readback/re-enable, service-mTLS failure/recovery, accepted-response-loss readback without retry, reload/second-tab stored-off recovery, cross-tab logout/stale-session denial and superseded-login recovery passed");
   await context.close();
 } finally {
   await browser.close();

@@ -137,6 +137,13 @@ The UI reports 502, disables stale controls and does not retry automatically.
 Explicit refresh reveals the changed off revision; the operator then confirms
 re-enable. Other handlers are explicitly unavailable. This is response-loss
 acceptance, not full startup or deployed service crash/restart evidence.
+Full document reload and a second same-session tab must read that exact stored
+off control without another mutation or callback. Logout rejects a cached-CSRF
+mutation from the already-open tab and triggers normal login recovery.
+Competing pending tab sign-ins reject the older callback; the operator uses
+Sign in to start a valid new flow with unchanged source state. This does not
+claim independent-session revocation, automatic tab synchronization or
+concurrent-write arbitration.
 This is component/process acceptance with explicitly synthetic identities,
 not approved subject-link, full daemon/deployed ingress/UI or gateway-delivery
 acceptance. See [prerequisites and exact boundaries](../MULTISOURCE_POLICY_SUPPORT.md#repeatable-source-lifecycle-acceptance).

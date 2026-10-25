@@ -127,7 +127,7 @@ func sourceLifecycleBridge(t *testing.T) {
 		switch r.URL.Path {
 		case "/", "/fixture/ui.html":
 			w.Header().Set("Content-Type", "text/html")
-			fmt.Fprint(w, `<script src="/operator-request.js"></script><div class="operator-login"><p id="operator-login-status"></p><form id="operator-login-form" method="post" action="/auth/operator/login"></form><button id="operator-logout" hidden>Sign out</button><span id="operator-scope" hidden></span></div><runtime-source-controls></runtime-source-controls><script src="/operator-login.js"></script><script src="/trusted-source.js"></script>`)
+			fmt.Fprint(w, `<script src="/operator-request.js"></script><div class="operator-login"><p id="operator-login-status"></p><form id="operator-login-form" method="post" action="/auth/operator/login"><button type="submit">Sign in</button></form><button id="operator-logout" hidden>Sign out</button><span id="operator-scope" hidden></span></div><runtime-source-controls></runtime-source-controls><script src="/operator-login.js"></script><script src="/trusted-source.js"></script>`)
 		case "/trusted-source.js", "/operator-request.js", "/operator-login.js":
 			data, err := staticFiles.ReadFile("static" + r.URL.Path)
 			if err != nil {
