@@ -210,8 +210,13 @@ discovery over the same protected operator transport. The production-packaged
 Subject-Link Review page now supports that workflow with explicit confirmation,
 independent digest review and tab-persisted exact-request recovery after a lost
 reply. Real Chromium OIDC/admin/proposer/reviewer tests cross mTLS to LDAP and
-verify reload, identity/scope changes and logout denial. Snapshot format, timing
-bounds and rollout still require approval. See
+verify reload, identity/scope changes and logout denial. The separately approved
+offline signed-snapshot foundation now verifies the same Ed25519 payloads in Go
+and Rust, with independent pinned trust, exact organization/VS/epoch binding,
+strict complete records and rollback/equivocation checks. Live cross-language
+tests include overlapping-key rotation and exact size/expiry boundaries.
+It is not connected to publication, durable VS installation or enforcement;
+timing bounds, recovery operations and rollout still require approval. See
 [current implementation and gates](MULTISOURCE_POLICY_SUPPORT.md#approved-initial-direction-and-transactional-source-registry-2026-10-25).
 
 Expired lookup identities are indeterminate even if another identity on the

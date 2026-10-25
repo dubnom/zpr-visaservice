@@ -3,3 +3,4 @@
 pub mod admin_apikeys;
 pub mod apikey;
 pub mod error;
+pub mod subject_snapshot;

@@ -2239,7 +2239,8 @@ The operator explicitly approved the following initial implementation direction:
 - Strict mode has no implicit legacy fallback.
 - Snapshot delivery is to use independently provisioned pinned signing trust,
   mutual TLS, organization/VS-recipient binding and durable anti-rollback.
-  A new shared cryptographic contract still requires separate approval.
+  The offline cryptographic foundation described below was separately approved;
+  production delivery and durable installation are not enabled.
 
 This approves the initial direction, not every field or API in the historical
 proposals below. Snapshot lease, clock skew, gateway revocation SLA and
@@ -2495,9 +2496,115 @@ the same 13 pre-existing Go failures. No dependency manifests or Rust changed.
 Protected configuration, named registry administration/context discovery,
 provider-reference resolution, review HTTP/proxy composition and the review UI
 with native-browser acceptance are implemented, not deployed.
-Active publication/revocation and VS delivery require a separately
-approved shared signed-snapshot format, key rotation/recovery rules and the
-still-unset timing/enforcement bounds. No numeric defaults are invented here.
+Active publication/revocation and VS delivery still require durable installation,
+production trust/recovery operations and the unset timing/enforcement bounds.
+The separately approved offline format below does not enable those operations.
+
+#### Implemented: offline signed-snapshot foundation
+
+The operator separately approved this bounded Go/Rust foundation. It introduces
+no publication route, production signing-key loader, active binding export,
+device authentication, VS listener, install/acknowledgement path or enforcement
+switch. The Go `internal/subjectsnapshot` package and exported Rust
+`vs::subject_snapshot` library module are deliberately disconnected from service
+composition and the daemon. Existing standard-library Go Ed25519 and existing
+Rust OpenSSL/base64/Serde dependencies are used; no dependencies were added.
+Review approval still does not mean an active link.
+
+**Wire v1.** A UTF-8 JSON envelope has exactly `version` (the integer token `1`),
+`key_id`, `payload` and `signature`. Payload and signature use canonical
+**unpadded base64url**. Nonzero unused pad bits, padding, other alphabets
+and noncanonical spellings are rejected. The Ed25519 signed message is exactly
+the ASCII bytes `ZPR-SUBJECT-LINK-SNAPSHOT-V1` followed by one NUL byte followed
+by the decoded, unmodified payload bytes. There is no reserialization before
+verification. The digest is lowercase hex SHA-256 of those payload bytes.
+Consequently changing whitespace at the same sequence is equivocation, even
+when both payloads describe equal records.
+
+`key_id` is only an untrusted lookup hint into the caller's independently
+provisioned map of 1-64 key IDs to raw 32-byte Ed25519 public keys; it is not a
+signed principal or permission. Trust does not come from the payload or
+envelope, and fields supplying keys are rejected. Mapping two IDs to the same
+key grants identical cryptographic trust, not two identities. Rotation is
+explicitly provisioning overlapping old/new pins and later removing the old
+pin. Re-signing unchanged payload bytes with an overlapping key is a historical
+replay, not a new publication or lease. This does not provision production trust,
+hot-reload pins, authenticate transport or approve an epoch reset.
+
+The payload has exactly these required fields:
+
+| Field | v1 meaning |
+| --- | --- |
+| `version` | Integer token `1`; floating point and aliases rejected. |
+| `organization_id`, `vs_id`, `epoch` | Exact expected organization, VS recipient and explicitly configured epoch. ASCII `[A-Za-z0-9_-]`, 1-128 bytes; no wildcard matching. |
+| `sequence` | Canonical positive decimal string, at most `18446744073709551615`; no JavaScript numeric truncation. |
+| `issued_at`, `expires_at` | Canonical positive decimal **Unix seconds as strings**, at most `9223372036854775807`; issue strictly before expiry. Caller explicitly supplies `now`, requiring `issued_at <= now < expires_at`. No default clock skew, lease duration or implicit current clock. |
+| `authorities` | Complete array of exact `authority_id`, `version`, `kind` (`bas_device`), `service_id`, `issuer`, `enabled` records. |
+| `sources` | Complete array of exact `source_id`, `version`, `provider_id`, `selector_kind` (`ldap_entry_uuid`), `enrichment_keys`, `enabled` records. |
+| `bindings` | Complete array of exact `binding_id`, `version`, `root`, `target`, `enrichment_keys`, `not_before`, `expires_at` records. No review-state activation is inferred. |
+| `tombstones` | Complete array of exact `binding_id`, `version` records. Active and tombstoned IDs cannot overlap. |
+
+`root` requires `authority_id`, `authority_version`, `subject_kind` (`device`)
+and `subject_id`. `target` requires `source_id`, `source_version`,
+`selector_kind` (`ldap_entry_uuid`) and lowercase nonzero canonical UUID
+`subject_id`. Dependencies must identify enabled exact-version registrations
+inside the same payload. Version fields use the same positive u64 decimal
+string rule. Binding validity uses the same explicit Unix-second string rule:
+start strictly before end, end after snapshot issue. A binding may start in the
+future; this offline verifier does not perform a lookup or authorize use at
+`now`. Future runtime use must intersect binding, authentication, provider
+observation and snapshot validity, never extend one with another.
+
+Every ID uses the identifier grammar above; service/issuer/device subject text
+is 1-256 printable ASCII bytes with no leading/trailing whitespace. Keys are
+distinct, 1-128 per list, 1-256 bytes each, matching
+`[A-Za-z_][A-Za-z0-9_.-]*`; binding keys must be a subset of source keys.
+Authority identity tuples and authority/source/binding/tombstone IDs are unique
+in their respective sets. Empty complete arrays are valid; missing/null arrays,
+missing `enabled` (even when false), unknown/duplicate fields at any depth,
+invalid UTF-8, trailing JSON values and unsupported kinds are not.
+Limits are 1,048,576 decoded payload bytes, 1,400,000 envelope bytes including
+whitespace, and 1,024 records per complete array. These are offline v1 wire
+limits, not lease, gateway SLA or production capacity defaults.
+
+**Ordering is a pure decision, not a durable receipt.** Full authentication,
+scope, shape, dependencies and explicit-time validation precede comparison.
+Both previous and candidate states must have been verified; Go rejects a
+zero-value previous state rather than automatically bootstrapping/resetting it.
+Lower sequences and same-sequence/different-digest payloads are rejected.
+Same-sequence/same-digest returns historical replay; its expiry does not change,
+and verification at/after that expiry still fails.
+A higher sequence cannot backdate issue time, lower retained record versions,
+or change record content without advancing its version. Array order is signed
+and is conservatively part of unchanged record content, not normalized.
+Registrations must remain present (disable instead of delete), avoiding
+remove/reintroduce version rollback. Removing a binding requires a tombstone
+at least at its prior version. Tombstones cannot disappear, lower version or
+resurrect the ID; v1 has **no compaction or resurrection**. No epoch transition
+is accepted by comparison, even if each epoch was individually configured.
+
+No disk/Redis write, crash-consistent checkpoint, first-install authorization,
+restore API or acknowledgement is implemented. A future integration must
+atomically persist the accepted complete snapshot with scope/epoch/sequence/
+digest before acknowledging, fail closed on missing/corrupt history, and
+authenticate restored history without renewing its original lease. It must not
+treat this verifier alone as durable anti-rollback or use an empty cache to reset
+sequence/epoch. Loss of signing trust or prior durable state needs explicit
+operator recovery; that production recovery procedure remains unapproved.
+
+**Acceptance.** `go test -race ./internal/subjectsnapshot` runs positive/negative
+vectors and the production signer. `cargo test -p vs --lib subject_snapshot`
+generates fresh ephemeral Go signing keys/vectors through the Go test exporter,
+verifies every vector/digest/ordering result in Rust, then signs a differently
+formatted payload with Rust OpenSSL and verifies it back in Go. The temporary
+export contains no private keys and is removed with its owning test directory.
+Go must be on PATH for this live interop test; no existing fixture pins or
+production services are used. Cases include scope/epoch isolation,
+domain/signature/JSON tampering, exact issue/expiry and byte/count boundaries,
+decimal precision/overflow, exact version dependencies, independent pin
+overlap/removal, equivocation, rollback, tombstone retention and prohibited
+resurrection. These are offline contract results, not real-directory deployment
+or gateway-withdrawal evidence.
 
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 
@@ -2505,6 +2612,12 @@ Status: **binding contract design only; not approved or implemented**. The M1 re
 authorized this design review, not the previously deferred principal-envelope,
 shared-schema or delegated-source credential implementation. No new lookup
 mode or registration file is introduced by this document.
+
+Historical scope note: the separately approved review implementation and
+[offline signed-snapshot v1 foundation](#implemented-offline-signed-snapshot-foundation)
+above supersede only their named portions of this proposal. The remainder is
+still design-only; in particular the RFC3339 examples below are not the offline
+v1 Unix-second wire format, and runtime delivery/enforcement remains unapproved.
 
 #### Observed implementation boundary
 

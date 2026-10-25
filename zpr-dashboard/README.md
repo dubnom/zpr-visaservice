@@ -277,7 +277,15 @@ receipts remain historical.
 
 Startup does not import or infer registrations. There is no active publication
 or VS enforcement, and this does not synchronize the assertion-source file
-registry. Signed-snapshot format and timing/rollout remain approval gates.
+registry. The separately approved offline signed-snapshot foundation is
+documented in the
+[shared wire contract](../MULTISOURCE_POLICY_SUPPORT.md#implemented-offline-signed-snapshot-foundation).
+It is not called by these routes or startup composition. Production
+publication, durable VS installation/acknowledgement, timing and rollout remain
+separate gates. Run the offline Go contract checks with
+`go test -race ./internal/subjectsnapshot`; the Rust library interop test invokes
+the Go exporter and then checks a Rust-signed payload back in Go. No production
+keys, endpoint, Simulator or directory are required by those tests.
 
 #### Subject-Link Review operator page
 
