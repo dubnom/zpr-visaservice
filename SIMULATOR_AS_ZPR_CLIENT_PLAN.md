@@ -567,16 +567,18 @@ drives an evaluation install's own data plane instead.
   counters. This was verified live with zero mismatches. The rest of U05 is
   still open: comparison with a non-Simulator client, and TCP/UDP service
   workloads (the image currently has only `ping`).
-- [ ] **D5:** one evaluation install per organization for Simulator
+- [x] **D5:** one evaluation install per organization for Simulator
   organization switching. This replaces the legacy reset script.
   - [x] **D5a:** `-node-location LAT,LON` writes the data-plane node's map
     position into the frozen `vs.toml`, so Control Room can place it.
   - [x] **D5b:** `SIMULATOR_EVALUATION_INSTALLS_FILE` registers independently
     started installs per organization. Activation selects and checks the
     install, never manages it; endpoints and workloads run for all installs.
-  - [ ] **D5c:** live with northstar and great-lakes installs; retire the
-    single maturity install. Per-organization directory people and multi-node
-    topology come later.
+  - [x] **D5c:** live with northstar and great-lakes installs, each with its
+    node on the map, three endpoints and clean workloads. Switching between
+    them works, and an organization without an install is refused. The single
+    maturity install was retired. Per-organization directory people and
+    multi-node topology come later.
 
 ### M4 - Enforce separation in builds, configuration and lifecycle
 
