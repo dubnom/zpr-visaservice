@@ -31,17 +31,18 @@ const (
 
 var (
 	simulatorDataPlaneEndpointName = regexp.MustCompile(`^endpoint-[0-9]{2}$`)
-	// Additional install nodes are <network>-node-<name> (D6b).
-	simulatorDataPlaneNodeSuffix = regexp.MustCompile(`^-node-[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
+	// Additional install nodes are reached on the install network by their
+	// alias node-<name> (D6b); full container names can exceed DNS limits.
+	simulatorDataPlaneNodeHost = regexp.MustCompile(`^node-[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
 )
 
 type simulatorDataPlaneEndpoint struct {
 	Name         string `json:"name"`
 	BootstrapKey string `json:"bootstrap_key"`
 	ZPRAddress   string `json:"zpr_address"`
-	// NodeContainer optionally docks this endpoint with an additional node of
-	// the same install instead of the handoff's node_container.
-	NodeContainer string `json:"node_container,omitempty"`
+	// NodeHost optionally docks this endpoint with an additional node of the
+	// same install (its network alias) instead of the handoff's node_container.
+	NodeHost string `json:"node_host,omitempty"`
 }
 
 type simulatorDataPlaneHandoff struct {
@@ -105,8 +106,8 @@ func loadSimulatorDataPlaneHandoff(path string) (simulatorDataPlaneHandoff, stri
 	seen := map[string]bool{}
 	for _, endpoint := range handoff.Endpoints {
 		address := net.ParseIP(endpoint.ZPRAddress)
-		if node := endpoint.NodeContainer; node != "" && (!strings.HasPrefix(node, network) || !simulatorDataPlaneNodeSuffix.MatchString(strings.TrimPrefix(node, network))) {
-			return handoff, "", fmt.Errorf("data-plane endpoint %q docks with a node outside its install", endpoint.Name)
+		if node := endpoint.NodeHost; node != "" && !simulatorDataPlaneNodeHost.MatchString(node) {
+			return handoff, "", fmt.Errorf("data-plane endpoint %q names an invalid install node", endpoint.Name)
 		}
 		if !simulatorDataPlaneEndpointName.MatchString(endpoint.Name) || seen[endpoint.Name] || seen[endpoint.ZPRAddress] ||
 			endpoint.BootstrapKey != "dp-"+endpoint.Name+"-auth.key" || address == nil || address.To4() != nil || address.String() != endpoint.ZPRAddress {
@@ -173,8 +174,8 @@ func (plane *simulatorDataPlaneEndpoints) containerName(endpoint simulatorDataPl
 }
 
 func (plane *simulatorDataPlaneEndpoints) nodeContainer(endpoint simulatorDataPlaneEndpoint) string {
-	if endpoint.NodeContainer != "" {
-		return endpoint.NodeContainer
+	if endpoint.NodeHost != "" {
+		return endpoint.NodeHost
 	}
 	return plane.handoff.NodeContainer
 }

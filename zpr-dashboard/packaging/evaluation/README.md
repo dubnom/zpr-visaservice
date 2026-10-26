@@ -414,7 +414,9 @@ with the Visa Service. Add linked nodes when the install is created:
   They reach the Visa Service through the docking node; readiness waits for
   every node to be admitted.
 - **Endpoints** from `-data-plane-endpoints` are spread round-robin across all
-  nodes. The Simulator handoff names each endpoint's `node_container`.
+  nodes. The Simulator handoff names each endpoint's `node_host`, the
+  node's network alias `node-<name>` (full container names can exceed DNS
+  label limits).
 - Without `-data-plane-node`, the single-node layout is unchanged.
 
 ## Identity, health and lifecycle

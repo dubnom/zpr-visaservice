@@ -115,6 +115,13 @@ func evaluationDataPlaneNodeContainer(inventory evaluationInventory, index int) 
 	return evaluationDataPlaneName(inventory) + "-node-" + inventory.Config.DataPlaneNodes[index-1].Name
 }
 
+// evaluationDataPlaneNodeHost is additional node index's alias on the install
+// network. Endpoints resolve it instead of the container name, which can
+// exceed the 63-byte DNS label limit.
+func evaluationDataPlaneNodeHost(inventory evaluationInventory, index int) string {
+	return "node-" + inventory.Config.DataPlaneNodes[index-1].Name
+}
+
 // renderEvaluationDataPlaneTopology adds the additional nodes, their links and
 // bootstrap keys to the D1 compiler configuration.
 func renderEvaluationDataPlaneTopology(compiler string, nodes []evaluationDataPlaneTopologyNode) string {
@@ -188,7 +195,7 @@ func evaluationDataPlaneNodeArguments(state string, inventory evaluationInventor
 	nodes := evaluationDataPlaneTopology(inventory)
 	node := nodes[index]
 	args := []string{"run", "--rm", "--name", evaluationDataPlaneNodeContainer(inventory, index), "--hostname", node.Name,
-		"--network", evaluationDataPlaneName(inventory), "--ip", node.Substrate,
+		"--network", evaluationDataPlaneName(inventory), "--network-alias", evaluationDataPlaneNodeHost(inventory, index), "--ip", node.Substrate,
 		"--privileged", "--init", "--pull", "never",
 		"--label", "org.zpr.evaluation-install=" + inventory.InstallID, "--label", "org.zpr.evaluation-node=" + node.Name,
 		"-e", "ZPR_NODE_STATE=" + state, "-e", fmt.Sprintf("ZPR_NODE_INDEX=%d", index), "-e", "ZPR_NODE_ZPR_ADDR=" + node.ZPR,

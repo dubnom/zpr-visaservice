@@ -579,7 +579,7 @@ drives an evaluation install's own data plane instead.
     them works, and an organization without an install is refused. The single
     maturity install was retired. Per-organization directory people and
     multi-node topology come later.
-- [ ] **D6:** organizations' own directories and node topology.
+- [x] **D6:** organizations' own directories and node topology.
   - [x] **D6a:** `-directory-base-dn DN -directory-ldif FILE...` serves an
     organization's own LDIF under its own base DN instead of the starter
     directory. It is operator configuration frozen at creation; entries
@@ -593,8 +593,15 @@ drives an evaluation install's own data plane instead.
     bootstrap keys, and endpoints are assigned round-robin. Verified live with
     three nodes: all admitted, in sync, linked to each other and at their
     configured positions.
-  - [ ] **D6c:** live northstar, great-lakes and redwood installs with their
-    directories and topologies.
+  - [x] **D6c:** live northstar, great-lakes and redwood installs with their
+    directories and topologies. Northstar has one node; great-lakes docks at
+    Milwaukee with shenzhen-office and tijuana-plant; redwood docks at the
+    north hub with regional-yard. All three are registered with the
+    Simulator. Endpoints on additional nodes dock through the node's network
+    alias `node-<name>` (handoff `node_host`), because full container names
+    exceed the 63-byte DNS label limit. Verified live: every node is in sync
+    at its position, and cross-node workloads match policy with no
+    mismatches.
 
 ### M4 - Enforce separation in builds, configuration and lifecycle
 

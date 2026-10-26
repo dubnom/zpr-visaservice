@@ -57,22 +57,23 @@ func TestSimulatorDataPlaneHandoffValidation(t *testing.T) {
 		}
 	}
 	for name, mutate := range map[string]func(map[string]any){
-		"not evaluation only":   func(h map[string]any) { h["evaluation_only"] = false },
-		"foreign network":       func(h map[string]any) { h["network"] = "bridge" },
-		"foreign node":          func(h map[string]any) { h["node_container"] = "other" },
-		"unknown field":         func(h map[string]any) { h["image"] = "evil:latest" },
-		"ca traversal":          func(h map[string]any) { h["ca_file"] = "../dp-ca.crt" },
-		"missing ca":            func(h map[string]any) { h["ca_file"] = "absent.crt" },
-		"bad name":              endpoint(0, "name", "node"),
-		"other key":             endpoint(0, "bootstrap_key", "dp-endpoint-02-auth.key"),
-		"key traversal":         endpoint(0, "bootstrap_key", "../dp-endpoint-01-auth.key"),
-		"ipv4 address":          endpoint(0, "zpr_address", "10.0.0.9"),
-		"duplicate address":     endpoint(1, "zpr_address", "fd5a:5052:0:1::1"),
-		"no endpoints":          func(h map[string]any) { h["endpoints"] = []any{} },
-		"foreign endpoint node": endpoint(0, "node_container", "zpr-evaluation-ffffffffffffffffffffffff-data-plane-node-a1"),
-		"endpoint node no name": endpoint(0, "node_container", "x"),
-		"endpoint node suffix":  func(h map[string]any) { endpoint(0, "node_container", h["network"].(string)+"-node-Bad")(h) },
-		"endpoint node docking": func(h map[string]any) { endpoint(0, "node_container", h["network"].(string))(h) },
+		"not evaluation only":     func(h map[string]any) { h["evaluation_only"] = false },
+		"foreign network":         func(h map[string]any) { h["network"] = "bridge" },
+		"foreign node":            func(h map[string]any) { h["node_container"] = "other" },
+		"unknown field":           func(h map[string]any) { h["image"] = "evil:latest" },
+		"ca traversal":            func(h map[string]any) { h["ca_file"] = "../dp-ca.crt" },
+		"missing ca":              func(h map[string]any) { h["ca_file"] = "absent.crt" },
+		"bad name":                endpoint(0, "name", "node"),
+		"other key":               endpoint(0, "bootstrap_key", "dp-endpoint-02-auth.key"),
+		"key traversal":           endpoint(0, "bootstrap_key", "../dp-endpoint-01-auth.key"),
+		"ipv4 address":            endpoint(0, "zpr_address", "10.0.0.9"),
+		"duplicate address":       endpoint(1, "zpr_address", "fd5a:5052:0:1::1"),
+		"no endpoints":            func(h map[string]any) { h["endpoints"] = []any{} },
+		"endpoint node container": func(h map[string]any) { endpoint(0, "node_host", h["network"].(string)+"-node-a1")(h) },
+		"endpoint node no name":   endpoint(0, "node_host", "x"),
+		"endpoint node bad name":  endpoint(0, "node_host", "node-Bad"),
+		"endpoint node docking":   func(h map[string]any) { endpoint(0, "node_host", h["network"].(string))(h) },
+		"endpoint node legacy":    endpoint(0, "node_container", "node-a1"),
 	} {
 		if _, _, err := loadSimulatorDataPlaneHandoff(writeTestDataPlaneHandoff(t, mutate)); err == nil {
 			t.Fatalf("%s: invalid handoff accepted", name)
@@ -109,14 +110,14 @@ func TestSimulatorDataPlaneEndpointArguments(t *testing.T) {
 
 func TestSimulatorDataPlaneEndpointOnAdditionalNode(t *testing.T) {
 	path := writeTestDataPlaneHandoff(t, func(h map[string]any) {
-		h["endpoints"].([]any)[1].(map[string]any)["node_container"] = h["network"].(string) + "-node-shenzhen-office"
+		h["endpoints"].([]any)[1].(map[string]any)["node_host"] = "node-shenzhen-office"
 	})
 	handoff, dir, err := loadSimulatorDataPlaneHandoff(path)
 	if err != nil {
 		t.Fatalf("handoff with an additional node rejected: %v", err)
 	}
 	plane := &simulatorDataPlaneEndpoints{handoff: handoff, dir: dir, image: "image"}
-	if joined := strings.Join(plane.runArguments(handoff.Endpoints[1]), " "); !strings.Contains(joined, "ZPR_EP_NODE="+handoff.Network+"-node-shenzhen-office ") ||
+	if joined := strings.Join(plane.runArguments(handoff.Endpoints[1]), " "); !strings.Contains(joined, "ZPR_EP_NODE=node-shenzhen-office ") ||
 		!strings.Contains(joined, "--network "+handoff.Network+" ") {
 		t.Fatalf("endpoint-02 must dock with its node on the install network: %s", joined)
 	}

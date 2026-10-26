@@ -112,9 +112,9 @@ type evaluationDataPlaneEndpoint struct {
 	Name         string `json:"name"`
 	BootstrapKey string `json:"bootstrap_key"`
 	ZPRAddress   string `json:"zpr_address"`
-	// NodeContainer, when set, is the additional node this endpoint docks
-	// with; otherwise it docks with the handoff's node_container.
-	NodeContainer string `json:"node_container,omitempty"`
+	// NodeHost, when set, is the network alias of the additional node this
+	// endpoint docks with; otherwise it docks with the handoff's node_container.
+	NodeHost string `json:"node_host,omitempty"`
 }
 
 // evaluationDataPlaneEndpointsHandoff is what an install hands to the
@@ -294,7 +294,7 @@ func generateEvaluationDataPlane(files map[string][]byte, state string, inventor
 		}
 		// Endpoints are spread round-robin over the nodes, starting with the docking node.
 		if node := (index - 1) % len(nodes); node > 0 {
-			endpoint.NodeContainer = evaluationDataPlaneNodeContainer(inventory, node)
+			endpoint.NodeHost = evaluationDataPlaneNodeHost(inventory, node)
 		}
 		handoff.Endpoints = append(handoff.Endpoints, endpoint)
 	}

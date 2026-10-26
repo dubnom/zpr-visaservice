@@ -136,12 +136,14 @@ func TestEvaluationDataPlaneMultiNodeRender(t *testing.T) {
 	if err := json.Unmarshal(read(evaluationDataPlaneEndpointsFile), &handoff); err != nil {
 		t.Fatal(err)
 	}
-	network := evaluationDataPlaneName(inventory)
-	want := []string{"", network + "-node-shenzhen-office", network + "-node-tijuana", ""}
+	want := []string{"", "node-shenzhen-office", "node-tijuana", ""}
 	for index, endpoint := range handoff.Endpoints {
-		if endpoint.NodeContainer != want[index] {
-			t.Fatalf("endpoint %s docks with %q, want %q", endpoint.Name, endpoint.NodeContainer, want[index])
+		if endpoint.NodeHost != want[index] {
+			t.Fatalf("endpoint %s docks with %q, want %q", endpoint.Name, endpoint.NodeHost, want[index])
 		}
+	}
+	if args := strings.Join(evaluationDataPlaneNodeArguments(state, inventory, "image", 2), " "); !strings.Contains(args, "--network "+evaluationDataPlaneName(inventory)+" --network-alias node-tijuana ") {
+		t.Fatalf("additional node must carry its endpoint alias: %s", args)
 	}
 }
 
