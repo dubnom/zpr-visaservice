@@ -36,11 +36,20 @@ The production build uses a separate `main_production.go` entrypoint and the
 `production` build tag. Its compiler-selected source and transitive imports
 exclude Simulator and lab code; it accepts only Control Room and Control-Service
 modes and rejects other modes before Simulator configuration or listeners can
-load. The default build uses `main_lab.go` and retains the Simulator and workload
-entrypoints. Tests check both source selection/imports and the production
-composition boundary. This build separation does not qualify a production
-deployment or complete the remaining M4 lifecycle/runtime evidence. Do not use
-the shared lab launcher as production deployment evidence.
+load. Production Control Room startup also requires explicit server certificate
+and key paths, its exact HTTPS origin, named-operator OIDC configuration and
+secret paths, and an organization ID; it does not fall back to development
+HTTP/no-auth mode. Control-Service additionally requires its mTLS server
+certificate, key, and client CA, while Control Room requires its Control-Service
+mTLS client configuration.
+
+The default build uses `main_lab.go` and retains the Simulator and workload
+entrypoints. Tests check source selection/imports, production composition, the
+exact contents of the generated package, and its runtime rejection of Simulator
+mode and incomplete operator configuration. This package candidate does not
+qualify an installed production deployment or complete the remaining M4
+lifecycle/runtime evidence. Do not use the shared lab launcher as production
+deployment evidence.
 
 Validation (keep scratch directories inside the worktree):
 

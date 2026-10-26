@@ -711,6 +711,12 @@ Depends on M2 and M3. This closes deployable boundaries, not just code naming.
 - [ ] **P02:** Produce a production deployment with no Simulator executable,
   routes, static pages, manifests, scenario mounts or lab defaults. Reject
   missing explicit operator configuration rather than discovering demo values.
+  The production package candidate now contains only the production binary and
+  its two manifests; package tests verify Simulator mode is rejected and
+  Control Room refuses to start without explicit TLS, OIDC and organization
+  configuration. Production source/import and asset tests cover the compiled
+  and served boundaries. The installed-deployment/cold-start acceptance remains
+  open; this is not deployment evidence.
 - [ ] **P03:** Independently supervise lab LDAP/OIDC/DNS. Document which
   disposable resources belong to the lab and which services are shared.
 - [ ] **P04:** Add CI import/configuration/route checks and runtime boundary

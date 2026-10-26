@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 )
 
 // The production build is the operator entrypoint: it composes only Control
@@ -23,6 +25,9 @@ func main() {
 func runProductionMode(mode, listen string) error {
 	switch mode {
 	case "control-room":
+		if err := requireProductionControlRoomConfiguration(); err != nil {
+			return err
+		}
 		return runControlRoom(listen)
 	case "control-service":
 		return runControlService()
@@ -31,4 +36,25 @@ func runProductionMode(mode, listen string) error {
 	default:
 		return fmt.Errorf("run mode %q is unavailable in the production build; use control-room or control-service", mode)
 	}
+}
+
+func requireProductionControlRoomConfiguration() error {
+	required := []string{
+		"ZPR_CONTROL_ROOM_CERT_FILE",
+		"ZPR_CONTROL_ROOM_KEY_FILE",
+		"ZPR_CONTROL_ROOM_ORIGIN",
+		"ZPR_OPERATOR_OIDC_CONFIG_FILE",
+		"ZPR_OPERATOR_OIDC_SECRET_FILE",
+		"ZPR_CONTROL_ROOM_ORGANIZATION_ID",
+	}
+	var missing []string
+	for _, name := range required {
+		if strings.TrimSpace(os.Getenv(name)) == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) != 0 {
+		return fmt.Errorf("production control-room mode requires explicit operator configuration: %s", strings.Join(missing, ", "))
+	}
+	return nil
 }
