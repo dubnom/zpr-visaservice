@@ -104,6 +104,12 @@ const (
 	evaluationDataPlaneMaxEndpoints = 16
 	// evaluationDataPlaneEndpointsFile is the install-to-Simulator handoff.
 	evaluationDataPlaneEndpointsFile = "data-plane-endpoints.json"
+	// evaluationDataPlaneClientFile describes the operator client (U05b) for
+	// client.sh; it is deliberately not part of the Simulator handoff.
+	evaluationDataPlaneClientFile    = "data-plane-client.env"
+	evaluationDataPlaneClientName    = "client-01"
+	evaluationDataPlaneClientActor   = "Client01"
+	evaluationDataPlaneClientAddress = "fd5a:5052:0:1::c1"
 	// Endpoint bootstrap keys (X15) join the existing [bootstrap] table here.
 	evaluationDataPlaneBootstrapAnchor = "\"vs.zpr\" = \"dp-vs-auth.pub\"\n"
 )
@@ -175,7 +181,7 @@ func evaluationDataPlaneRequired(config evaluationConfig) []string {
 		files = append(files, "dp-"+name+"-auth.key", "dp-"+name+"-auth.pub")
 	}
 	if config.DataPlaneEndpoints > 0 {
-		files = append(files, evaluationDataPlaneEndpointsFile)
+		files = append(files, evaluationDataPlaneEndpointsFile, "dp-"+evaluationDataPlaneClientName+"-auth.key", "dp-"+evaluationDataPlaneClientName+"-auth.pub", evaluationDataPlaneClientFile)
 	}
 	return append(files, evaluationDataPlaneNodeFiles(config)...)
 }
@@ -196,22 +202,28 @@ func renderEvaluationDataPlanePolicy(endpoints int, nodes []evaluationDataPlaneT
 			fmt.Fprintf(&services, "\n[protocols.%s]\nl4protocol = \"iana.%s\"\nport = %d\n", protocol, strings.ToUpper(listener.Protocol), listener.Port)
 		}
 	}
+	// The operator client (U05b) is a peer with exactly an endpoint's policy.
+	type peer struct{ name, actor string }
+	peers := []peer{}
 	for index := 1; index <= endpoints; index++ {
-		name, actor := evaluationDataPlaneEndpointName(index), evaluationDataPlaneEndpointPolicyName(index)
-		fmt.Fprintf(&zpl, "define %s as adapter with zpr.adapter.cn:'%s'.\n", actor, name)
-		fmt.Fprintf(&keys, "%q = %q\n", name, "dp-"+name+"-auth.pub")
+		peers = append(peers, peer{evaluationDataPlaneEndpointName(index), evaluationDataPlaneEndpointPolicyName(index)})
+	}
+	peers = append(peers, peer{evaluationDataPlaneClientName, evaluationDataPlaneClientActor})
+	for _, current := range peers {
+		fmt.Fprintf(&zpl, "define %s as adapter with zpr.adapter.cn:'%s'.\n", current.actor, current.name)
+		fmt.Fprintf(&keys, "%q = %q\n", current.name, "dp-"+current.name+"-auth.pub")
 		for _, kind := range kinds {
-			fmt.Fprintf(&zpl, "define %s%s as a service with device.zpr.adapter.cn:'%s'.\n", actor, kind, name)
-			fmt.Fprintf(&services, "\n[services.%s%s]\nprotocol = %q\n", actor, kind, protocols[kind])
+			fmt.Fprintf(&zpl, "define %s%s as a service with device.zpr.adapter.cn:'%s'.\n", current.actor, kind, current.name)
+			fmt.Fprintf(&services, "\n[services.%s%s]\nprotocol = %q\n", current.actor, kind, protocols[kind])
 		}
 	}
-	for index := 1; index <= endpoints; index++ {
+	for _, current := range peers {
 		for _, kind := range kinds {
-			service := evaluationDataPlaneEndpointPolicyName(index) + kind
+			service := current.actor + kind
 			fmt.Fprintf(&zpl, "\nservice %s as json {\"service_class\":\"%s\"}.\n", service, service)
-			for peer := 1; peer <= endpoints; peer++ {
-				if peer != index {
-					fmt.Fprintf(&zpl, "  allow %s.\n", evaluationDataPlaneEndpointPolicyName(peer))
+			for _, other := range peers {
+				if other != current {
+					fmt.Fprintf(&zpl, "  allow %s.\n", other.actor)
 				}
 			}
 		}
@@ -345,7 +357,30 @@ func generateEvaluationDataPlane(files map[string][]byte, state string, inventor
 		return err
 	}
 	files[evaluationDataPlaneEndpointsFile] = append(data, '\n')
+	_, private, public, err := rsaKey()
+	if err != nil {
+		return err
+	}
+	client := evaluationDataPlaneClientName
+	files["dp-"+client+"-auth.key"], files["dp-"+client+"-auth.pub"] = private, public
+	files[evaluationDataPlaneClientFile] = renderEvaluationDataPlaneClient(inventory)
 	return nil
+}
+
+// renderEvaluationDataPlaneClient describes the operator client for
+// packaging/evaluation/data-plane/client.sh as plain KEY=value lines; the
+// script parses them and never executes the file.
+func renderEvaluationDataPlaneClient(inventory evaluationInventory) []byte {
+	listen := make([]string, 0, len(evaluationDataPlaneListeners))
+	for _, listener := range evaluationDataPlaneListeners {
+		listen = append(listen, fmt.Sprintf("%s:%d", listener.Protocol, listener.Port))
+	}
+	name := evaluationDataPlaneName(inventory)
+	return fmt.Appendf(nil, "# EVALUATION ONLY operator client (U05b); not run by the Simulator.\n"+
+		"ZPR_CLIENT_INSTALL_ID=%s\nZPR_CLIENT_NETWORK=%s\nZPR_CLIENT_NODE=%s\nZPR_CLIENT_NAME=%s\n"+
+		"ZPR_CLIENT_ZPR_ADDR=%s\nZPR_CLIENT_KEY=dp-%s-auth.key\nZPR_CLIENT_CA=dp-ca.crt\nZPR_CLIENT_LISTEN=%s\n",
+		inventory.InstallID, name, name, evaluationDataPlaneClientName, evaluationDataPlaneClientAddress,
+		evaluationDataPlaneClientName, strings.Join(listen, " "))
 }
 
 // evaluationNoiseCertificate issues an X25519 key-agreement leaf signed by the
@@ -422,9 +457,10 @@ func evaluationDataPlaneName(inventory evaluationInventory) string {
 // plane sees, each at its original absolute path so vs.toml stays valid.
 func evaluationDataPlaneMounts(state string, config evaluationConfig) (readOnly, writable []string) {
 	readOnly = append([]string{"vs.toml", "valkey.conf", "vs-admin-keys.toml", "server-chain.pem", "server-key.pem", "vs-trusted-services"}, evaluationDataPlaneFiles...)
-	// Endpoint public keys only: their private keys stay with the Simulator.
+	// Endpoint and operator client public keys only: their private keys stay
+	// with the Simulator or the operator.
 	for _, name := range evaluationDataPlaneRequired(config) {
-		if strings.HasPrefix(name, "dp-endpoint-") && strings.HasSuffix(name, ".pub") {
+		if (strings.HasPrefix(name, "dp-endpoint-") || strings.HasPrefix(name, "dp-"+evaluationDataPlaneClientName+"-")) && strings.HasSuffix(name, ".pub") {
 			readOnly = append(readOnly, name)
 		}
 	}

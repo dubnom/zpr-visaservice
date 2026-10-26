@@ -565,7 +565,7 @@ drives an evaluation install's own data plane instead.
   expected vs observed outcomes at `/api/simulator/data-plane-workloads`.
   Control-Service independently reports the resulting visas, denies and
   counters. This was verified live with zero mismatches.
-- [ ] **U05 completion:**
+- [x] **U05 completion:**
   - [x] **U05a:** TCP and UDP service workloads. Endpoints run echo listeners
     on their ZPR address: `tcp/7007` and `udp/7008` are published to peers by
     the install policy, `tcp/7009` and `udp/7010` are not. The handoff lists
@@ -575,8 +575,16 @@ drives an evaluation install's own data plane instead.
     great-lakes and redwood installs: 18 probes per install with no
     mismatches or errors, including across nodes. The VS admin API shows TCP
     visas for port 7007 and `NoMatch` denials for port 7009.
-  - [ ] **U05b:** compare with a client the Simulator does not run, under
-    equivalent policy.
+  - [x] **U05b:** compare with a client the Simulator does not run, under
+    equivalent policy. The install generates operator client `client-01`
+    (own key, `fd5a:5052:0:1::c1`) with exactly an endpoint's policy in both
+    directions. The Simulator handoff excludes it, and the operator runs it
+    with `data-plane/client.sh`. Live on northstar: client-01 and endpoint-02
+    got identical results probing endpoint-01 (ping, `tcp/7007` and `udp/7008`
+    reply; `tcp/7009` and `udp/7010` dropped), and so did the reverse
+    direction. The VS and Control-Service report the client's visas and
+    `NoMatch` denials like an endpoint's, while the Simulator reports 0
+    mismatches and never names the client.
 - [x] **D5:** one evaluation install per organization for Simulator
   organization switching. This replaces the legacy reset script.
   - [x] **D5a:** `-node-location LAT,LON` writes the data-plane node's map

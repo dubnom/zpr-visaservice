@@ -333,6 +333,31 @@ same traffic independently: Control-Service reads the visas, recent denies and
 the approved/denied counters from the VS admin API. The node caches denials,
 so a repeated denied probe does not increase the VS deny count.
 
+#### Operator client (U05b)
+
+With `-data-plane-endpoints N`, the install also generates one operator client,
+`client-01` at `fd5a:5052:0:1::c1`. It has its own key and gets exactly an
+endpoint's policy in both directions: its echo services are published to every
+endpoint, and every endpoint's services are published to it. The Simulator
+handoff does not name it; the operator runs it from `data-plane-client.env`:
+
+```sh
+sh packaging/evaluation/data-plane/client.sh start  "$STATE"
+sh packaging/evaluation/data-plane/client.sh status "$STATE"
+sh packaging/evaluation/data-plane/client.sh probe  "$STATE" ping fd5a:5052:0:1::1
+sh packaging/evaluation/data-plane/client.sh probe  "$STATE" tcp  fd5a:5052:0:1::1 7007
+sh packaging/evaluation/data-plane/client.sh stop   "$STATE"
+```
+
+`client.sh` parses the env file without sourcing it, and runs the same image
+and listeners as the endpoints (override the image with `ZPR_CLIENT_IMAGE`).
+Its probes should match a Simulator endpoint's probes to the same target: a
+reply on `tcp/7007` and `udp/7008`, no reply on `tcp/7009` and `udp/7010`.
+Control-Service reports the client's actor, services, visas and `NoMatch`
+denials the same way as the endpoints', without the Simulator. Install teardown
+removes the client container with the rest of the data-plane network. Installs
+created before U05b have no client.
+
 #### One install per organization (D5)
 
 To switch Simulator organizations against real installs, the operator starts one

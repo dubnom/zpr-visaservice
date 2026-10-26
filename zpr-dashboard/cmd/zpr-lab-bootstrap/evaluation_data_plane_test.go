@@ -320,17 +320,43 @@ func TestEvaluationDataPlaneEndpoints(t *testing.T) {
 	if !slices.Equal(handoff.Listeners, evaluationDataPlaneListeners) {
 		t.Fatalf("handoff listeners: %+v", handoff.Listeners)
 	}
+	if !strings.Contains(string(compiler), `"client-01" = "dp-client-01-auth.pub"`) ||
+		!strings.Contains(string(policy), "define Client01 as adapter with zpr.adapter.cn:'client-01'.") ||
+		!strings.Contains(string(policy), "service Endpoint02EchoTCP as json {\"service_class\":\"Endpoint02EchoTCP\"}.\n  allow Endpoint01.\n  allow Endpoint03.\n  allow Client01.\n") ||
+		!strings.Contains(string(policy), "service Client01EchoUDP as json {\"service_class\":\"Client01EchoUDP\"}.\n  allow Endpoint01.\n  allow Endpoint02.\n  allow Endpoint03.\n") {
+		t.Fatalf("operator client must have exactly an endpoint's policy: %s", policy)
+	}
+	if strings.Contains(string(data), "client-01") {
+		t.Fatal("the Simulator handoff must not name the operator client")
+	}
+	client, err := os.ReadFile(filepath.Join(state, evaluationDataPlaneClientFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ZPR_CLIENT_INSTALL_ID=" + inventory.InstallID + "\n", "ZPR_CLIENT_NETWORK=" + handoff.Network + "\n",
+		"ZPR_CLIENT_NAME=client-01\n", "ZPR_CLIENT_ZPR_ADDR=fd5a:5052:0:1::c1\n", "ZPR_CLIENT_KEY=dp-client-01-auth.key\n",
+		"ZPR_CLIENT_LISTEN=tcp:7007 udp:7008 tcp:7009 udp:7010\n"} {
+		if !strings.Contains(string(client), want) {
+			t.Fatalf("client description missing %q: %s", want, client)
+		}
+	}
+	for _, name := range []string{"dp-client-01-auth.key", "dp-client-01-auth.pub", evaluationDataPlaneClientFile} {
+		if info, err := os.Stat(filepath.Join(state, name)); err != nil || info.Mode().Perm() != 0o600 || inventory.Files[name] == "" {
+			t.Fatalf("%s is not a protected inventory file", name)
+		}
+	}
 	readOnly, _ := evaluationDataPlaneMounts(state, config)
-	if !slices.Contains(readOnly, filepath.Join(state, "dp-endpoint-03-auth.pub")) {
-		t.Fatal("data plane must see endpoint public keys to compile the policy")
+	if !slices.Contains(readOnly, filepath.Join(state, "dp-endpoint-03-auth.pub")) || !slices.Contains(readOnly, filepath.Join(state, "dp-client-01-auth.pub")) {
+		t.Fatal("data plane must see endpoint and client public keys to compile the policy")
 	}
 	for _, path := range readOnly {
-		if strings.HasPrefix(filepath.Base(path), "dp-endpoint-") && strings.HasSuffix(path, ".key") || strings.HasSuffix(path, evaluationDataPlaneEndpointsFile) {
-			t.Fatalf("data plane must not see endpoint private keys or the handoff: %s", path)
+		if (strings.HasPrefix(filepath.Base(path), "dp-endpoint-") || strings.HasPrefix(filepath.Base(path), "dp-client-")) && strings.HasSuffix(path, ".key") ||
+			strings.HasSuffix(path, evaluationDataPlaneEndpointsFile) || strings.HasSuffix(path, evaluationDataPlaneClientFile) {
+			t.Fatalf("data plane must not see endpoint or client private keys or the handoffs: %s", path)
 		}
 	}
 	plain := testEvaluationDataPlaneConfig()
-	if slices.ContainsFunc(evaluationDataPlaneRequired(plain), func(name string) bool { return strings.Contains(name, "endpoint") }) {
+	if slices.ContainsFunc(evaluationDataPlaneRequired(plain), func(name string) bool { return strings.Contains(name, "endpoint") || strings.Contains(name, "client") }) {
 		t.Fatal("installs without endpoints must keep the D1 file set")
 	}
 	if policy, compiler := renderEvaluationDataPlanePolicy(0, evaluationDataPlaneTopology(evaluationInventory{})); policy != evaluationDataPlanePolicy || compiler != evaluationDataPlaneCompilerConfig {

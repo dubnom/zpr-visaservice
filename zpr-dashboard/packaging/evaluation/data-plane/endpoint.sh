@@ -18,7 +18,7 @@ node=${ZPR_EP_NODE:?ZPR_EP_NODE is required}
 zpr_addr=${ZPR_EP_ZPR_ADDR:?ZPR_EP_ZPR_ADDR is required}
 listen=${ZPR_EP_LISTEN:-}
 case $name in
-endpoint-[0-9][0-9]) ;;
+endpoint-[0-9][0-9] | client-[0-9][0-9]) ;;
 *) echo "invalid endpoint name" >&2; exit 2 ;;
 esac
 case $zpr_addr in

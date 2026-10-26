@@ -366,7 +366,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		if inventory.Config.DataPlane {
 			endpoints := "no endpoints"
 			if inventory.Config.DataPlaneEndpoints > 0 {
-				endpoints = fmt.Sprintf("endpoint-01..%02d admitted by bootstrap key (X15); run them with the Simulator via SIMULATOR_DATA_PLANE_ENDPOINTS_FILE=%s", inventory.Config.DataPlaneEndpoints, filepath.Join(state, evaluationDataPlaneEndpointsFile))
+				endpoints = fmt.Sprintf("endpoint-01..%02d admitted by bootstrap key (X15); run them with the Simulator via SIMULATOR_DATA_PLANE_ENDPOINTS_FILE=%s; operator client %s with the same policy: sh packaging/evaluation/data-plane/client.sh start %q", inventory.Config.DataPlaneEndpoints, filepath.Join(state, evaluationDataPlaneEndpointsFile), evaluationDataPlaneClientName, state)
 			}
 			nodes := "one node"
 			if count := len(evaluationDataPlaneTopology(inventory)); count > 1 {
