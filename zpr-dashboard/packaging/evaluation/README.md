@@ -245,17 +245,51 @@ sh packaging/evaluation/bootstrap.sh \
   except `valkey-state/` and `data-plane/`. It never sees the install CA key,
   operator secrets or the VS admin API key.
 - **Network:** a per-install Docker network,
-  `zpr-evaluation-<install-id>-data-plane`, which later endpoint containers will
-  join. Inside the container, namespace `zpr-vs` holds Valkey, the VS and the
+  `zpr-evaluation-<install-id>-data-plane`, which endpoint containers join. Inside the container, namespace `zpr-vs` holds Valkey, the VS and the
   `vs.zpr` adapter; the node runs in the root namespace. Snapshot delivery is
   relayed to the host's loopback delivery port.
 - **Readiness:** the VS admin API must be healthy *and* list both `node` and
   `vs.zpr` as admitted actors. `logs/data-plane.log` holds every component's
-  log, and any component exit stops the install. Ctrl-C removes the container
-  and network; state is retained.
-- **Still not production:** there are no endpoint adapters yet. Endpoint
-  admission by keys compiled into the policy is a recorded evaluation stopgap,
-  and enrollment is deferred. Nothing is enforced outside this container.
+  log, and any component exit stops the install. Ctrl-C removes the container,
+  every other container on the install network (including endpoints) and the
+  network; state is retained.
+- **Still not production:** endpoint admission by keys compiled into the
+  policy is a recorded evaluation stopgap (X15), and enrollment is deferred.
+  Nothing is enforced outside this container.
+
+### Simulator endpoints (with `-data-plane -data-plane-endpoints N`)
+
+`-data-plane-endpoints N` (0, or 2–16; frozen with the install) generates
+`endpoint-01`…`endpoint-NN`. Each endpoint has its own RSA bootstrap key,
+`dp-endpoint-NN-auth.{key,pub}`, and a fixed ZPR address `fd5a:5052:0:1::N` (hex).
+The per-install policy admits each endpoint by its public key and lets every
+endpoint ping the others (`EndpointNNPing`). The data-plane container mounts
+only the public keys.
+
+The install also writes the handoff `data-plane-endpoints.json`. It names the
+install network, the node container, the CA and each endpoint's key file and
+address. The install does not run endpoints itself. Point the Simulator at the
+handoff:
+
+```sh
+SIMULATOR_DATA_PLANE_ENDPOINTS_FILE="$STATE/data-plane-endpoints.json" \
+  go run ./cmd/zpr-web-dashboard -mode simulator ...
+```
+
+The Simulator validates the handoff strictly. Every 10 seconds it reconciles
+one container per endpoint, `zpr-evaluation-<id>-data-plane-endpoint-NN`, on
+the install network:
+
+- It uses the same image with entrypoint `zpr-evaluation-endpoint`, overridable
+  with `SIMULATOR_DATA_PLANE_IMAGE`.
+- Each container mounts only that endpoint's private key and the CA.
+- The Simulator adopts running endpoints and relaunches missing ones. It
+  reports "install data plane is not running" while the install is down.
+
+Endpoints outlive a Simulator restart and are removed by install teardown.
+`GET /api/simulator/data-plane-endpoints` (`simulator.read`) reports their
+state. Admitted endpoints appear in the VS actors and in Control Room through
+Control-Service. Control Room never reads the handoff.
 
 ## Identity, health and lifecycle
 

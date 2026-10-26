@@ -224,6 +224,13 @@ func runSimulator(listen string) (runErr error) {
 	if policyStatusClient != nil {
 		defer policyStatusClient.client.CloseIdleConnections()
 	}
+	dataPlaneEndpoints, err := newSimulatorDataPlaneEndpointsFromEnv()
+	if err != nil {
+		return err
+	}
+	if dataPlaneEndpoints != nil {
+		go dataPlaneEndpoints.run(context.Background())
+	}
 	staticRoot, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		return err
@@ -239,6 +246,7 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/restore-base", handleSimulatorOrganizationRestoreBase)
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
+	mux.Handle("GET /api/simulator/data-plane-endpoints", dataPlaneEndpoints)
 	worldHandler := newSimulatorWorldHandler()
 	mux.Handle("GET /api/simulator/world", worldHandler)
 	mux.Handle("POST /api/simulator/world/machines/{machine}/{action}", worldHandler)

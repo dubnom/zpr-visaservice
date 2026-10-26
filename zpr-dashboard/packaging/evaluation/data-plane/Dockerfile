@@ -7,7 +7,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY ph ph-cli vs vs-admin zplc /usr/local/bin/
 COPY data-plane.sh /usr/local/bin/zpr-evaluation-data-plane
+COPY endpoint.sh /usr/local/bin/zpr-evaluation-endpoint
 RUN chmod 0755 /usr/local/bin/ph /usr/local/bin/ph-cli /usr/local/bin/vs /usr/local/bin/vs-admin \
-        /usr/local/bin/zplc /usr/local/bin/zpr-evaluation-data-plane
+        /usr/local/bin/zplc /usr/local/bin/zpr-evaluation-data-plane /usr/local/bin/zpr-evaluation-endpoint
 LABEL org.zpr.evaluation-data-plane="1"
 ENTRYPOINT ["/usr/local/bin/zpr-evaluation-data-plane"]

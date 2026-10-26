@@ -16,6 +16,8 @@ func TestSimulatorAPIPermissionMap(t *testing.T) {
 		want                                   bool
 	}{
 		{http.MethodGet, "/api/simulator/status", "simulator.read", "", true},
+		{http.MethodGet, "/api/simulator/data-plane-endpoints", "simulator.read", "", true},
+		{http.MethodPost, "/api/simulator/data-plane-endpoints", "", "", false},
 		{http.MethodGet, "/api/simulator/world", "simulator.read", "", true},
 		{http.MethodPost, "/api/simulator/world/machines/alice/start", "device.lifecycle", "", true},
 		{http.MethodPost, "/api/simulator/world/machines/alice/stop", "device.lifecycle", "", true},

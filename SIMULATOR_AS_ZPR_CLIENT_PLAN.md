@@ -552,8 +552,13 @@ drives an evaluation install's own data plane instead.
   Control-Service. See the
   [evaluation runbook](zpr-dashboard/packaging/evaluation/README.md).
 - [ ] **D2:** ordinary endpoint enrollment (deferred; X15 stands in).
-- [ ] **D3:** Simulator endpoint adapters join the install's data-plane network
-  with keys from X15.
+- [x] **D3:** Simulator endpoint adapters join the install's data-plane network
+  with keys from X15. `-data-plane-endpoints N` generates per-install endpoint
+  keys, ping services and the handoff `data-plane-endpoints.json`. The
+  Simulator reconciles endpoint containers from
+  `SIMULATOR_DATA_PLANE_ENDPOINTS_FILE`, and install teardown removes them.
+  This was verified live: three endpoints were admitted, ping worked between
+  endpoints over ZPR, running endpoints were adopted, and teardown cleaned up.
 - [ ] **D4:** allow/deny workloads observed independently by Control Room
   (U05).
 - [ ] **D5:** one evaluation install per organization for Simulator
@@ -736,7 +741,7 @@ activation date, removal gate and verification evidence in the demo handoff.
 | X13 | Defer per-grant selective visa revalidation; use the existing conservative global visa sweep in the demo. | Global revalidation is intentionally retained and fail-closed; this is not a claim that only grants depending on the changed source were reevaluated. | Before production, persist positive and absence/negation source dependencies per grant, then qualify source-scoped refresh/revalidation and unknown-as-deny behavior. |
 
 | X14 | Bind staged policies conservatively to all configured source identities/versions and pin the canonical binding into existing signed policy metadata. | Active source-policy completion; owner: Policy-Service/VS maintainers. Protected registry, optimistic revisions, identity fingerprints, explicit org defaults and apply-time restage checks prevent stale staged artifacts from rebinding. Display-only changes preserve identity versions; no Simulator dependency. | Authenticate and enforce source version manifests at VS runtime, invalidate installed policies/issued visas, qualify approved issuer/subject links and minimal full-condition dependency sets. Metadata-only restaging is not live-grant invalidation; `validation/2` issuer-qualified ingestion remains a separate gate. |
-| X15 | Admit evaluation endpoints by RSA bootstrap keys compiled into the per-install data-plane policy instead of enrollment. | Active from D3 for `-data-plane` evaluation installs only; owner: evaluation-bootstrap maintainers. Each endpoint has a unique per-install key; only the node and `vs.zpr` are admitted until D3. The ZPR CA key is discarded, and the policy is compiled in-container with a per-install signing key. | Replace with ordinary enrollment/approval (U04/D2), revocation and re-enrollment; never ship keys compiled into policy. |
+| X15 | Admit evaluation endpoints by RSA bootstrap keys compiled into the per-install data-plane policy instead of enrollment. | Active from D3 for `-data-plane` evaluation installs only; owner: evaluation-bootstrap maintainers. Each endpoint has a unique per-install key (`-data-plane-endpoints`, 2–16). Private keys are mounted only into that endpoint's Simulator-owned container. The ZPR CA key is discarded, and the policy is compiled in-container with a per-install signing key. | Replace with ordinary enrollment/approval (U04/D2), revocation and re-enrollment; never ship keys compiled into policy. |
 
 **B1 activation ledger (2026-10-23):** X01/X02/X06/X08/X11/X12 are active for
 `-evaluation` only, owned by the evaluation-bootstrap/package maintainers. Exact

@@ -44,6 +44,6 @@ for binary in ph ph-cli vs vs-admin; do
 	cp "$build/target/release/$binary" "$build/image/$binary"
 done
 cp "$build/target/compiler/release/zplc" "$build/image/zplc"
-cp "$here/Dockerfile" "$here/data-plane.sh" "$build/image/"
+cp "$here/Dockerfile" "$here/data-plane.sh" "$here/endpoint.sh" "$build/image/"
 docker build --platform linux/arm64 -q -t "$tag" "$build/image" >/dev/null
 echo "built $tag"

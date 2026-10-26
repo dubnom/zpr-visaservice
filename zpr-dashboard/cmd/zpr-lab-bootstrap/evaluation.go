@@ -50,6 +50,9 @@ type evaluationConfig struct {
 	// DataPlane hosts the VS, Valkey, a node and the vs.zpr adapter in a Linux
 	// container instead of the native loopback VS (VSAPI/Valkey stay internal).
 	DataPlane bool `json:"data_plane,omitempty"`
+	// DataPlaneEndpoints admits endpoint-01..N by per-install bootstrap keys
+	// (shortcut X15); the Simulator runs them from data-plane-endpoints.json.
+	DataPlaneEndpoints int `json:"data_plane_endpoints,omitempty"`
 }
 
 // Runtime-only executables are not frozen: upgrading them keeps install identity.
@@ -92,6 +95,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&config.ValkeyPort, "valkey-port", 16379, "with -visa-service: loopback private Valkey port")
 	flags.IntVar(&config.SnapshotDeliveryPort, "snapshot-delivery-port", 18793, "with -visa-service: loopback Control-Service subject snapshot delivery mTLS port; 0 disables the subject-link publication cycle (installs created before it existed)")
 	flags.BoolVar(&config.DataPlane, "data-plane", false, "with -visa-service: run the VS with Valkey, one node and the vs.zpr adapter in a privileged Linux data-plane container (build: packaging/evaluation/data-plane/build.sh)")
+	flags.IntVar(&config.DataPlaneEndpoints, "data-plane-endpoints", 0, fmt.Sprintf("with -data-plane: admit endpoint-01..N (0 or %d-%d) by per-install bootstrap keys for Simulator endpoints (EVALUATION ONLY shortcut X15)", evaluationDataPlaneMinEndpoints, evaluationDataPlaneMaxEndpoints))
 	runtime := evaluationRuntimeOptions{}
 	flags.StringVar(&runtime.DataPlaneImage, "data-plane-image", evaluationDataPlaneImage, "with -data-plane: local data-plane image")
 	flags.StringVar(&runtime.VisaServiceBinary, "vs-binary", "", "with -visa-service: absolute path of a built vs executable (cargo build -p vs)")
@@ -105,13 +109,13 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	visaOnly, nativeOnly, planeOnly := false, false, false
 	flags.Visit(func(f *flag.Flag) {
 		switch f.Name {
-		case "vs-admin-port", "vs-api-port", "valkey-port", "snapshot-delivery-port", "vs-binary", "valkey-server", "data-plane", "data-plane-image":
+		case "vs-admin-port", "vs-api-port", "valkey-port", "snapshot-delivery-port", "vs-binary", "valkey-server", "data-plane", "data-plane-image", "data-plane-endpoints":
 			visaOnly = true
 		}
 		switch f.Name {
 		case "vs-api-port", "valkey-port", "vs-binary", "valkey-server":
 			nativeOnly = true
-		case "data-plane-image":
+		case "data-plane-image", "data-plane-endpoints":
 			planeOnly = true
 		}
 	})
@@ -129,7 +133,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		}
 		config.VSAPIPort, config.ValkeyPort = 0, 0
 	} else if planeOnly {
-		fmt.Fprintln(stderr, "-data-plane-image requires -data-plane")
+		fmt.Fprintln(stderr, "-data-plane-image and -data-plane-endpoints require -data-plane")
 		return 2
 	}
 	if *state == "" || flags.NArg() != 0 {
@@ -200,6 +204,9 @@ func (config evaluationConfig) validate() error {
 	}
 	if config.DataPlane && (!config.VisaService || config.VSAPIPort != 0 || config.ValkeyPort != 0) {
 		return errors.New("data plane requires -visa-service and keeps VSAPI/Valkey ports inside the container")
+	}
+	if config.DataPlaneEndpoints != 0 && (!config.DataPlane || config.DataPlaneEndpoints < evaluationDataPlaneMinEndpoints || config.DataPlaneEndpoints > evaluationDataPlaneMaxEndpoints) {
+		return fmt.Errorf("data-plane endpoints require -data-plane and must be 0 or %d-%d", evaluationDataPlaneMinEndpoints, evaluationDataPlaneMaxEndpoints)
 	}
 	for _, port := range config.ports() {
 		if port < 1024 || port > 65535 || ports[port] {

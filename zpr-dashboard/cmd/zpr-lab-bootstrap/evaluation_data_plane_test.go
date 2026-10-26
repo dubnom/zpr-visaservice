@@ -5,6 +5,7 @@ import (
 	"crypto/ecdh"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -83,7 +84,7 @@ func TestEvaluationDataPlaneProtectedRender(t *testing.T) {
 func TestEvaluationDataPlaneIdentities(t *testing.T) {
 	files := map[string][]byte{}
 	now := time.Now()
-	if err := generateEvaluationDataPlane(files, now); err != nil {
+	if err := generateEvaluationDataPlane(files, evaluationInventory{InstallID: "0123456789abcdef01234567", Config: testEvaluationDataPlaneConfig()}, now); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range evaluationDataPlaneFiles {
@@ -152,7 +153,7 @@ func TestEvaluationDataPlaneIdentities(t *testing.T) {
 		}
 	}
 	other := map[string][]byte{}
-	if err := generateEvaluationDataPlane(other, now); err != nil {
+	if err := generateEvaluationDataPlane(other, evaluationInventory{InstallID: "0123456789abcdef01234567", Config: testEvaluationDataPlaneConfig()}, now); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"dp-policy-signing.key", "dp-node.key", "dp-vs.zpr.key", "dp-node-auth.key", "dp-vs-auth.key"} {
@@ -262,5 +263,95 @@ func TestEvaluationDataPlaneActorsAdmitted(t *testing.T) {
 		if evaluationDataPlaneActorsAdmitted([]byte(body)) != want {
 			t.Fatalf("%s: want %v", body, want)
 		}
+	}
+}
+
+func TestEvaluationDataPlaneEndpoints(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "install")
+	config := testEvaluationDataPlaneConfig()
+	config.DataPlaneEndpoints = 3
+	inventory, err := prepareEvaluation(state, config, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readEvaluation(state, config); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"dp-endpoint-01-auth.key", "dp-endpoint-03-auth.pub", evaluationDataPlaneEndpointsFile} {
+		if info, err := os.Stat(filepath.Join(state, name)); err != nil || info.Mode().Perm() != 0o600 || inventory.Files[name] == "" {
+			t.Fatalf("%s is not a protected inventory file", name)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(state, evaluationDataPlaneEndpointsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var handoff evaluationDataPlaneEndpointsHandoff
+	if err := json.Unmarshal(data, &handoff); err != nil {
+		t.Fatal(err)
+	}
+	if !handoff.EvaluationOnly || handoff.InstallID != inventory.InstallID || handoff.Network != evaluationDataPlaneName(inventory) ||
+		handoff.CAFile != "dp-ca.crt" || len(handoff.Endpoints) != 3 || handoff.Endpoints[2].Name != "endpoint-03" ||
+		handoff.Endpoints[2].BootstrapKey != "dp-endpoint-03-auth.key" || handoff.Endpoints[2].ZPRAddress != "fd5a:5052:0:1::3" {
+		t.Fatalf("handoff: %s", data)
+	}
+	policy, err := os.ReadFile(filepath.Join(state, "dp-policy.zpl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiler, err := os.ReadFile(filepath.Join(state, "dp-policy.zplc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(compiler), "[bootstrap]") != 1 || !strings.Contains(string(compiler), `"endpoint-02" = "dp-endpoint-02-auth.pub"`) ||
+		!strings.Contains(string(compiler), "[services.Endpoint03Ping]") {
+		t.Fatalf("compiler configuration: %s", compiler)
+	}
+	if !strings.Contains(string(policy), "define Endpoint01 as adapter with zpr.adapter.cn:'endpoint-01'.") ||
+		!strings.Contains(string(policy), "service Endpoint02Ping as json {\"service_class\":\"Endpoint02Ping\"}.\n  allow Endpoint01.\n  allow Endpoint03.\n") {
+		t.Fatalf("policy: %s", policy)
+	}
+	readOnly, _ := evaluationDataPlaneMounts(state, config)
+	if !slices.Contains(readOnly, filepath.Join(state, "dp-endpoint-03-auth.pub")) {
+		t.Fatal("data plane must see endpoint public keys to compile the policy")
+	}
+	for _, path := range readOnly {
+		if strings.HasPrefix(filepath.Base(path), "dp-endpoint-") && strings.HasSuffix(path, ".key") || strings.HasSuffix(path, evaluationDataPlaneEndpointsFile) {
+			t.Fatalf("data plane must not see endpoint private keys or the handoff: %s", path)
+		}
+	}
+	plain := testEvaluationDataPlaneConfig()
+	if slices.ContainsFunc(evaluationDataPlaneRequired(plain), func(name string) bool { return strings.Contains(name, "endpoint") }) {
+		t.Fatal("installs without endpoints must keep the D1 file set")
+	}
+	if policy, compiler := renderEvaluationDataPlanePolicy(0); policy != evaluationDataPlanePolicy || compiler != evaluationDataPlaneCompilerConfig {
+		t.Fatal("zero endpoints must render the D1 policy unchanged")
+	}
+}
+
+func TestEvaluationDataPlaneEndpointFlags(t *testing.T) {
+	parent := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	for name, args := range map[string][]string{
+		"without data plane": {"-visa-service", "-data-plane-endpoints", "3"},
+		"without visa":       {"-data-plane-endpoints", "3"},
+	} {
+		if code := run(append([]string{"-evaluation", "-state", filepath.Join(parent, "x"), "-render-only"}, args...), &stdout, &stderr); code != 2 {
+			t.Fatalf("%s: code %d", name, code)
+		}
+	}
+	for _, count := range []int{-1, 1, 17} {
+		config := testEvaluationDataPlaneConfig()
+		config.DataPlaneEndpoints = count
+		if config.validate() == nil {
+			t.Fatalf("%d endpoints accepted", count)
+		}
+	}
+	state := filepath.Join(parent, "plane")
+	if code := run([]string{"-evaluation", "-state", state, "-render-only", "-visa-service", "-data-plane", "-data-plane-endpoints", "2"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("render with endpoints: code %d: %s", code, stderr.String())
+	}
+	if code := run([]string{"-evaluation", "-state", state, "-render-only", "-visa-service", "-data-plane"}, &stdout, &stderr); code != 1 {
+		t.Fatal("restart without -data-plane-endpoints must not silently change the frozen install")
 	}
 }

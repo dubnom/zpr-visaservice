@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -41,8 +42,8 @@ var evaluationDataPlaneFiles = []string{
 	"dp-vs.zpr.crt", "dp-vs.zpr.key", "dp-vs-auth.key", "dp-vs-auth.pub",
 }
 
-// Per-install policy: only the node and the VS adapter are admitted. Endpoint
-// bootstrap keys are added by later increments.
+// Per-install policy: the node, the VS adapter and optional evaluation
+// endpoints (bootstrap keys, shortcut X15) that may ping one another.
 const evaluationDataPlanePolicy = `# EVALUATION ONLY data-plane policy: one node and the Visa Service.
 define adapter as a device with zpr.adapter.cn.
 
@@ -98,10 +99,87 @@ protocol = "ping"
 protocol = "ping"
 `
 
+const (
+	evaluationDataPlaneMinEndpoints = 2
+	evaluationDataPlaneMaxEndpoints = 16
+	// evaluationDataPlaneEndpointsFile is the install-to-Simulator handoff.
+	evaluationDataPlaneEndpointsFile = "data-plane-endpoints.json"
+	// Endpoint bootstrap keys (X15) join the existing [bootstrap] table here.
+	evaluationDataPlaneBootstrapAnchor = "\"vs.zpr\" = \"dp-vs-auth.pub\"\n"
+)
+
+type evaluationDataPlaneEndpoint struct {
+	Name         string `json:"name"`
+	BootstrapKey string `json:"bootstrap_key"`
+	ZPRAddress   string `json:"zpr_address"`
+}
+
+// evaluationDataPlaneEndpointsHandoff is what an install hands to the
+// Simulator: file names are relative to the install directory.
+type evaluationDataPlaneEndpointsHandoff struct {
+	Version        int                           `json:"version"`
+	Kind           string                        `json:"kind"`
+	EvaluationOnly bool                          `json:"evaluation_only"`
+	InstallID      string                        `json:"install_id"`
+	Network        string                        `json:"network"`
+	NodeContainer  string                        `json:"node_container"`
+	CAFile         string                        `json:"ca_file"`
+	Endpoints      []evaluationDataPlaneEndpoint `json:"endpoints"`
+}
+
+func evaluationDataPlaneEndpointName(index int) string {
+	return fmt.Sprintf("endpoint-%02d", index)
+}
+
+func evaluationDataPlaneEndpointPolicyName(index int) string {
+	return fmt.Sprintf("Endpoint%02d", index)
+}
+
+// evaluationDataPlaneRequired lists the protected data-plane files for config.
+func evaluationDataPlaneRequired(config evaluationConfig) []string {
+	files := slices.Clone(evaluationDataPlaneFiles)
+	for index := 1; index <= config.DataPlaneEndpoints; index++ {
+		name := evaluationDataPlaneEndpointName(index)
+		files = append(files, "dp-"+name+"-auth.key", "dp-"+name+"-auth.pub")
+	}
+	if config.DataPlaneEndpoints > 0 {
+		files = append(files, evaluationDataPlaneEndpointsFile)
+	}
+	return files
+}
+
+func renderEvaluationDataPlanePolicy(endpoints int) (policy, compiler string) {
+	if endpoints == 0 {
+		return evaluationDataPlanePolicy, evaluationDataPlaneCompilerConfig
+	}
+	var zpl, keys, services strings.Builder
+	zpl.WriteString(evaluationDataPlanePolicy)
+	zpl.WriteString("\n# EVALUATION ONLY endpoints admitted by per-install bootstrap keys (X15).\n")
+	keys.WriteString(evaluationDataPlaneBootstrapAnchor)
+	for index := 1; index <= endpoints; index++ {
+		name, actor := evaluationDataPlaneEndpointName(index), evaluationDataPlaneEndpointPolicyName(index)
+		fmt.Fprintf(&zpl, "define %s as adapter with zpr.adapter.cn:'%s'.\n", actor, name)
+		fmt.Fprintf(&zpl, "define %sPing as a service with device.zpr.adapter.cn:'%s'.\n", actor, name)
+		fmt.Fprintf(&keys, "%q = %q\n", name, "dp-"+name+"-auth.pub")
+		fmt.Fprintf(&services, "\n[services.%sPing]\nprotocol = \"ping\"\n", actor)
+	}
+	for index := 1; index <= endpoints; index++ {
+		service := evaluationDataPlaneEndpointPolicyName(index) + "Ping"
+		fmt.Fprintf(&zpl, "\nservice %s as json {\"service_class\":\"%s\"}.\n", service, service)
+		for peer := 1; peer <= endpoints; peer++ {
+			if peer != index {
+				fmt.Fprintf(&zpl, "  allow %s.\n", evaluationDataPlaneEndpointPolicyName(peer))
+			}
+		}
+	}
+	return zpl.String(), strings.Replace(evaluationDataPlaneCompilerConfig, evaluationDataPlaneBootstrapAnchor, keys.String(), 1) + services.String()
+}
+
 // generateEvaluationDataPlane renders unique per-install ZPR identities: an
 // RSA policy-signing key, an RSA ZPR CA with X25519 Noise certificates for the
-// node and vs.zpr, and RSA bootstrap authentication keys for both.
-func generateEvaluationDataPlane(files map[string][]byte, now time.Time) error {
+// node and vs.zpr, and RSA bootstrap authentication keys for both and for any
+// evaluation endpoints, plus the endpoint handoff for the Simulator.
+func generateEvaluationDataPlane(files map[string][]byte, inventory evaluationInventory, now time.Time) error {
 	rsaKey := func() (*rsa.PrivateKey, []byte, []byte, error) {
 		key, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
@@ -176,8 +254,33 @@ func generateEvaluationDataPlane(files map[string][]byte, now time.Time) error {
 		files["dp-"+name+"-auth.key"], files["dp-"+name+"-auth.pub"] = private, public
 	}
 	// The CA key is deliberately not retained: endpoints are admitted by bootstrap key.
-	files["dp-policy.zpl"] = []byte(evaluationDataPlanePolicy)
-	files["dp-policy.zplc"] = []byte(evaluationDataPlaneCompilerConfig)
+	endpoints := inventory.Config.DataPlaneEndpoints
+	policy, compiler := renderEvaluationDataPlanePolicy(endpoints)
+	files["dp-policy.zpl"], files["dp-policy.zplc"] = []byte(policy), []byte(compiler)
+	if endpoints == 0 {
+		return nil
+	}
+	handoff := evaluationDataPlaneEndpointsHandoff{
+		Version: 1, Kind: "zpr-evaluation-data-plane-endpoints", EvaluationOnly: true,
+		InstallID: inventory.InstallID, Network: evaluationDataPlaneName(inventory),
+		NodeContainer: evaluationDataPlaneName(inventory), CAFile: "dp-ca.crt",
+	}
+	for index := 1; index <= endpoints; index++ {
+		name := evaluationDataPlaneEndpointName(index)
+		_, private, public, err := rsaKey()
+		if err != nil {
+			return err
+		}
+		files["dp-"+name+"-auth.key"], files["dp-"+name+"-auth.pub"] = private, public
+		handoff.Endpoints = append(handoff.Endpoints, evaluationDataPlaneEndpoint{
+			Name: name, BootstrapKey: "dp-" + name + "-auth.key", ZPRAddress: fmt.Sprintf("fd5a:5052:0:1::%x", index),
+		})
+	}
+	data, err := json.MarshalIndent(handoff, "", "  ")
+	if err != nil {
+		return err
+	}
+	files[evaluationDataPlaneEndpointsFile] = append(data, '\n')
 	return nil
 }
 
@@ -255,6 +358,12 @@ func evaluationDataPlaneName(inventory evaluationInventory) string {
 // plane sees, each at its original absolute path so vs.toml stays valid.
 func evaluationDataPlaneMounts(state string, config evaluationConfig) (readOnly, writable []string) {
 	readOnly = append([]string{"vs.toml", "valkey.conf", "vs-admin-keys.toml", "server-chain.pem", "server-key.pem", "vs-trusted-services"}, evaluationDataPlaneFiles...)
+	// Endpoint public keys only: their private keys stay with the Simulator.
+	for _, name := range evaluationDataPlaneRequired(config) {
+		if strings.HasPrefix(name, "dp-endpoint-") && strings.HasSuffix(name, ".pub") {
+			readOnly = append(readOnly, name)
+		}
+	}
 	writable = []string{"valkey-state", "data-plane"}
 	if config.subjectLinks() {
 		readOnly = append(readOnly, "ca.pem", "vs-client-chain.pem", "vs-client-key.pem", "subject-snapshot-signing.json")
@@ -326,6 +435,15 @@ func removeEvaluationDataPlane(ctx context.Context, inventory evaluationInventor
 	_ = evaluationDockerCommand(ctx, "rm", "-f", name)
 	if evaluationDockerCommand(ctx, "network", "inspect", name) != nil {
 		return nil
+	}
+	// Endpoint containers (run by the Simulator) are members of this install's
+	// data plane; they cannot outlive it and would block network removal.
+	members := exec.CommandContext(ctx, "docker", "ps", "-aq", "--filter", "network="+name)
+	members.Env = evaluationDockerEnvironment()
+	if output, err := members.Output(); err == nil {
+		if ids := strings.Fields(string(output)); len(ids) > 0 {
+			_ = evaluationDockerCommand(ctx, append([]string{"rm", "-f"}, ids...)...)
+		}
 	}
 	return evaluationDockerCommand(ctx, "network", "rm", name)
 }

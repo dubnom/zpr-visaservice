@@ -37,7 +37,7 @@ func evaluationVisaRequired(config evaluationConfig) []string {
 	if !config.DataPlane {
 		return evaluationVisaFiles
 	}
-	return append(slices.DeleteFunc(slices.Clone(evaluationVisaFiles), func(name string) bool { return name == "vs-policy.bin2" }), evaluationDataPlaneFiles...)
+	return append(slices.DeleteFunc(slices.Clone(evaluationVisaFiles), func(name string) bool { return name == "vs-policy.bin2" }), evaluationDataPlaneRequired(config)...)
 }
 
 // evaluationVisaPolicyMarker is mutable state: the bundled policy is installed
@@ -67,7 +67,7 @@ func generateEvaluationVisa(files map[string][]byte, state string, inventory eva
 		if err := evaluationDataPlaneMountsSafe(state); err != nil {
 			return err
 		}
-		if err := generateEvaluationDataPlane(files, now); err != nil {
+		if err := generateEvaluationDataPlane(files, inventory, now); err != nil {
 			return err
 		}
 		valkeyPort = 6379

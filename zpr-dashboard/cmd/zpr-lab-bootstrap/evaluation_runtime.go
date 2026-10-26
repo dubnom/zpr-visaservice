@@ -338,7 +338,11 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 	if inventory.Config.VisaService {
 		upstream = fmt.Sprintf("Loopback Visa Service admin at https://localhost:%d (bundled evaluation policy; no nodes or enforcement). Policy-Service is NOT configured.", inventory.Config.VSAdminPort)
 		if inventory.Config.DataPlane {
-			upstream = fmt.Sprintf("Data-plane Visa Service admin at https://localhost:%d (container %s: one node and vs.zpr admitted; no endpoints). Policy-Service is NOT configured.", inventory.Config.VSAdminPort, evaluationDataPlaneName(inventory))
+			endpoints := "no endpoints"
+			if inventory.Config.DataPlaneEndpoints > 0 {
+				endpoints = fmt.Sprintf("endpoint-01..%02d admitted by bootstrap key (X15); run them with the Simulator via SIMULATOR_DATA_PLANE_ENDPOINTS_FILE=%s", inventory.Config.DataPlaneEndpoints, filepath.Join(state, evaluationDataPlaneEndpointsFile))
+			}
+			upstream = fmt.Sprintf("Data-plane Visa Service admin at https://localhost:%d (container %s: one node and vs.zpr admitted; %s). Policy-Service is NOT configured.", inventory.Config.VSAdminPort, evaluationDataPlaneName(inventory), endpoints)
 		}
 	}
 	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Administrator-scoped evaluation grants; no shared sessions.\nStarter directory registered; lifecycle events ingested into evaluation logging. "+upstream)
