@@ -627,7 +627,7 @@ Open defects found while running the live installs. They are outside the
 Simulator/Control Room boundary work, but they affect long-running
 environments, so each must be fixed or explicitly accepted before M5.
 
-- [ ] **DP-K01 (fixed on a zpr-core branch, live rollout pending; found
+- [ ] **DP-K01 (fixed and running live; zpr-core merge pending; found
   2026-10-26, owner: zpr-core adapter/node):** an endpoint adapter whose dock
   link fails keep-alive never recovers.
   - **Seen:** once, on northstar endpoint-02, about 4 minutes after start
@@ -686,12 +686,14 @@ environments, so each must be fixed or explicitly accepted before M5.
   - **Follow-up (not a correctness issue):** a restarted adapter leaks its
     stale DLT entries; the node binds fresh egress IDs, so they are not
     reused. The node's `Pft::clear` is also still a TODO.
-  - **Remaining:** roll out to the live installs. Build with
-    `ZPR_CORE_DIR=<zpr-core worktree> sh packaging/evaluation/data-plane/build.sh`,
-    restart each install with its same command, have the Simulator recreate
-    endpoints, then confirm 0 mismatches. Merge the zpr-core branch upstream
-    separately.
-  - Until the rollout, the Simulator's workload mismatches are the detector.
+  - **Rolled out live:** the `:local` image was rebuilt with
+    `ZPR_CORE_DIR=<zpr-core worktree> sh packaging/evaluation/data-plane/build.sh`
+    (the previous image is kept as `:pre-dpk01`). Each install was restarted
+    with its same command and the Simulator relaunched the endpoints. Redwood
+    and great-lakes each passed a 12/12 endpoint ping/TCP matrix, the
+    northstar client matched policy, and the Simulator reported 0 mismatches.
+  - **Remaining:** merge the zpr-core branch upstream; then tick this item.
+    The Simulator's workload mismatches remain the detector for a recurrence.
 
 ### M4 - Enforce separation in builds, configuration and lifecycle
 
