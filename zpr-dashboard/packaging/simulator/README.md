@@ -771,6 +771,22 @@ authorization.
 The approved initial topology is **one Ubuntu server, separate stacks and
 persistent state** for the real package, companion identity providers and
 Simulator. Identity services must survive stopping or resetting Simulator.
+The lifecycle ownership boundary is:
+
+| Resource | Owner | State/lifecycle boundary |
+| --- | --- | --- |
+| Control Room, Control-Service, Visa/Policy services and production DNS | Real ZPR package and its service supervisor | Production configuration and data stay in production-owned paths; Simulator may use their supported contracts but must not stop or reset them. |
+| Lab OpenLDAP and Dex | Companion identity Compose project | Only `ldap-state` and `dex-state` are persistent lab state. The project has a generated per-install name and its own `down`/`up` lifecycle; stopping Simulator does not stop it. |
+| Bootstrap DNS | Existing network DNS by default; optional lab BIND configuration is generated separately | `underlay-records.txt` is a request for the existing DNS owner. With `-host-bootstrap-dns`, named configuration and a static zone are generated, but no BIND service supervisor/Compose service is generated yet. Do not count this optional server as independently packaged or supervised. |
+| Protected `svc.zpr` DNS | Real ZPR package's DNS adapter/service | Config, TSIG credentials and initial zone are production-role inputs, not Simulator state. The generator does not start BIND or provision its namespace, writable journal volume or service lifecycle. |
+| Simulator UI, scenarios and disposable workload containers | Simulator | May be started, stopped or reset independently. Its lifecycle must not operate the identity or production service projects. |
+
+Consequently, the identity stack has an independent start/stop/restart path,
+while independent bootstrap-BIND supervision and production DNS service
+integration remain packaging gaps. Keep those gaps open in M4 P03 until a
+supervisor and restart evidence exist; file generation and configuration tests
+are not service-lifecycle acceptance.
+
 The generator can now produce `identity-compose.yaml`, `check-directory.sh`,
 and independent mode-`0700` `ldap-state`/`dex-state` directories. Their relative
 references are also recorded in `identity-inputs.json`.

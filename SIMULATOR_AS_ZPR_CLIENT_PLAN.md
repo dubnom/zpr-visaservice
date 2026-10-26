@@ -719,6 +719,13 @@ Depends on M2 and M3. This closes deployable boundaries, not just code naming.
   open; this is not deployment evidence.
 - [ ] **P03:** Independently supervise lab LDAP/OIDC/DNS. Document which
   disposable resources belong to the lab and which services are shared.
+  The companion LDAP/Dex Compose project has independent per-install identity
+  and persistent state, with generated stop/restart instructions and a
+  container-recreation identity test. Ownership is now documented in the
+  Simulator packaging guide. P03 remains open: optional bootstrap BIND has
+  generated config but no independent supervisor, and protected DNS still
+  needs production package namespace/state/lifecycle integration and restart
+  evidence. Do not count generation-only tests as service acceptance.
 - [ ] **P04:** Add CI import/configuration/route checks and runtime boundary
   tests. Capture browser and server egress plus file-access evidence; browser
   request interception alone cannot detect server-side reverse dependencies.
