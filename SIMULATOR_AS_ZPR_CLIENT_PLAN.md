@@ -722,10 +722,12 @@ Depends on M2 and M3. This closes deployable boundaries, not just code naming.
   The companion LDAP/Dex Compose project has independent per-install identity
   and persistent state, with generated stop/restart instructions and a
   container-recreation identity test. Ownership is now documented in the
-  Simulator packaging guide. P03 remains open: optional bootstrap BIND has
-  generated config but no independent supervisor, and protected DNS still
-  needs production package namespace/state/lifecycle integration and restart
-  evidence. Do not count generation-only tests as service acceptance.
+  Simulator packaging guide. Per the user's 2026-10-26 direction, the companion
+  no longer generates an optional bootstrap-BIND role; bootstrap names use
+  existing network DNS, while required protected BIND is production-owned.
+  P03 remains open until protected DNS has production package
+  namespace/state/supervisor integration and restart evidence. The envelope
+  model is deferred and is not an implemented namespace boundary.
 - [ ] **P04:** Add CI import/configuration/route checks and runtime boundary
   tests. Capture browser and server egress plus file-access evidence; browser
   request interception alone cannot detect server-side reverse dependencies.

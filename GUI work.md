@@ -549,6 +549,9 @@ No new priority or implementation approval is implied for backend rollouts.
   loading, vet and Linux amd64 build pass; full Go suite retains the same four
   recorded dashboard failures. No running service changed. See
   [DNS configuration modes](zpr-dashboard/packaging/simulator/README.md#separate-bootstrap-and-protected-zpr-dns).
+  **Superseded 2026-10-26:** the optional companion bootstrap-BIND generator
+  path was retired by user direction. Use existing network DNS for bootstrap
+  names; protected ZPR BIND remains a required production service.
 - **Combined network / DNS rendering (2026-10-15):** user clarified that the
   two packages together must demonstrate real ZPR admission and allowed/denied
   traffic, not merely infrastructure. Approved OpenLDAP/Dex and protected BIND9

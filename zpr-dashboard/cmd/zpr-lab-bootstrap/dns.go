@@ -10,15 +10,14 @@ import (
 )
 
 type dnsConfig struct {
-	BootstrapIP      string `json:"bootstrap_ip"`
-	RoomIP           string `json:"room_ip"`
-	ZPRDNSIP         string `json:"zpr_dns_ip"`
-	ZPRClientPrefix  string `json:"zpr_client_prefix"`
-	HostBootstrapDNS bool   `json:"host_bootstrap_dns"`
+	BootstrapIP     string `json:"bootstrap_ip"`
+	RoomIP          string `json:"room_ip"`
+	ZPRDNSIP        string `json:"zpr_dns_ip"`
+	ZPRClientPrefix string `json:"zpr_client_prefix"`
 }
 
 func (config dnsConfig) validate() error {
-	underlay := config.BootstrapIP != "" || config.RoomIP != "" || config.HostBootstrapDNS
+	underlay := config.BootstrapIP != "" || config.RoomIP != ""
 	protected := config.ZPRDNSIP != "" || config.ZPRClientPrefix != ""
 	if !underlay && !protected {
 		return errors.New("DNS generation requires underlay record addresses or protected ZPR DNS inputs")
@@ -63,11 +62,6 @@ ldap.%s. 30 IN A %s
 oidc.%s. 30 IN A %s
 `, domain, config.RoomIP, domain, config.BootstrapIP, domain, config.BootstrapIP, domain, config.BootstrapIP)
 		references["underlay_records"] = "underlay-records.txt"
-	}
-	if config.HostBootstrapDNS {
-		renderBootstrapDNS(files, config, domain)
-		references["bootstrap_config"] = "bootstrap-named.conf"
-		references["bootstrap_zone"] = "bootstrap.zone"
 	}
 	if config.ZPRDNSIP != "" {
 		if err := renderProtectedDNS(files, config); err != nil {
@@ -142,34 +136,4 @@ provide ZprDNS at dns.svc.zpr over TCP 53.
   allow VisaDnsPublisher.
 `, config.ZPRDNSIP)
 	return nil
-}
-
-func renderBootstrapDNS(files map[string][]byte, config dnsConfig, domain string) {
-	files["bootstrap-named.conf"] = fmt.Appendf(nil, `options {
-    directory "/var/cache/bind";
-    recursion no;
-    allow-recursion { none; };
-    allow-query-cache { none; };
-    allow-query { localnets; localhost; };
-    allow-transfer { none; };
-    listen-on port 53 { %s; };
-    listen-on-v6 { none; };
-};
-controls {};
-zone "%s" {
-    type primary;
-    file "/etc/zpr/lab/bootstrap.zone";
-    allow-update { none; };
-};
-`, config.BootstrapIP, domain)
-	files["bootstrap.zone"] = fmt.Appendf(nil, `$ORIGIN %s.
-$TTL 30
-@ IN SOA bootstrap.%s. hostmaster.%s. (1 60 60 86400 30)
-  IN NS bootstrap.%s.
-bootstrap IN A %s
-room IN A %s
-simulator IN A %s
-ldap IN A %s
-oidc IN A %s
-`, domain, domain, domain, domain, config.BootstrapIP, config.RoomIP, config.BootstrapIP, config.BootstrapIP, config.BootstrapIP)
 }

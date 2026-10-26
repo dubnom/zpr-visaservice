@@ -556,8 +556,7 @@ does not replace an existing zone. Review collisions and ownership before
 adding records; the tool never updates DNS itself.
 
 The underlay address pair and protected ZPR address/prefix pair are independent.
-This example generates the existing-DNS record request plus protected DNS files,
-but **no bootstrap BIND server configuration or zone**:
+This example generates the existing-DNS record request plus protected DNS files:
 
 ```sh
 go run ./cmd/zpr-lab-bootstrap \
@@ -581,17 +580,15 @@ Omitting all DNS options preserves trust/secrets-only generation.
 IPv6 bootstrap and routed-client ACL configuration
 are not implemented in this slice.
 
-For an isolated lab without existing DNS, explicitly add `-host-bootstrap-dns`
-to generate the optional companion BIND server files. This requires both
-underlay addresses but not the protected DNS pair. Merely supplying addresses
-does not enable that server. `-host-bootstrap-dns=false` also leaves it disabled.
-There is no automatic fallback, DNS discovery, mDNS daemon or `.local` support.
-HTTPS/OIDC continue using stable DNS hostnames and verified TLS.
+The lab generator does not create a second bootstrap BIND server. Provision the
+bootstrap names in the existing network DNS and verify resolution from the
+operator browser and service hosts before installation. There is no automatic
+fallback, DNS discovery, mDNS daemon or `.local` support. HTTPS/OIDC continue
+using stable DNS hostnames and verified TLS.
 
 | Generated file | Role |
 | --- | --- |
 | `underlay-records.txt` | With the underlay address pair: fully qualified `room`, `simulator`, `ldap`, `oidc` A records for existing network DNS |
-| `bootstrap-named.conf`, `bootstrap.zone` | Only with `-host-bootstrap-dns`: authoritative-only bootstrap DNS, bound to the bootstrap IPv4 only; `room.<domain>` resolves to Room IPv4, and `bootstrap`, `ldap`, `oidc`, `simulator` resolve to companion IPv4 |
 | `zpr-named.conf`, `db.svc.zpr` | Authoritative-only `svc.zpr`, bound only to the DNS adapter's ZPR IPv6; initial `dns.svc.zpr` AAAA matches that address |
 | `zpr-vs-publisher.key` | Unique 256-bit HMAC-SHA256 TSIG key for A/AAAA publication within `svc.zpr` |
 | `zpr-dns-viewer.key` | Independent 256-bit transfer-only TSIG identity; no update grant |
@@ -599,25 +596,22 @@ HTTPS/OIDC continue using stable DNS hostnames and verified TLS.
 | `zpr-dns.zpl` | Least-privilege initial policy fragment: the `zpr-dns` service and `vs.zpr` publisher, TCP/53 only |
 | `dns-files.json` | Relative file inventory for only the selected outputs; no embedded TSIG secrets |
 
+This is the current single `svc.zpr` service namespace, not an
+envelope-scoped DNS namespace. The envelope/realm design is deferred; do not
+claim per-envelope service naming or authorization from this zone format.
+
 All remain protected `0600` files under the same new-directory/no-overwrite
-contract. `lab-bootstrap.json` includes the explicit DNS inputs and hosted
-bootstrap selection when supplied. Protected files/TSIG keys are generated
-only with the ZPR address/prefix pair, independently of hosted bootstrap DNS.
+contract. `lab-bootstrap.json` includes only the selected record-request and
+protected ZPR DNS inputs. Protected files/TSIG keys are generated only with
+the ZPR address/prefix pair and independently of the underlay record request.
 The completion inventory is still written after every generated file.
 
 Deployment wiring still required:
 
-- Normally add the requested records to the existing network DNS; no additional
-  bootstrap listener, container, zone, resolver change or port 53 binding is
-  needed. Verify resolution from the operator browser and service hosts before
-  installation; file generation does not check live resolution.
-- Only when explicitly selected, run an independent bootstrap BIND instance
-  in addition to the protected ZPR BIND instance. Mount bootstrap files under
-  `/etc/zpr/lab/`; it needs neither TSIG keys nor a ZPR adapter. Its query ACL is
-  limited to directly connected networks and localhost; it is not an open
-  recursive resolver. Add explicitly reviewed routed-client ACL support before
-  claiming VPN/off-subnet bootstrap support. Configure clients to use it for
-  this lab suffix without replacing unrelated company DNS.
+- Add the requested bootstrap records to existing network DNS; this generator
+  does not create or supervise an underlay DNS service. Verify resolution from
+  the operator browser and service hosts before installation; file generation
+  does not check live resolution.
 - Run protected BIND in the real DNS adapter's network namespace, with its
   configured ZPR IPv6 present. Do not publish protected port 53 on the host or
   attach an underlay listener. BIND ACLs are not a substitute for ZPR policy.
@@ -777,15 +771,16 @@ The lifecycle ownership boundary is:
 | --- | --- | --- |
 | Control Room, Control-Service, Visa/Policy services and production DNS | Real ZPR package and its service supervisor | Production configuration and data stay in production-owned paths; Simulator may use their supported contracts but must not stop or reset them. |
 | Lab OpenLDAP and Dex | Companion identity Compose project | Only `ldap-state` and `dex-state` are persistent lab state. The project has a generated per-install name and its own `down`/`up` lifecycle; stopping Simulator does not stop it. |
-| Bootstrap DNS | Existing network DNS by default; optional lab BIND configuration is generated separately | `underlay-records.txt` is a request for the existing DNS owner. With `-host-bootstrap-dns`, named configuration and a static zone are generated, but no BIND service supervisor/Compose service is generated yet. Do not count this optional server as independently packaged or supervised. |
-| Protected `svc.zpr` DNS | Real ZPR package's DNS adapter/service | Config, TSIG credentials and initial zone are production-role inputs, not Simulator state. The generator does not start BIND or provision its namespace, writable journal volume or service lifecycle. |
+| Bootstrap DNS | Existing network DNS | `underlay-records.txt` is only a request for the existing DNS owner. The companion no longer generates a second BIND configuration or server. |
+| Protected `svc.zpr` DNS | Real ZPR package's DNS adapter/service | This is the required ZPR DNS service. Config, TSIG credentials and initial zone are production-role inputs, not Simulator state. The generator does not start BIND or provision its namespace, writable journal volume or service lifecycle. |
 | Simulator UI, scenarios and disposable workload containers | Simulator | May be started, stopped or reset independently. Its lifecycle must not operate the identity or production service projects. |
 
-Consequently, the identity stack has an independent start/stop/restart path,
-while independent bootstrap-BIND supervision and production DNS service
-integration remain packaging gaps. Keep those gaps open in M4 P03 until a
-supervisor and restart evidence exist; file generation and configuration tests
-are not service-lifecycle acceptance.
+Consequently, the identity stack has an independent start/stop/restart path.
+Bootstrap hostname resolution stays with existing network DNS; the companion
+does not add a second BIND service. Production BIND remains a required package
+service, but its namespace/state/supervisor and restart evidence remain open.
+Keep those gaps open in M4 P03; file generation and configuration tests are
+not service-lifecycle acceptance.
 
 The generator can now produce `identity-compose.yaml`, `check-directory.sh`,
 and independent mode-`0700` `ldap-state`/`dex-state` directories. Their relative

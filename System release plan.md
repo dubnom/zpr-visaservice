@@ -298,17 +298,17 @@ for planning, is:
   The bundled path must be independently supervised and Simulator-free. The
   current company config documents operator OIDC only; provider and logging
   handoffs still need explicit contracts and operator instructions.
-- **Separate companion:** Simulator and its lab LDAP/Dex services, plus
-  opt-in bootstrap BIND for isolated labs. The companion must pair with the
-  exact same ZPR release artifacts, use separate provider state, and exercise
-  production APIs. Simulator is not part of or required by the production
-  bundle. Company underlay DNS and supplied HTTPS certificate/key remain
-  external inputs.
-- **Optionality distinction:** company underlay/bootstrap DNS is external by
-  default; companion bootstrap BIND is optional. Protected ZPR DNS is
-  required. Gateway is required by the new direction, although its complete
-  runtime contract is not yet qualified. Identity and logging are required
-  capabilities, with a bundled path and supported existing-provider option.
+- **Separate companion:** Simulator and its lab LDAP/Dex services. The
+  companion must pair with the exact same ZPR release artifacts, use separate
+  provider state, and exercise production APIs. Simulator is not part of or
+  required by the production bundle. Company underlay DNS and supplied HTTPS
+  certificate/key remain external inputs.
+- **Optionality distinction:** company and lab underlay/bootstrap DNS use
+  existing external network DNS. A separate bootstrap BIND is not supported.
+  Protected ZPR DNS is required. Gateway is required by the new direction,
+  although its complete runtime contract is not yet qualified. Identity and
+  logging are required capabilities, with a bundled path and supported
+  existing-provider option.
 
 The user approved these source/image references for engineering qualification
 planning only, not as compatible release pins or production approvals:
@@ -713,21 +713,20 @@ shortcuts. This lifecycle is a proposed contract, not implemented provisioning.
 On 2026-10-15 the user clarified the outcome: **both packages together must
 demonstrate a working ZPR network**, not merely running infrastructure or
 populated dashboards. OpenLDAP and Dex backed by LDAP are approved companion
-providers. BIND9 has two separate roles: optional companion bootstrap DNS for setup/login
-hostnames, and a protected DNS service inside ZPR behind a real adapter and
-ordinary ZPR policy. Bootstrap must not depend on that protected service being
-up; protected queries must not fall back to underlay DNS.
+providers. The initial design separated optional companion bootstrap DNS from
+protected DNS inside ZPR; the 2026-10-26 decision below supersedes the optional
+companion BIND role. Bootstrap names continue to resolve outside the protected
+ZPR DNS path, and protected queries must not fall back to underlay DNS.
 
-Subsequent clarification: use existing network DNS by default for bootstrap
-names in both company and lab installations. Companion-hosted bootstrap BIND
-is an explicit isolated-lab opt-in, not a package prerequisite. The generator
-exports fully qualified underlay record requests without creating a new zone
-or changing resolvers by default. Underlay record generation and protected
-ZPR DNS generation are independent selections. mDNS is not a required bootstrap
-mechanism; `.local` HTTPS/OIDC support remains unimplemented. Focused race tests,
-isolated BIND config/zone loading, vet and Linux amd64 build pass for these
-independent modes; full `make test` retains the same four recorded dashboard
-failure groups. No service or resolver settings were changed.
+On 2026-10-26 the user clarified that BIND is an essential ZPR service and
+preferred not to support a second companion bootstrap-BIND role. The lab
+generator now only exports fully qualified bootstrap record requests for
+existing network DNS; it does not generate bootstrap BIND files or supervise a
+bootstrap server. Required protected ZPR BIND remains production-owned. The
+envelope/realm model in `ENVELOPE_REALM_SPEC.md` is deferred and is not an
+implemented service-namespace mechanism. mDNS is not a required bootstrap
+mechanism; `.local` HTTPS/OIDC support remains unimplemented. No live service
+or resolver settings were changed.
 
 The combined acceptance path must demonstrate:
 
