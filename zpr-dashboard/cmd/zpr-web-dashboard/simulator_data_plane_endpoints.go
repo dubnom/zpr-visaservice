@@ -29,12 +29,19 @@ const (
 	simulatorDataPlaneEndpointLabel  = "org.zpr.evaluation-endpoint"
 )
 
-var simulatorDataPlaneEndpointName = regexp.MustCompile(`^endpoint-[0-9]{2}$`)
+var (
+	simulatorDataPlaneEndpointName = regexp.MustCompile(`^endpoint-[0-9]{2}$`)
+	// Additional install nodes are <network>-node-<name> (D6b).
+	simulatorDataPlaneNodeSuffix = regexp.MustCompile(`^-node-[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
+)
 
 type simulatorDataPlaneEndpoint struct {
 	Name         string `json:"name"`
 	BootstrapKey string `json:"bootstrap_key"`
 	ZPRAddress   string `json:"zpr_address"`
+	// NodeContainer optionally docks this endpoint with an additional node of
+	// the same install instead of the handoff's node_container.
+	NodeContainer string `json:"node_container,omitempty"`
 }
 
 type simulatorDataPlaneHandoff struct {
@@ -98,6 +105,9 @@ func loadSimulatorDataPlaneHandoff(path string) (simulatorDataPlaneHandoff, stri
 	seen := map[string]bool{}
 	for _, endpoint := range handoff.Endpoints {
 		address := net.ParseIP(endpoint.ZPRAddress)
+		if node := endpoint.NodeContainer; node != "" && (!strings.HasPrefix(node, network) || !simulatorDataPlaneNodeSuffix.MatchString(strings.TrimPrefix(node, network))) {
+			return handoff, "", fmt.Errorf("data-plane endpoint %q docks with a node outside its install", endpoint.Name)
+		}
 		if !simulatorDataPlaneEndpointName.MatchString(endpoint.Name) || seen[endpoint.Name] || seen[endpoint.ZPRAddress] ||
 			endpoint.BootstrapKey != "dp-"+endpoint.Name+"-auth.key" || address == nil || address.To4() != nil || address.String() != endpoint.ZPRAddress {
 			return handoff, "", fmt.Errorf("invalid data-plane endpoint %q", endpoint.Name)
@@ -162,6 +172,13 @@ func (plane *simulatorDataPlaneEndpoints) containerName(endpoint simulatorDataPl
 	return plane.handoff.Network + "-" + endpoint.Name
 }
 
+func (plane *simulatorDataPlaneEndpoints) nodeContainer(endpoint simulatorDataPlaneEndpoint) string {
+	if endpoint.NodeContainer != "" {
+		return endpoint.NodeContainer
+	}
+	return plane.handoff.NodeContainer
+}
+
 // runArguments mounts only this endpoint's bootstrap key and the ZPR CA.
 func (plane *simulatorDataPlaneEndpoints) runArguments(endpoint simulatorDataPlaneEndpoint) []string {
 	const keyPath, caPath = "/run/zpr-endpoint/bootstrap.key", "/run/zpr-endpoint/ca.crt"
@@ -170,7 +187,7 @@ func (plane *simulatorDataPlaneEndpoints) runArguments(endpoint simulatorDataPla
 		"--label", "org.zpr.evaluation-install=" + plane.handoff.InstallID,
 		"--label", simulatorDataPlaneEndpointLabel + "=" + endpoint.Name,
 		"-e", "ZPR_EP_NAME=" + endpoint.Name, "-e", "ZPR_EP_KEY=" + keyPath, "-e", "ZPR_EP_CA=" + caPath,
-		"-e", "ZPR_EP_NODE=" + plane.handoff.NodeContainer, "-e", "ZPR_EP_ZPR_ADDR=" + endpoint.ZPRAddress,
+		"-e", "ZPR_EP_NODE=" + plane.nodeContainer(endpoint), "-e", "ZPR_EP_ZPR_ADDR=" + endpoint.ZPRAddress,
 		"--mount", "type=bind,source=" + filepath.Join(plane.dir, endpoint.BootstrapKey) + ",target=" + keyPath + ",readonly",
 		"--mount", "type=bind,source=" + filepath.Join(plane.dir, plane.handoff.CAFile) + ",target=" + caPath + ",readonly",
 		"--entrypoint", "/usr/local/bin/zpr-evaluation-endpoint", plane.image}

@@ -586,8 +586,13 @@ drives an evaluation install's own data plane instead.
     carrying `userPassword` are not imported, and an evaluation-only
     `zprMachine` schema is included. Verified with slapadd in the pinned image
     for northstar, great-lakes and redwood.
-  - [ ] **D6b:** multiple data-plane nodes per install, with peer links, map
-    positions and endpoints spread across nodes.
+  - [x] **D6b:** multiple data-plane nodes per install, with peer links, map
+    positions and endpoints spread across nodes. `-data-plane-node
+    NAME@LAT,LON` (repeatable, up to 6) adds full-mesh linked node containers
+    on a per-install Docker subnet; the policy declares the nodes, links and
+    bootstrap keys, and endpoints are assigned round-robin. Verified live with
+    three nodes: all admitted, in sync, linked to each other and at their
+    configured positions.
   - [ ] **D6c:** live northstar, great-lakes and redwood installs with their
     directories and topologies.
 

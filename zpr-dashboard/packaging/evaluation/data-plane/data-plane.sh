@@ -98,11 +98,27 @@ fi
 
 sleep 2
 log "starting node"
+# Multi-node installs (ZPR_DP_NODE_SUBSTRATE set) add dp-node.toml: the node
+# binds and advertises its fixed Docker address and pins its Noise peers; the
+# VS adapter then reaches it through the veth. Command-line options override
+# the file, so the D1 veth advertisement is passed only for a single node.
+dock_addr=$node_substrate
+if [ -n "${ZPR_DP_NODE_SUBSTRATE:-}" ]; then
+	dock_addr=$ZPR_DP_NODE_SUBSTRATE
+	ip -n zpr-vs route add "$dock_addr/32" via "$node_substrate" dev veth0 2>/dev/null ||
+		ip -n zpr-vs route add "$dock_addr/32" dev veth0
+	# tun0 is point-to-point to the docking node only; the Visa Service must
+	# also answer the linked nodes' VSAPI sessions and reach their VSS.
+	ip -n zpr-vs route add fd5a:5052::/64 dev tun0
+	set -- --config-file "$state/dp-node.toml"
+else
+	set -- --advertised-substrate-addr "$node_substrate:5000"
+fi
 spawn node ph node \
 	--logging all=INFO \
 	--control-path "$run/node.sock" \
 	--capture-path "$run/node_cap.sock" \
-	--advertised-substrate-addr "$node_substrate:5000" \
+	"$@" \
 	--ca-file "$state/dp-ca.crt" \
 	--certificate-file "$state/dp-node.crt" \
 	--private-key-file "$state/dp-node.key" \
@@ -124,7 +140,7 @@ spawn vs-adapter ip netns exec zpr-vs ph adapter \
 	--km-impl noise \
 	--tun-if tun0 \
 	--io-engine auto \
-	--node-addr "$node_substrate" \
+	--node-addr "$dock_addr" \
 	--zpr-addr "$vs_zpr"
 
 log "running"

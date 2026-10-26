@@ -112,6 +112,9 @@ type evaluationDataPlaneEndpoint struct {
 	Name         string `json:"name"`
 	BootstrapKey string `json:"bootstrap_key"`
 	ZPRAddress   string `json:"zpr_address"`
+	// NodeContainer, when set, is the additional node this endpoint docks
+	// with; otherwise it docks with the handoff's node_container.
+	NodeContainer string `json:"node_container,omitempty"`
 }
 
 // evaluationDataPlaneEndpointsHandoff is what an install hands to the
@@ -145,12 +148,12 @@ func evaluationDataPlaneRequired(config evaluationConfig) []string {
 	if config.DataPlaneEndpoints > 0 {
 		files = append(files, evaluationDataPlaneEndpointsFile)
 	}
-	return files
+	return append(files, evaluationDataPlaneNodeFiles(config)...)
 }
 
-func renderEvaluationDataPlanePolicy(endpoints int) (policy, compiler string) {
+func renderEvaluationDataPlanePolicy(endpoints int, nodes []evaluationDataPlaneTopologyNode) (policy, compiler string) {
 	if endpoints == 0 {
-		return evaluationDataPlanePolicy, evaluationDataPlaneCompilerConfig
+		return evaluationDataPlanePolicy, renderEvaluationDataPlaneTopology(evaluationDataPlaneCompilerConfig, nodes)
 	}
 	var zpl, keys, services strings.Builder
 	zpl.WriteString(evaluationDataPlanePolicy)
@@ -172,14 +175,14 @@ func renderEvaluationDataPlanePolicy(endpoints int) (policy, compiler string) {
 			}
 		}
 	}
-	return zpl.String(), strings.Replace(evaluationDataPlaneCompilerConfig, evaluationDataPlaneBootstrapAnchor, keys.String(), 1) + services.String()
+	return zpl.String(), strings.Replace(renderEvaluationDataPlaneTopology(evaluationDataPlaneCompilerConfig, nodes), evaluationDataPlaneBootstrapAnchor, keys.String(), 1) + services.String()
 }
 
 // generateEvaluationDataPlane renders unique per-install ZPR identities: an
 // RSA policy-signing key, an RSA ZPR CA with X25519 Noise certificates for the
 // node and vs.zpr, and RSA bootstrap authentication keys for both and for any
 // evaluation endpoints, plus the endpoint handoff for the Simulator.
-func generateEvaluationDataPlane(files map[string][]byte, inventory evaluationInventory, now time.Time) error {
+func generateEvaluationDataPlane(files map[string][]byte, state string, inventory evaluationInventory, now time.Time) error {
 	rsaKey := func() (*rsa.PrivateKey, []byte, []byte, error) {
 		key, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
@@ -226,7 +229,12 @@ func generateEvaluationDataPlane(files map[string][]byte, inventory evaluationIn
 		return err
 	}
 	files["dp-ca.crt"] = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
-	for _, actor := range []struct{ name, cn string }{{"node", "node"}, {"vs.zpr", "vs.zpr"}} {
+	nodes := evaluationDataPlaneTopology(inventory)
+	actors := []struct{ name, cn string }{{"node", "node"}, {"vs.zpr", "vs.zpr"}}
+	for index := 1; index < len(nodes); index++ {
+		actors = append(actors, struct{ name, cn string }{fmt.Sprintf("node%d", index), nodes[index].Name})
+	}
+	for _, actor := range actors {
 		noise, err := ecdh.X25519().GenerateKey(rand.Reader)
 		if err != nil {
 			return err
@@ -246,7 +254,11 @@ func generateEvaluationDataPlane(files map[string][]byte, inventory evaluationIn
 		files["dp-"+actor.name+".crt"] = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 		files["dp-"+actor.name+".key"] = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: private})
 	}
-	for _, name := range []string{"node", "vs"} {
+	authNames := []string{"node", "vs"}
+	for index := 1; index < len(nodes); index++ {
+		authNames = append(authNames, fmt.Sprintf("node%d", index))
+	}
+	for _, name := range authNames {
 		_, private, public, err := rsaKey()
 		if err != nil {
 			return err
@@ -255,8 +267,13 @@ func generateEvaluationDataPlane(files map[string][]byte, inventory evaluationIn
 	}
 	// The CA key is deliberately not retained: endpoints are admitted by bootstrap key.
 	endpoints := inventory.Config.DataPlaneEndpoints
-	policy, compiler := renderEvaluationDataPlanePolicy(endpoints)
+	policy, compiler := renderEvaluationDataPlanePolicy(endpoints, nodes)
 	files["dp-policy.zpl"], files["dp-policy.zplc"] = []byte(policy), []byte(compiler)
+	if len(nodes) > 1 {
+		for index := range nodes {
+			files[evaluationDataPlaneNodeFile(index, ".toml")] = renderEvaluationDataPlaneNodeConfig(state, nodes, index)
+		}
+	}
 	if endpoints == 0 {
 		return nil
 	}
@@ -272,9 +289,14 @@ func generateEvaluationDataPlane(files map[string][]byte, inventory evaluationIn
 			return err
 		}
 		files["dp-"+name+"-auth.key"], files["dp-"+name+"-auth.pub"] = private, public
-		handoff.Endpoints = append(handoff.Endpoints, evaluationDataPlaneEndpoint{
+		endpoint := evaluationDataPlaneEndpoint{
 			Name: name, BootstrapKey: "dp-" + name + "-auth.key", ZPRAddress: fmt.Sprintf("fd5a:5052:0:1::%x", index),
-		})
+		}
+		// Endpoints are spread round-robin over the nodes, starting with the docking node.
+		if node := (index - 1) % len(nodes); node > 0 {
+			endpoint.NodeContainer = evaluationDataPlaneNodeContainer(inventory, node)
+		}
+		handoff.Endpoints = append(handoff.Endpoints, endpoint)
 	}
 	data, err := json.MarshalIndent(handoff, "", "  ")
 	if err != nil {
@@ -364,6 +386,13 @@ func evaluationDataPlaneMounts(state string, config evaluationConfig) (readOnly,
 			readOnly = append(readOnly, name)
 		}
 	}
+	// Multi-node: the docking node's peer configuration, peer certificates and
+	// the additional nodes' bootstrap public keys (compiled into the policy).
+	for _, name := range evaluationDataPlaneNodeFiles(config) {
+		if name == "dp-node.toml" || strings.HasSuffix(name, ".crt") || strings.HasSuffix(name, "-auth.pub") {
+			readOnly = append(readOnly, name)
+		}
+	}
 	writable = []string{"valkey-state", "data-plane"}
 	if config.subjectLinks() {
 		readOnly = append(readOnly, "ca.pem", "vs-client-chain.pem", "vs-client-key.pem", "subject-snapshot-signing.json")
@@ -384,6 +413,9 @@ func evaluationDataPlaneArguments(state string, inventory evaluationInventory, i
 		"--label", "org.zpr.evaluation-install=" + inventory.InstallID,
 		"-p", fmt.Sprintf("127.0.0.1:%d:%d", inventory.Config.VSAdminPort, evaluationDataPlaneAdminPort),
 		"-e", "ZPR_DP_STATE=" + state}
+	if dock := evaluationDataPlaneTopology(inventory)[0]; dock.Substrate != "" {
+		args = append(args, "--ip", dock.Substrate, "-e", "ZPR_DP_NODE_SUBSTRATE="+dock.Substrate)
+	}
 	if installPolicy {
 		args = append(args, "-e", "ZPR_DP_INSTALL_POLICY=1")
 	}
@@ -421,6 +453,9 @@ func evaluationDockerCommand(ctx context.Context, args ...string) error {
 func createEvaluationDataPlaneNetwork(ctx context.Context, inventory evaluationInventory) error {
 	name := evaluationDataPlaneName(inventory)
 	_ = evaluationDockerCommand(ctx, "rm", "-f", name)
+	if len(inventory.Config.DataPlaneNodes) > 0 {
+		return prepareEvaluationDataPlaneNetwork(ctx, inventory)
+	}
 	if evaluationDockerCommand(ctx, "network", "inspect", name) == nil {
 		return nil
 	}
@@ -452,9 +487,9 @@ func evaluationDataPlaneInitCommand(inventory evaluationInventory, state string)
 	return fmt.Sprintf("docker exec %s ip netns exec zpr-vs vs --initialize-subject-snapshot -c %q", evaluationDataPlaneName(inventory), filepath.Join(state, "vs.toml"))
 }
 
-// checkEvaluationDataPlaneActors requires both the node and vs.zpr to be
-// admitted actors, proving the node reached the VS over the ZPR overlay.
-func checkEvaluationDataPlaneActors(state string, port int, config *tls.Config) error {
+// checkEvaluationDataPlaneActors requires vs.zpr and every named node to be
+// admitted actors, proving each node reached the VS over the ZPR overlay.
+func checkEvaluationDataPlaneActors(state string, port int, config *tls.Config, nodes ...string) error {
 	key, err := os.ReadFile(filepath.Join(state, "vs-admin-api.key"))
 	if err != nil {
 		return errors.New("cannot read private Visa Service admin key")
@@ -476,13 +511,17 @@ func checkEvaluationDataPlaneActors(state string, port int, config *tls.Config) 
 	if err != nil || response.StatusCode != http.StatusOK {
 		return errors.New("Visa Service actor list unavailable")
 	}
-	if !evaluationDataPlaneActorsAdmitted(body) {
-		return errors.New("node and vs.zpr adapter not yet admitted")
+	if !evaluationDataPlaneActorsAdmitted(body, nodes...) {
+		return errors.New("nodes and vs.zpr adapter not yet admitted")
 	}
 	return nil
 }
 
-func evaluationDataPlaneActorsAdmitted(body []byte) bool {
+func evaluationDataPlaneActorsAdmitted(body []byte, nodes ...string) bool {
+	if len(nodes) == 0 {
+		nodes = []string{"node"}
+	}
+	required := append([]string{"vs.zpr"}, nodes...)
 	var actors any
 	if json.Unmarshal(body, &actors) != nil {
 		return false
@@ -500,11 +539,11 @@ func evaluationDataPlaneActorsAdmitted(body []byte) bool {
 				walk(item)
 			}
 		case string:
-			if typed == "node" || typed == "vs.zpr" {
+			if slices.Contains(required, typed) {
 				found[typed] = true
 			}
 		}
 	}
 	walk(actors)
-	return found["node"] && found["vs.zpr"]
+	return len(found) == len(required)
 }

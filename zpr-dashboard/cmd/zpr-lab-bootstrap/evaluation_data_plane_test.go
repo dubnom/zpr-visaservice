@@ -84,7 +84,7 @@ func TestEvaluationDataPlaneProtectedRender(t *testing.T) {
 func TestEvaluationDataPlaneIdentities(t *testing.T) {
 	files := map[string][]byte{}
 	now := time.Now()
-	if err := generateEvaluationDataPlane(files, evaluationInventory{InstallID: "0123456789abcdef01234567", Config: testEvaluationDataPlaneConfig()}, now); err != nil {
+	if err := generateEvaluationDataPlane(files, "/state", evaluationInventory{InstallID: "0123456789abcdef01234567", Config: testEvaluationDataPlaneConfig()}, now); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range evaluationDataPlaneFiles {
@@ -153,7 +153,7 @@ func TestEvaluationDataPlaneIdentities(t *testing.T) {
 		}
 	}
 	other := map[string][]byte{}
-	if err := generateEvaluationDataPlane(other, evaluationInventory{InstallID: "0123456789abcdef01234567", Config: testEvaluationDataPlaneConfig()}, now); err != nil {
+	if err := generateEvaluationDataPlane(other, "/state", evaluationInventory{InstallID: "0123456789abcdef01234567", Config: testEvaluationDataPlaneConfig()}, now); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"dp-policy-signing.key", "dp-node.key", "dp-vs.zpr.key", "dp-node-auth.key", "dp-vs-auth.key"} {
@@ -324,7 +324,7 @@ func TestEvaluationDataPlaneEndpoints(t *testing.T) {
 	if slices.ContainsFunc(evaluationDataPlaneRequired(plain), func(name string) bool { return strings.Contains(name, "endpoint") }) {
 		t.Fatal("installs without endpoints must keep the D1 file set")
 	}
-	if policy, compiler := renderEvaluationDataPlanePolicy(0); policy != evaluationDataPlanePolicy || compiler != evaluationDataPlaneCompilerConfig {
+	if policy, compiler := renderEvaluationDataPlanePolicy(0, evaluationDataPlaneTopology(evaluationInventory{})); policy != evaluationDataPlanePolicy || compiler != evaluationDataPlaneCompilerConfig {
 		t.Fatal("zero endpoints must render the D1 policy unchanged")
 	}
 }

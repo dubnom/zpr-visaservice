@@ -390,6 +390,33 @@ serve an organization's own directory instead, give its base DN and LDIF files
   the configured base DN. Nothing reads the Simulator; the LDIF is ordinary
   operator input.
 
+### Additional data-plane nodes (D6b)
+
+The data-plane container is the docking node (`node`, at `-node-location`)
+with the Visa Service. Add linked nodes when the install is created:
+
+```sh
+-data-plane-node shenzhen-office@22.54,114.06 \
+  -data-plane-node tijuana@32.51,-117.04
+```
+
+- **Names:** up to 6 extra nodes; lowercase letters, digits and `-`; not
+  `node`, not `endpoint-*`, no duplicates. The name is the node's certificate
+  CN, so the VS and Control Room show it, at its latitude/longitude.
+- **Topology:** every node links to every other node (full mesh). The install
+  uses its own Docker subnet `10.2xx.yy.0/24`, derived from the install ID.
+  Nodes have fixed addresses from `.2` and ZPR addresses from `fd5a:5052::2`.
+  The policy declares the nodes, links and bootstrap keys, and each node
+  pins its peers' Noise certificates. Generated `dp-node*.toml` files are
+  frozen with the install.
+- **Startup:** the extra nodes start as `<network>-node-<name>` containers
+  (image entrypoint `zpr-evaluation-node`) once the docking node is admitted.
+  They reach the Visa Service through the docking node; readiness waits for
+  every node to be admitted.
+- **Endpoints** from `-data-plane-endpoints` are spread round-robin across all
+  nodes. The Simulator handoff names each endpoint's `node_container`.
+- Without `-data-plane-node`, the single-node layout is unchanged.
+
 ## Identity, health and lifecycle
 
 Every install receives a random install/Compose-project ID, its own CA and

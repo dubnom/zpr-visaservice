@@ -68,7 +68,7 @@ func generateEvaluationVisa(files map[string][]byte, state string, inventory eva
 		if err := evaluationDataPlaneMountsSafe(state); err != nil {
 			return err
 		}
-		if err := generateEvaluationDataPlane(files, inventory, now); err != nil {
+		if err := generateEvaluationDataPlane(files, state, inventory, now); err != nil {
 			return err
 		}
 		valkeyPort = 6379
@@ -109,15 +109,18 @@ identity = "evaluation-%s"
 api_keys = %s
 file_ts_dir = %s
 `, evaluationDataPlaneAdminPort, quoted("server-chain.pem"), quoted("server-key.pem"), password, valkeyPort, inventory.InstallID, quoted("vs-admin-keys.toml"), quoted("vs-trusted-services"))
-		if location := inventory.Config.NodeLocation; location != nil {
-			coordinate := func(value float64) string {
-				text := strconv.FormatFloat(value, 'f', -1, 64)
-				if !strings.Contains(text, ".") {
-					text += ".0"
-				}
-				return text
+		coordinate := func(value float64) string {
+			text := strconv.FormatFloat(value, 'f', -1, 64)
+			if !strings.Contains(text, ".") {
+				text += ".0"
 			}
+			return text
+		}
+		if location := inventory.Config.NodeLocation; location != nil {
 			files["vs.toml"] = fmt.Appendf(files["vs.toml"], "\n# Operator-configured map position of the data-plane node.\n[nodes.\"node\"]\nlatitude = %s\nlongitude = %s\n", coordinate(location.Latitude), coordinate(location.Longitude))
+		}
+		for _, node := range inventory.Config.DataPlaneNodes {
+			files["vs.toml"] = fmt.Appendf(files["vs.toml"], "\n# Operator-configured map position of an additional node.\n[nodes.%q]\nlatitude = %s\nlongitude = %s\n", node.Name, coordinate(node.Location.Latitude), coordinate(node.Location.Longitude))
 		}
 		return nil
 	}

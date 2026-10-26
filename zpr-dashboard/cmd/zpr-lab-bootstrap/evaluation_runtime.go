@@ -242,6 +242,32 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		}); err != nil {
 			return err
 		}
+		// Additional nodes reach the VS only through their links, so they start
+		// once the docking node is admitted.
+		if topology := evaluationDataPlaneTopology(inventory); len(topology) > 1 {
+			names := []string{}
+			nodeProcesses := []*evaluationProcess{}
+			for index := 1; index < len(topology); index++ {
+				node, err := launch("data-plane-node-"+topology[index].Name, "docker", evaluationDataPlaneNodeArguments(state, inventory, runtime.DataPlaneImage, index), evaluationDockerEnvironment())
+				if err != nil {
+					return err
+				}
+				nodeProcesses = append(nodeProcesses, node)
+			}
+			for _, node := range topology {
+				names = append(names, node.Name)
+			}
+			if err := waitEvaluation(startup, fmt.Sprintf("data plane: all %d linked nodes admitted", len(topology)), out, func() error {
+				for _, node := range append(nodeProcesses, plane) {
+					if err := exited(node); err != nil {
+						return err
+					}
+				}
+				return checkEvaluationDataPlaneActors(state, inventory.Config.VSAdminPort, tlsConfig, names...)
+			}); err != nil {
+				return err
+			}
+		}
 		if err := os.WriteFile(filepath.Join(state, evaluationVisaPolicyMarker), []byte("per-install data-plane policy installed\n"), 0o600); err != nil {
 			return errors.New("cannot record Visa Service policy installation")
 		}
@@ -342,7 +368,11 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 			if inventory.Config.DataPlaneEndpoints > 0 {
 				endpoints = fmt.Sprintf("endpoint-01..%02d admitted by bootstrap key (X15); run them with the Simulator via SIMULATOR_DATA_PLANE_ENDPOINTS_FILE=%s", inventory.Config.DataPlaneEndpoints, filepath.Join(state, evaluationDataPlaneEndpointsFile))
 			}
-			upstream = fmt.Sprintf("Data-plane Visa Service admin at https://localhost:%d (container %s: one node and vs.zpr admitted; %s). Policy-Service is NOT configured.", inventory.Config.VSAdminPort, evaluationDataPlaneName(inventory), endpoints)
+			nodes := "one node"
+			if count := len(evaluationDataPlaneTopology(inventory)); count > 1 {
+				nodes = fmt.Sprintf("%d fully linked nodes", count)
+			}
+			upstream = fmt.Sprintf("Data-plane Visa Service admin at https://localhost:%d (container %s: %s and vs.zpr admitted; %s). Policy-Service is NOT configured.", inventory.Config.VSAdminPort, evaluationDataPlaneName(inventory), nodes, endpoints)
 		}
 	}
 	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Administrator-scoped evaluation grants; no shared sessions.\nStarter directory registered; lifecycle events ingested into evaluation logging. "+upstream)

@@ -58,6 +58,9 @@ type evaluationConfig struct {
 	// NodeLocation is operator configuration for the data-plane node's map
 	// position, written to vs.toml as [nodes."node"] latitude/longitude.
 	NodeLocation *evaluationNodeLocation `json:"node_location,omitempty"`
+	// DataPlaneNodes are additional nodes, each in its own container on the
+	// install's data-plane network, fully meshed with the docking node.
+	DataPlaneNodes []evaluationDataPlaneNode `json:"data_plane_nodes,omitempty"`
 	// Directory replaces the starter directory with operator LDIF under the
 	// operator's base DN; nil keeps dc=evaluation,dc=zpr.
 	Directory *evaluationDirectory `json:"directory,omitempty"`
@@ -134,6 +137,13 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		config.NodeLocation = location
 		return err
 	})
+	flags.Func("data-plane-node", fmt.Sprintf("with -data-plane: NAME@LATITUDE,LONGITUDE of an additional node in its own container, linked to every other node (repeatable, up to %d)", evaluationDataPlaneMaxNodes), func(value string) error {
+		node, err := parseEvaluationDataPlaneNode(value)
+		if err == nil {
+			config.DataPlaneNodes = append(config.DataPlaneNodes, node)
+		}
+		return err
+	})
 	directory := evaluationDirectory{}
 	flags.StringVar(&directory.BaseDN, "directory-base-dn", "", "serve an operator directory under this base DN instead of the starter directory (requires -directory-ldif)")
 	flags.Func("directory-ldif", "with -directory-base-dn: absolute path of an operator LDIF to import at creation (repeatable, in order); entries with userPassword are not imported", func(value string) error {
@@ -153,13 +163,13 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	visaOnly, nativeOnly, planeOnly := false, false, false
 	flags.Visit(func(f *flag.Flag) {
 		switch f.Name {
-		case "vs-admin-port", "vs-api-port", "valkey-port", "snapshot-delivery-port", "vs-binary", "valkey-server", "data-plane", "data-plane-image", "data-plane-endpoints", "node-location":
+		case "vs-admin-port", "vs-api-port", "valkey-port", "snapshot-delivery-port", "vs-binary", "valkey-server", "data-plane", "data-plane-image", "data-plane-endpoints", "node-location", "data-plane-node":
 			visaOnly = true
 		}
 		switch f.Name {
 		case "vs-api-port", "valkey-port", "vs-binary", "valkey-server":
 			nativeOnly = true
-		case "data-plane-image", "data-plane-endpoints", "node-location":
+		case "data-plane-image", "data-plane-endpoints", "node-location", "data-plane-node":
 			planeOnly = true
 		}
 	})
@@ -177,7 +187,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		}
 		config.VSAPIPort, config.ValkeyPort = 0, 0
 	} else if planeOnly {
-		fmt.Fprintln(stderr, "-data-plane-image, -data-plane-endpoints and -node-location require -data-plane")
+		fmt.Fprintln(stderr, "-data-plane-image, -data-plane-endpoints, -node-location and -data-plane-node require -data-plane")
 		return 2
 	}
 	if directory.BaseDN != "" || len(directory.LDIFFiles) != 0 {
@@ -266,6 +276,9 @@ func (config evaluationConfig) validate() error {
 		if _, err := parseEvaluationNodeLocation(location.String()); err != nil {
 			return err
 		}
+	}
+	if err := validateEvaluationDataPlaneNodes(config); err != nil {
+		return err
 	}
 	if err := config.Directory.validate(); err != nil {
 		return err
