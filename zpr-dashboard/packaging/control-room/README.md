@@ -32,11 +32,15 @@ go build -o ./bin/zpr-simulator ./cmd/zpr-web-dashboard
 ./bin/zpr-simulator -mode simulator
 ```
 
-This packet separates **assets**, not the entire command's compiled dependency
-graph or deployment lifecycle: the existing multipurpose command still compiles
-Simulator Go code. Independent executable/package extraction and production
-startup configuration remain separate release gates. Do not use the shared lab
-launcher as production deployment evidence.
+The production build uses a separate `main_production.go` entrypoint and the
+`production` build tag. Its compiler-selected source and transitive imports
+exclude Simulator and lab code; it accepts only Control Room and Control-Service
+modes and rejects other modes before Simulator configuration or listeners can
+load. The default build uses `main_lab.go` and retains the Simulator and workload
+entrypoints. Tests check both source selection/imports and the production
+composition boundary. This build separation does not qualify a production
+deployment or complete the remaining M4 lifecycle/runtime evidence. Do not use
+the shared lab launcher as production deployment evidence.
 
 Validation (keep scratch directories inside the worktree):
 

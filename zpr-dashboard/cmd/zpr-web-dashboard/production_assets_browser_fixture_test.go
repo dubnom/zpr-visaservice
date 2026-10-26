@@ -44,15 +44,7 @@ func TestProductionAssetBrowserFixture(t *testing.T) {
 	production := httptest.NewServer(securityHeaders(mux))
 	defer production.Close()
 	ready := map[string]string{"type": "production-assets-fixture", "production": production.URL}
-	if !productionAssetsOnly {
-		all, err := fs.Sub(staticFiles, "static")
-		if err != nil {
-			t.Fatal(err)
-		}
-		simulatorMux := http.NewServeMux()
-		simulatorMux.Handle("GET /auth/operator/config", auth)
-		simulatorMux.Handle("/", simulatorStaticHandler(all))
-		simulator := httptest.NewServer(securityHeaders(simulatorMux))
+	if simulator := simulatorAssetBrowserFixture(t, auth); simulator != nil {
 		defer simulator.Close()
 		ready["simulator"] = simulator.URL
 	}

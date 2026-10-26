@@ -209,3 +209,8 @@ func (c *policyApplyClient) apply(ctx context.Context, store *changereview.Store
 	}
 	return finish(result)
 }
+
+func encodePolicyApproval(proof operatordelegation.PolicyProof) (string, error) {
+	b, err := json.Marshal(proof)
+	return string(b), err
+}

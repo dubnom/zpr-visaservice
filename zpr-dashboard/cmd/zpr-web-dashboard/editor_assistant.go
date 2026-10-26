@@ -146,9 +146,3 @@ func (a *application) handleGatewayAssistantStatus(w http.ResponseWriter, r *htt
 func (a *application) handleGatewayAssistant(w http.ResponseWriter, r *http.Request) {
 	serveEditorAssistant(w, r, a.assistant, []string{"gateway"}, nil)
 }
-
-func simulatorEditorAssistantHandler(assistant *claudeAssistant) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		serveEditorAssistant(w, r, assistant, []string{"directory-ldif"}, nil)
-	}
-}

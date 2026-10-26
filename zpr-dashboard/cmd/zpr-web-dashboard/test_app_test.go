@@ -1,3 +1,5 @@
+//go:build !production
+
 package main
 
 import (
@@ -152,12 +154,6 @@ func TestTestClientCallsRealService(t *testing.T) {
 	if len(events) != 4 || events[2].ClientID != "machine-04" || events[3].ClientID != "machine-04" {
 		t.Fatalf("service did not identify both clients: %+v", events)
 	}
-}
-
-type webGatewayTestRoundTripper func(*http.Request) (*http.Response, error)
-
-func (roundTrip webGatewayTestRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	return roundTrip(request)
 }
 
 func TestValidateWebGatewayPageTarget(t *testing.T) {

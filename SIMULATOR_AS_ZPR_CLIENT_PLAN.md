@@ -699,9 +699,15 @@ environments, so each must be fixed or explicitly accepted before M5.
 
 Depends on M2 and M3. This closes deployable boundaries, not just code naming.
 
-- [ ] **P01:** Give production and Simulator separate entrypoints/configuration,
+- [x] **P01:** Give production and Simulator separate entrypoints/configuration,
   startup and shutdown ownership. Finish the minimal package/import extraction
   needed to prevent production importing Simulator code; reuse neutral helpers.
+  Production builds use `main_production.go` with `-tags production`; the
+  default build uses `main_lab.go`. Production-tagged package tests verify the
+  selected Go source/import graph, reject non-production modes, and exercise the
+  production composition with Simulator unavailable. Default and production
+  package tests, builds, and vet pass. This closes the compile-time/entrypoint
+  boundary only; P02-P05 and the M4 exit evidence remain open.
 - [ ] **P02:** Produce a production deployment with no Simulator executable,
   routes, static pages, manifests, scenario mounts or lab defaults. Reject
   missing explicit operator configuration rather than discovering demo values.

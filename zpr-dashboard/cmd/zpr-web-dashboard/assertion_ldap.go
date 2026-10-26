@@ -230,3 +230,15 @@ func assertionLDAPAttributes(entry *ldap.Entry, approved []string) (map[string][
 	}
 	return result, nil
 }
+
+func validLDAPAttributeName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-') {
+			return false
+		}
+	}
+	return true
+}

@@ -1,9 +1,9 @@
+//go:build !production
+
 package main
 
 import (
-	"bytes"
 	"go/ast"
-	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
@@ -16,7 +16,7 @@ import (
 func compatibilityMain(t *testing.T) (*token.FileSet, *ast.FuncDecl) {
 	t.Helper()
 	set := token.NewFileSet()
-	file, err := parser.ParseFile(set, "main.go", nil, 0)
+	file, err := parser.ParseFile(set, "main_lab.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,15 +27,6 @@ func compatibilityMain(t *testing.T) (*token.FileSet, *ast.FuncDecl) {
 	}
 	t.Fatal("compatibility entry point not found")
 	return nil, nil
-}
-
-func compatibilityExpression(t *testing.T, set *token.FileSet, node ast.Node) string {
-	t.Helper()
-	var output bytes.Buffer
-	if err := format.Node(&output, set, node); err != nil {
-		t.Fatal(err)
-	}
-	return output.String()
 }
 
 func TestCommandCompatibilityModeDispatch(t *testing.T) {

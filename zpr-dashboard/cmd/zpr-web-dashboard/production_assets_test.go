@@ -72,10 +72,6 @@ func TestProductionAssetManifest(t *testing.T) {
 		if names := embeddedAssetNames(t, staticFiles); !slices.Equal(names, manifest) {
 			t.Fatalf("production legacy filesystem differs: %v", names)
 		}
-		t.Setenv("SIMULATION_MANIFEST", "inaccessible/manifest.json")
-		if err := runSimulator("invalid listen address"); err == nil || !strings.Contains(err.Error(), "unavailable in the production build") {
-			t.Fatalf("production must reject Simulator before startup: %v", err)
-		}
 	}
 }
 
@@ -134,31 +130,6 @@ func TestProductionAssetsHTTP(t *testing.T) {
 			if !slices.Contains(manifest, match[1]) {
 				t.Errorf("%s references excluded asset %s", name, match[1])
 			}
-		}
-	}
-}
-
-func TestSimulatorOwnAssetsHTTP(t *testing.T) {
-	if productionAssetsOnly {
-		t.Skip("Simulator assets intentionally not packaged in production")
-	}
-	root, err := fs.Sub(staticFiles, "static")
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler := simulatorStaticHandler(root)
-	for _, name := range []string{"organizations.html", "scenarios.html", "activity.html", "machine-logs.html", "trusted-source.html", "world.html", "simulator-provisioning.html", "simulator-nav.js", "simulator.css", "scenarios.js", "organizations.js"} {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest("GET", "/"+name, nil))
-		if response.Code != http.StatusOK || response.Body.Len() == 0 {
-			t.Errorf("Simulator asset %s unavailable: %d", name, response.Code)
-		}
-	}
-	for path, target := range map[string]string{"/": "/organizations.html", "/?operator_login=denied": "/organizations.html?operator_login=denied", "/agents.html": "/machine-logs.html"} {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
-		if response.Code != http.StatusFound || response.Header().Get("Location") != target {
-			t.Errorf("Simulator redirect %s: %d %s", path, response.Code, response.Header().Get("Location"))
 		}
 	}
 }
