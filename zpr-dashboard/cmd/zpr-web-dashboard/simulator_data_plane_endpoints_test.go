@@ -74,6 +74,15 @@ func TestSimulatorDataPlaneHandoffValidation(t *testing.T) {
 		"endpoint node bad name":  endpoint(0, "node_host", "node-Bad"),
 		"endpoint node docking":   func(h map[string]any) { endpoint(0, "node_host", h["network"].(string))(h) },
 		"endpoint node legacy":    endpoint(0, "node_container", "node-a1"),
+		"listener protocol":       func(h map[string]any) { h["listeners"] = []any{map[string]any{"protocol": "sctp", "port": 7007}} },
+		"listener low port":       func(h map[string]any) { h["listeners"] = []any{map[string]any{"protocol": "tcp", "port": 22}} },
+		"listener high port":      func(h map[string]any) { h["listeners"] = []any{map[string]any{"protocol": "udp", "port": 70000}} },
+		"listener duplicate": func(h map[string]any) {
+			h["listeners"] = []any{map[string]any{"protocol": "tcp", "port": 7007}, map[string]any{"protocol": "tcp", "port": 7007, "in_policy": true}}
+		},
+		"listener unknown field": func(h map[string]any) {
+			h["listeners"] = []any{map[string]any{"protocol": "tcp", "port": 7007, "command": "sh"}}
+		},
 	} {
 		if _, _, err := loadSimulatorDataPlaneHandoff(writeTestDataPlaneHandoff(t, mutate)); err == nil {
 			t.Fatalf("%s: invalid handoff accepted", name)
@@ -105,6 +114,19 @@ func TestSimulatorDataPlaneEndpointArguments(t *testing.T) {
 	if len(mounts) != 2 || !strings.Contains(mounts[0], filepath.Join(dir, "dp-endpoint-01-auth.key")) || !strings.Contains(mounts[1], filepath.Join(dir, "dp-ca.crt")) ||
 		strings.Contains(joined, "dp-endpoint-02") || args[len(args)-1] != plane.image {
 		t.Fatalf("endpoint must mount only its own key and the CA: %v", mounts)
+	}
+	if strings.Contains(joined, "ZPR_EP_LISTEN") {
+		t.Fatal("handoffs without listeners must not start any")
+	}
+	listening, dir, err := loadSimulatorDataPlaneHandoff(writeTestDataPlaneHandoff(t, func(h map[string]any) {
+		h["listeners"] = []any{map[string]any{"protocol": "tcp", "port": 7007, "in_policy": true}, map[string]any{"protocol": "udp", "port": 7010}}
+	}))
+	if err != nil {
+		t.Fatalf("handoff with listeners rejected: %v", err)
+	}
+	plane = &simulatorDataPlaneEndpoints{handoff: listening, dir: dir, image: "image"}
+	if args := plane.runArguments(listening.Endpoints[0]); !slices.Contains(args, "ZPR_EP_LISTEN=tcp:7007 udp:7010") {
+		t.Fatalf("endpoint must start the handoff listeners: %v", args)
 	}
 }
 

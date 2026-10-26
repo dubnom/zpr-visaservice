@@ -10,8 +10,9 @@ COPY ph ph-cli vs vs-admin zplc /usr/local/bin/
 COPY data-plane.sh /usr/local/bin/zpr-evaluation-data-plane
 COPY endpoint.sh /usr/local/bin/zpr-evaluation-endpoint
 COPY node.sh /usr/local/bin/zpr-evaluation-node
+COPY probe.sh /usr/local/bin/zpr-evaluation-probe
 RUN chmod 0755 /usr/local/bin/ph /usr/local/bin/ph-cli /usr/local/bin/vs /usr/local/bin/vs-admin \
         /usr/local/bin/zplc /usr/local/bin/zpr-evaluation-data-plane /usr/local/bin/zpr-evaluation-endpoint \
-        /usr/local/bin/zpr-evaluation-node
+        /usr/local/bin/zpr-evaluation-node /usr/local/bin/zpr-evaluation-probe
 LABEL org.zpr.evaluation-data-plane="1"
 ENTRYPOINT ["/usr/local/bin/zpr-evaluation-data-plane"]

@@ -304,12 +304,21 @@ func TestEvaluationDataPlaneEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Count(string(compiler), "[bootstrap]") != 1 || !strings.Contains(string(compiler), `"endpoint-02" = "dp-endpoint-02-auth.pub"`) ||
-		!strings.Contains(string(compiler), "[services.Endpoint03Ping]") {
+		!strings.Contains(string(compiler), "[services.Endpoint03Ping]") ||
+		!strings.Contains(string(compiler), "[protocols.echotcp]\nl4protocol = \"iana.TCP\"\nport = 7007\n") ||
+		!strings.Contains(string(compiler), "[protocols.echoudp]\nl4protocol = \"iana.UDP\"\nport = 7008\n") ||
+		!strings.Contains(string(compiler), "[services.Endpoint01EchoUDP]\nprotocol = \"echoudp\"\n") ||
+		strings.Contains(string(compiler), "7009") || strings.Contains(string(compiler), "7010") {
 		t.Fatalf("compiler configuration: %s", compiler)
 	}
 	if !strings.Contains(string(policy), "define Endpoint01 as adapter with zpr.adapter.cn:'endpoint-01'.") ||
-		!strings.Contains(string(policy), "service Endpoint02Ping as json {\"service_class\":\"Endpoint02Ping\"}.\n  allow Endpoint01.\n  allow Endpoint03.\n") {
+		!strings.Contains(string(policy), "service Endpoint02Ping as json {\"service_class\":\"Endpoint02Ping\"}.\n  allow Endpoint01.\n  allow Endpoint03.\n") ||
+		!strings.Contains(string(policy), "define Endpoint03EchoTCP as a service with device.zpr.adapter.cn:'endpoint-03'.") ||
+		!strings.Contains(string(policy), "service Endpoint01EchoTCP as json {\"service_class\":\"Endpoint01EchoTCP\"}.\n  allow Endpoint02.\n  allow Endpoint03.\n") {
 		t.Fatalf("policy: %s", policy)
+	}
+	if !slices.Equal(handoff.Listeners, evaluationDataPlaneListeners) {
+		t.Fatalf("handoff listeners: %+v", handoff.Listeners)
 	}
 	readOnly, _ := evaluationDataPlaneMounts(state, config)
 	if !slices.Contains(readOnly, filepath.Join(state, "dp-endpoint-03-auth.pub")) {

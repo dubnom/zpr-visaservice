@@ -13,20 +13,31 @@ import (
 
 func TestSimulatorDataPlaneProbes(t *testing.T) {
 	endpoints := []simulatorDataPlaneEndpoint{{Name: "endpoint-01", ZPRAddress: "fd5a:5052:0:1::1"}, {Name: "endpoint-02", ZPRAddress: "fd5a:5052:0:1::2"}, {Name: "endpoint-03", ZPRAddress: "fd5a:5052:0:1::3"}}
-	probes := simulatorDataPlaneProbes(endpoints)
+	probes := simulatorDataPlaneProbes(endpoints, nil)
 	want := []simulatorDataPlaneProbe{
-		{"endpoint-01 ping endpoint-02", "endpoint-01", "endpoint-02", "fd5a:5052:0:1::2", "allow"},
-		{"endpoint-01 ping visa service", "endpoint-01", "vs.zpr", "fd5a:5052::1", "deny"},
-		{"endpoint-02 ping endpoint-03", "endpoint-02", "endpoint-03", "fd5a:5052:0:1::3", "allow"},
-		{"endpoint-02 ping visa service", "endpoint-02", "vs.zpr", "fd5a:5052::1", "deny"},
-		{"endpoint-03 ping endpoint-01", "endpoint-03", "endpoint-01", "fd5a:5052:0:1::1", "allow"},
-		{"endpoint-03 ping visa service", "endpoint-03", "vs.zpr", "fd5a:5052::1", "deny"},
+		{"endpoint-01 ping endpoint-02", "ping", "endpoint-01", "endpoint-02", "fd5a:5052:0:1::2", 0, "allow"},
+		{"endpoint-01 ping visa service", "ping", "endpoint-01", "vs.zpr", "fd5a:5052::1", 0, "deny"},
+		{"endpoint-02 ping endpoint-03", "ping", "endpoint-02", "endpoint-03", "fd5a:5052:0:1::3", 0, "allow"},
+		{"endpoint-02 ping visa service", "ping", "endpoint-02", "vs.zpr", "fd5a:5052::1", 0, "deny"},
+		{"endpoint-03 ping endpoint-01", "ping", "endpoint-03", "endpoint-01", "fd5a:5052:0:1::1", 0, "allow"},
+		{"endpoint-03 ping visa service", "ping", "endpoint-03", "vs.zpr", "fd5a:5052::1", 0, "deny"},
 	}
 	if !slices.Equal(probes, want) {
 		t.Fatalf("probes = %+v", probes)
 	}
-	if single := simulatorDataPlaneProbes(endpoints[:1]); len(single) != 1 || single[0].Expected != "deny" {
+	if single := simulatorDataPlaneProbes(endpoints[:1], []simulatorDataPlaneListener{{"tcp", 7007, true}}); len(single) != 1 || single[0].Expected != "deny" {
 		t.Fatalf("single endpoint probes = %+v", single)
+	}
+	listeners := []simulatorDataPlaneListener{{"tcp", 7007, true}, {"udp", 7010, false}}
+	services := simulatorDataPlaneProbes(endpoints[:2], listeners)
+	wantServices := []simulatorDataPlaneProbe{
+		{"endpoint-01 ping endpoint-02", "ping", "endpoint-01", "endpoint-02", "fd5a:5052:0:1::2", 0, "allow"},
+		{"endpoint-01 tcp/7007 endpoint-02", "tcp", "endpoint-01", "endpoint-02", "fd5a:5052:0:1::2", 7007, "allow"},
+		{"endpoint-01 udp/7010 endpoint-02", "udp", "endpoint-01", "endpoint-02", "fd5a:5052:0:1::2", 7010, "deny"},
+		{"endpoint-01 ping visa service", "ping", "endpoint-01", "vs.zpr", "fd5a:5052::1", 0, "deny"},
+	}
+	if !slices.Equal(services[:4], wantServices) || len(services) != 8 {
+		t.Fatalf("service probes = %+v", services)
 	}
 }
 
@@ -119,6 +130,27 @@ func TestSimulatorDataPlaneWorkloadProbeOutcomes(t *testing.T) {
 		result := (&simulatorDataPlaneWorkloads{plane: plane}).probe(context.Background(), deny, true)
 		if result.Observed != test.observed || result.Matches != test.matches {
 			t.Fatalf("%q: %+v", test.output, result)
+		}
+	}
+	allow := simulatorDataPlaneProbe{Name: "tcp", Kind: "tcp", Source: "endpoint-01", TargetAddress: "fd5a:5052:0:1::2", Port: 7007, Expected: "allow"}
+	for _, test := range []struct {
+		output   string
+		observed string
+		matches  bool
+	}{
+		{"probe reply", "reachable", true},
+		{"probe no-reply", "unreachable", false},
+		{"OCI runtime exec failed: zpr-evaluation-probe: not found", "error", false},
+	} {
+		var call []string
+		plane := &simulatorDataPlaneEndpoints{handoff: handoff, dir: dir, docker: func(_ context.Context, args ...string) (string, error) {
+			call = args
+			return test.output, nil
+		}}
+		result := (&simulatorDataPlaneWorkloads{plane: plane}).probe(context.Background(), allow, true)
+		if result.Observed != test.observed || result.Matches != test.matches ||
+			!slices.Equal(call, []string{"exec", handoff.Network + "-endpoint-01", "zpr-evaluation-probe", "tcp", "fd5a:5052:0:1::2", "7007"}) {
+			t.Fatalf("%q: %+v %v", test.output, result, call)
 		}
 	}
 }

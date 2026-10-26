@@ -108,6 +108,24 @@ const (
 	evaluationDataPlaneBootstrapAnchor = "\"vs.zpr\" = \"dp-vs-auth.pub\"\n"
 )
 
+// evaluationDataPlaneListener is a service port every endpoint listens on.
+// InPolicy listeners are published to peer endpoints by the install policy;
+// the others listen without any policy service, so ZPR must deny them.
+type evaluationDataPlaneListener struct {
+	Protocol string `json:"protocol"`
+	Port     int    `json:"port"`
+	InPolicy bool   `json:"in_policy"`
+}
+
+// Endpoint echo listeners (U05): TCP and UDP services the policy allows
+// between peers, and one unpublished port of each protocol.
+var evaluationDataPlaneListeners = []evaluationDataPlaneListener{
+	{Protocol: "tcp", Port: 7007, InPolicy: true},
+	{Protocol: "udp", Port: 7008, InPolicy: true},
+	{Protocol: "tcp", Port: 7009},
+	{Protocol: "udp", Port: 7010},
+}
+
 type evaluationDataPlaneEndpoint struct {
 	Name         string `json:"name"`
 	BootstrapKey string `json:"bootstrap_key"`
@@ -128,6 +146,7 @@ type evaluationDataPlaneEndpointsHandoff struct {
 	NodeContainer  string                        `json:"node_container"`
 	CAFile         string                        `json:"ca_file"`
 	Endpoints      []evaluationDataPlaneEndpoint `json:"endpoints"`
+	Listeners      []evaluationDataPlaneListener `json:"listeners,omitempty"`
 }
 
 func evaluationDataPlaneEndpointName(index int) string {
@@ -136,6 +155,16 @@ func evaluationDataPlaneEndpointName(index int) string {
 
 func evaluationDataPlaneEndpointPolicyName(index int) string {
 	return fmt.Sprintf("Endpoint%02d", index)
+}
+
+// evaluationDataPlaneListenerService is the policy service suffix of a
+// published listener, e.g. EchoTCP; its compiler protocol is echotcp.
+func evaluationDataPlaneListenerService(listener evaluationDataPlaneListener) string {
+	return "Echo" + strings.ToUpper(listener.Protocol)
+}
+
+func evaluationDataPlaneListenerProtocol(listener evaluationDataPlaneListener) string {
+	return strings.ToLower(evaluationDataPlaneListenerService(listener))
 }
 
 // evaluationDataPlaneRequired lists the protected data-plane files for config.
@@ -159,19 +188,31 @@ func renderEvaluationDataPlanePolicy(endpoints int, nodes []evaluationDataPlaneT
 	zpl.WriteString(evaluationDataPlanePolicy)
 	zpl.WriteString("\n# EVALUATION ONLY endpoints admitted by per-install bootstrap keys (X15).\n")
 	keys.WriteString(evaluationDataPlaneBootstrapAnchor)
+	kinds, protocols := []string{"Ping"}, map[string]string{"Ping": "ping"}
+	for _, listener := range evaluationDataPlaneListeners {
+		if listener.InPolicy {
+			kind, protocol := evaluationDataPlaneListenerService(listener), evaluationDataPlaneListenerProtocol(listener)
+			kinds, protocols[kind] = append(kinds, kind), protocol
+			fmt.Fprintf(&services, "\n[protocols.%s]\nl4protocol = \"iana.%s\"\nport = %d\n", protocol, strings.ToUpper(listener.Protocol), listener.Port)
+		}
+	}
 	for index := 1; index <= endpoints; index++ {
 		name, actor := evaluationDataPlaneEndpointName(index), evaluationDataPlaneEndpointPolicyName(index)
 		fmt.Fprintf(&zpl, "define %s as adapter with zpr.adapter.cn:'%s'.\n", actor, name)
-		fmt.Fprintf(&zpl, "define %sPing as a service with device.zpr.adapter.cn:'%s'.\n", actor, name)
 		fmt.Fprintf(&keys, "%q = %q\n", name, "dp-"+name+"-auth.pub")
-		fmt.Fprintf(&services, "\n[services.%sPing]\nprotocol = \"ping\"\n", actor)
+		for _, kind := range kinds {
+			fmt.Fprintf(&zpl, "define %s%s as a service with device.zpr.adapter.cn:'%s'.\n", actor, kind, name)
+			fmt.Fprintf(&services, "\n[services.%s%s]\nprotocol = %q\n", actor, kind, protocols[kind])
+		}
 	}
 	for index := 1; index <= endpoints; index++ {
-		service := evaluationDataPlaneEndpointPolicyName(index) + "Ping"
-		fmt.Fprintf(&zpl, "\nservice %s as json {\"service_class\":\"%s\"}.\n", service, service)
-		for peer := 1; peer <= endpoints; peer++ {
-			if peer != index {
-				fmt.Fprintf(&zpl, "  allow %s.\n", evaluationDataPlaneEndpointPolicyName(peer))
+		for _, kind := range kinds {
+			service := evaluationDataPlaneEndpointPolicyName(index) + kind
+			fmt.Fprintf(&zpl, "\nservice %s as json {\"service_class\":\"%s\"}.\n", service, service)
+			for peer := 1; peer <= endpoints; peer++ {
+				if peer != index {
+					fmt.Fprintf(&zpl, "  allow %s.\n", evaluationDataPlaneEndpointPolicyName(peer))
+				}
 			}
 		}
 	}
@@ -281,6 +322,7 @@ func generateEvaluationDataPlane(files map[string][]byte, state string, inventor
 		Version: 1, Kind: "zpr-evaluation-data-plane-endpoints", EvaluationOnly: true,
 		InstallID: inventory.InstallID, Network: evaluationDataPlaneName(inventory),
 		NodeContainer: evaluationDataPlaneName(inventory), CAFile: "dp-ca.crt",
+		Listeners: slices.Clone(evaluationDataPlaneListeners),
 	}
 	for index := 1; index <= endpoints; index++ {
 		name := evaluationDataPlaneEndpointName(index)

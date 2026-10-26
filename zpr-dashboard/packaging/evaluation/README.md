@@ -306,6 +306,19 @@ default:
 - **Denied:** each endpoint pings the Visa Service's fixed ZPR address
   `fd5a:5052::1`. The policy lets only the node ping it, so the VS denies the
   visa with `NoMatch`.
+- **Services (U05):** each endpoint also runs `socat` echo listeners bound only
+  to its ZPR address: `tcp/7007` and `udp/7008`, which the policy publishes to
+  peer endpoints (`EndpointNNEchoTCP`, `EndpointNNEchoUDP`), plus `tcp/7009`
+  and `udp/7010`, which have no policy service. Each endpoint sends a token to
+  every listener of the next endpoint with `zpr-evaluation-probe`. The
+  published ports must echo it and the unpublished ones must be dropped by
+  ZPR, even though a process is listening.
+
+The install lists the listeners in the handoff (`listeners`, with `in_policy`
+per port), and the Simulator passes them to its endpoint containers as
+`ZPR_EP_LISTEN`. Handoffs without `listeners`, from installs created before
+U05, keep the ping probes only; the policy is frozen, so service workloads need
+a new install.
 
 `SIMULATOR_DATA_PLANE_WORKLOAD_INTERVAL` sets the interval as a Go duration of
 at least `5s`; `0` or `off` disables the probes.

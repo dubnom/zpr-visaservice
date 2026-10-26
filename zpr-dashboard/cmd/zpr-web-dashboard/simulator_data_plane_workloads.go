@@ -31,9 +31,11 @@ var simulatorPingReceived = regexp.MustCompile(`(\d+) packets transmitted, (\d+)
 
 type simulatorDataPlaneProbe struct {
 	Name          string `json:"name"`
+	Kind          string `json:"kind"`
 	Source        string `json:"source"`
 	Target        string `json:"target"`
 	TargetAddress string `json:"target_address"`
+	Port          int    `json:"port,omitempty"`
 	Expected      string `json:"expected"`
 }
 
@@ -47,19 +49,31 @@ type simulatorDataPlaneProbeResult struct {
 }
 
 // simulatorDataPlaneProbes pings the next endpoint (allowed by the
-// per-install policy) and the Visa Service (denied) from every endpoint.
-func simulatorDataPlaneProbes(endpoints []simulatorDataPlaneEndpoint) []simulatorDataPlaneProbe {
+// per-install policy) and the Visa Service (denied) from every endpoint, and
+// sends to each of the next endpoint's listeners: allowed only when the
+// install policy publishes the port.
+func simulatorDataPlaneProbes(endpoints []simulatorDataPlaneEndpoint, listeners []simulatorDataPlaneListener) []simulatorDataPlaneProbe {
 	probes := []simulatorDataPlaneProbe{}
 	for index, endpoint := range endpoints {
 		if len(endpoints) > 1 {
 			peer := endpoints[(index+1)%len(endpoints)]
 			probes = append(probes, simulatorDataPlaneProbe{
-				Name: endpoint.Name + " ping " + peer.Name, Source: endpoint.Name,
+				Name: endpoint.Name + " ping " + peer.Name, Kind: "ping", Source: endpoint.Name,
 				Target: peer.Name, TargetAddress: peer.ZPRAddress, Expected: "allow",
 			})
+			for _, listener := range listeners {
+				expected := "deny"
+				if listener.InPolicy {
+					expected = "allow"
+				}
+				probes = append(probes, simulatorDataPlaneProbe{
+					Name: fmt.Sprintf("%s %s/%d %s", endpoint.Name, listener.Protocol, listener.Port, peer.Name), Kind: listener.Protocol,
+					Source: endpoint.Name, Target: peer.Name, TargetAddress: peer.ZPRAddress, Port: listener.Port, Expected: expected,
+				})
+			}
 		}
 		probes = append(probes, simulatorDataPlaneProbe{
-			Name: endpoint.Name + " ping visa service", Source: endpoint.Name,
+			Name: endpoint.Name + " ping visa service", Kind: "ping", Source: endpoint.Name,
 			Target: "vs.zpr", TargetAddress: simulatorDataPlaneVisaServiceAddress, Expected: "deny",
 		})
 	}
@@ -99,7 +113,7 @@ func newSimulatorDataPlaneWorkloads(plane *simulatorDataPlaneEndpoints) (*simula
 	if err != nil {
 		return nil, err
 	}
-	return &simulatorDataPlaneWorkloads{plane: plane, interval: interval, probes: simulatorDataPlaneProbes(plane.handoff.Endpoints), results: map[string]simulatorDataPlaneProbeResult{}}, nil
+	return &simulatorDataPlaneWorkloads{plane: plane, interval: interval, probes: simulatorDataPlaneProbes(plane.handoff.Endpoints, plane.handoff.Listeners), results: map[string]simulatorDataPlaneProbeResult{}}, nil
 }
 
 func (plane *simulatorDataPlaneEndpoints) runningEndpoints() map[string]bool {
@@ -112,7 +126,7 @@ func (plane *simulatorDataPlaneEndpoints) runningEndpoints() map[string]bool {
 	return running
 }
 
-// probe pings once per probe from inside the source endpoint container. A
+// probe runs once per probe from inside the source endpoint container. A
 // first packet may be lost while the node requests a visa, so any reply
 // counts as reachable.
 func (workloads *simulatorDataPlaneWorkloads) probe(ctx context.Context, probe simulatorDataPlaneProbe, running bool) simulatorDataPlaneProbeResult {
@@ -122,6 +136,19 @@ func (workloads *simulatorDataPlaneWorkloads) probe(ctx context.Context, probe s
 		return result
 	}
 	container := workloads.plane.handoff.Network + "-" + probe.Source
+	if probe.Kind == "tcp" || probe.Kind == "udp" {
+		output, err := workloads.plane.docker(ctx, "exec", container, "zpr-evaluation-probe", probe.Kind, probe.TargetAddress, strconv.Itoa(probe.Port))
+		switch strings.TrimSpace(output) {
+		case "probe reply":
+			result.Replies = 1
+		case "probe no-reply":
+		default:
+			result.Error = "probe could not run"
+			log.Printf("data-plane workload %q failed: %v: %s", probe.Name, err, output)
+			return result
+		}
+		return workloads.observed(result)
+	}
 	output, err := workloads.plane.docker(ctx, "exec", container, "ping", "-6", "-n", "-q", "-c", "3", "-i", "0.5", "-W", "2", probe.TargetAddress)
 	match := simulatorPingReceived.FindStringSubmatch(output)
 	if match == nil {
@@ -132,13 +159,17 @@ func (workloads *simulatorDataPlaneWorkloads) probe(ctx context.Context, probe s
 		return result
 	}
 	result.Replies, _ = strconv.Atoi(match[2])
+	return workloads.observed(result)
+}
+
+func (workloads *simulatorDataPlaneWorkloads) observed(result simulatorDataPlaneProbeResult) simulatorDataPlaneProbeResult {
 	result.Observed = "unreachable"
 	if result.Replies > 0 {
 		result.Observed = "reachable"
 	}
-	result.Matches = (probe.Expected == "allow") == (result.Replies > 0)
+	result.Matches = (result.Expected == "allow") == (result.Replies > 0)
 	if !result.Matches {
-		log.Printf("data-plane workload %q expected %s but observed %s", probe.Name, probe.Expected, result.Observed)
+		log.Printf("data-plane workload %q expected %s but observed %s", result.Name, result.Expected, result.Observed)
 	}
 	return result
 }

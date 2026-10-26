@@ -564,9 +564,16 @@ drives an evaluation install's own data plane instead.
   (allowed) and a ping to the VS (denied by policy, `NoMatch`). It reports
   expected vs observed outcomes at `/api/simulator/data-plane-workloads`.
   Control-Service independently reports the resulting visas, denies and
-  counters. This was verified live with zero mismatches. The rest of U05 is
-  still open: comparison with a non-Simulator client, and TCP/UDP service
-  workloads (the image currently has only `ping`).
+  counters. This was verified live with zero mismatches.
+- [ ] **U05 completion:**
+  - [x] **U05a:** TCP and UDP service workloads. Endpoints run echo listeners
+    on their ZPR address: `tcp/7007` and `udp/7008` are published to peers by
+    the install policy, `tcp/7009` and `udp/7010` are not. The handoff lists
+    the listeners, and the Simulator probes each one on the next endpoint.
+    Verified in a trial install: published ports echo, unpublished ports are
+    dropped by ZPR while answering locally.
+  - [ ] **U05b:** compare with a client the Simulator does not run, under
+    equivalent policy.
 - [x] **D5:** one evaluation install per organization for Simulator
   organization switching. This replaces the legacy reset script.
   - [x] **D5a:** `-node-location LAT,LON` writes the data-plane node's map

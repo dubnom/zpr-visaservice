@@ -54,6 +54,25 @@ type simulatorDataPlaneHandoff struct {
 	NodeContainer  string                       `json:"node_container"`
 	CAFile         string                       `json:"ca_file"`
 	Endpoints      []simulatorDataPlaneEndpoint `json:"endpoints"`
+	// Listeners are echo services every endpoint runs (U05). InPolicy says
+	// whether the install policy publishes the port to peer endpoints.
+	Listeners []simulatorDataPlaneListener `json:"listeners,omitempty"`
+}
+
+type simulatorDataPlaneListener struct {
+	Protocol string `json:"protocol"`
+	Port     int    `json:"port"`
+	InPolicy bool   `json:"in_policy"`
+}
+
+// simulatorDataPlaneListenSpec renders listeners for the endpoint image's
+// ZPR_EP_LISTEN, e.g. "tcp:7007 udp:7008".
+func simulatorDataPlaneListenSpec(listeners []simulatorDataPlaneListener) string {
+	specs := make([]string, 0, len(listeners))
+	for _, listener := range listeners {
+		specs = append(specs, fmt.Sprintf("%s:%d", listener.Protocol, listener.Port))
+	}
+	return strings.Join(specs, " ")
 }
 
 // loadSimulatorDataPlaneHandoff reads and strictly validates an install
@@ -117,6 +136,17 @@ func loadSimulatorDataPlaneHandoff(path string) (simulatorDataPlaneHandoff, stri
 			return handoff, "", err
 		}
 		seen[endpoint.Name], seen[endpoint.ZPRAddress] = true, true
+	}
+	if len(handoff.Listeners) > 8 {
+		return handoff, "", errors.New("data-plane endpoint handoff must list at most 8 listeners")
+	}
+	ports := map[string]bool{}
+	for _, listener := range handoff.Listeners {
+		key := fmt.Sprintf("%s:%d", listener.Protocol, listener.Port)
+		if listener.Protocol != "tcp" && listener.Protocol != "udp" || listener.Port < 1024 || listener.Port > 65535 || ports[key] {
+			return handoff, "", fmt.Errorf("invalid data-plane endpoint listener %s", key)
+		}
+		ports[key] = true
 	}
 	return handoff, dir, nil
 }
@@ -183,15 +213,19 @@ func (plane *simulatorDataPlaneEndpoints) nodeContainer(endpoint simulatorDataPl
 // runArguments mounts only this endpoint's bootstrap key and the ZPR CA.
 func (plane *simulatorDataPlaneEndpoints) runArguments(endpoint simulatorDataPlaneEndpoint) []string {
 	const keyPath, caPath = "/run/zpr-endpoint/bootstrap.key", "/run/zpr-endpoint/ca.crt"
-	return []string{"run", "-d", "--rm", "--privileged", "--init", "--pull", "never",
+	args := []string{"run", "-d", "--rm", "--privileged", "--init", "--pull", "never",
 		"--network", plane.handoff.Network, "--name", plane.containerName(endpoint), "--hostname", endpoint.Name,
 		"--label", "org.zpr.evaluation-install=" + plane.handoff.InstallID,
 		"--label", simulatorDataPlaneEndpointLabel + "=" + endpoint.Name,
 		"-e", "ZPR_EP_NAME=" + endpoint.Name, "-e", "ZPR_EP_KEY=" + keyPath, "-e", "ZPR_EP_CA=" + caPath,
-		"-e", "ZPR_EP_NODE=" + plane.nodeContainer(endpoint), "-e", "ZPR_EP_ZPR_ADDR=" + endpoint.ZPRAddress,
-		"--mount", "type=bind,source=" + filepath.Join(plane.dir, endpoint.BootstrapKey) + ",target=" + keyPath + ",readonly",
-		"--mount", "type=bind,source=" + filepath.Join(plane.dir, plane.handoff.CAFile) + ",target=" + caPath + ",readonly",
-		"--entrypoint", "/usr/local/bin/zpr-evaluation-endpoint", plane.image}
+		"-e", "ZPR_EP_NODE=" + plane.nodeContainer(endpoint), "-e", "ZPR_EP_ZPR_ADDR=" + endpoint.ZPRAddress}
+	if len(plane.handoff.Listeners) > 0 {
+		args = append(args, "-e", "ZPR_EP_LISTEN="+simulatorDataPlaneListenSpec(plane.handoff.Listeners))
+	}
+	return append(args,
+		"--mount", "type=bind,source="+filepath.Join(plane.dir, endpoint.BootstrapKey)+",target="+keyPath+",readonly",
+		"--mount", "type=bind,source="+filepath.Join(plane.dir, plane.handoff.CAFile)+",target="+caPath+",readonly",
+		"--entrypoint", "/usr/local/bin/zpr-evaluation-endpoint", plane.image)
 }
 
 // reconcile adopts running endpoint containers and starts missing ones while
