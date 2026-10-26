@@ -621,6 +621,42 @@ drives an evaluation install's own data plane instead.
     at its position, and cross-node workloads match policy with no
     mismatches.
 
+#### Known data-plane defects
+
+Open defects found while running the live installs. They are outside the
+Simulator/Control Room boundary work, but they affect long-running
+environments, so each must be fixed or explicitly accepted before M5.
+
+- [ ] **DP-K01 (open, found 2026-10-26, owner: zpr-core adapter/node):** an
+  endpoint adapter whose dock link fails keep-alive never recovers.
+  - **Seen:** once, on northstar endpoint-02, about 4 minutes after start
+    while `make test` loaded the host. Both the node (link 5) and the adapter
+    logged "failed to respond to keep-alive messages" at 15:27:00Z. The node
+    removed the link and revoked its visas. The adapter then retried every
+    ~25 s with "noise: handshake timeout - node-adapter connection failed"
+    and never re-tethered. The Simulator reported every allowed probe to or
+    from endpoint-02 as `unreachable` (6 mismatches per round).
+  - **Second symptom:** after the stuck container was replaced, the new
+    adapter linked and TCP/UDP visas worked again. But ICMP between
+    re-connected adapters (endpoint-01/03 and client-01, which were also
+    recycled) stayed broken for at least 7 minutes. No ICMP visa requests
+    reached the VS for those flows, so the node dropped them before asking
+    the VS. The node's denied-flow backoff is capped at 60 s, so it is not
+    the deny cache.
+  - **Workaround:** restart the install with the same command (identity,
+    CA and passwords are kept). After that, all 18 Simulator probes matched.
+  - **Evidence:** `zpr-dashboard/.evaluation-build/stuck-endpoint-02-adapter.log`
+    and `stuck-endpoint-02-node.log` (local, not committed).
+  - **To fix:**
+    1. Reproduce by pausing an endpoint container (`docker pause`) past the
+       keep-alive timeout, then unpausing it.
+    2. Make the adapter rebuild its Noise session from scratch after a
+       failed keep-alive, rather than retrying the stale handshake.
+    3. Find which node state keeps ICMP flows from re-requesting visas after
+       a peer link is removed and re-added.
+    4. Add a regression test for both.
+  - Until it is fixed, the Simulator's workload mismatches are the detector.
+
 ### M4 - Enforce separation in builds, configuration and lifecycle
 
 Depends on M2 and M3. This closes deployable boundaries, not just code naming.
