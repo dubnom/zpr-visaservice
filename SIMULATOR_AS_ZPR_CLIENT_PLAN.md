@@ -579,6 +579,17 @@ drives an evaluation install's own data plane instead.
     them works, and an organization without an install is refused. The single
     maturity install was retired. Per-organization directory people and
     multi-node topology come later.
+- [ ] **D6:** organizations' own directories and node topology.
+  - [x] **D6a:** `-directory-base-dn DN -directory-ldif FILE...` serves an
+    organization's own LDIF under its own base DN instead of the starter
+    directory. It is operator configuration frozen at creation; entries
+    carrying `userPassword` are not imported, and an evaluation-only
+    `zprMachine` schema is included. Verified with slapadd in the pinned image
+    for northstar, great-lakes and redwood.
+  - [ ] **D6b:** multiple data-plane nodes per install, with peer links, map
+    positions and endpoints spread across nodes.
+  - [ ] **D6c:** live northstar, great-lakes and redwood installs with their
+    directories and topologies.
 
 ### M4 - Enforce separation in builds, configuration and lifecycle
 

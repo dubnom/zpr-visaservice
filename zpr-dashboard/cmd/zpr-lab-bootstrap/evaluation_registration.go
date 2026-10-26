@@ -29,7 +29,7 @@ func evaluationSourceRegistration(state string, inventory evaluationInventory) e
 		"name": source, "display_name": "Starter directory (EVALUATION ONLY)", "kind": "ldap",
 		"url": fmt.Sprintf("ldaps://localhost:%d", inventory.Config.LDAPPort), "ca_file": filepath.Join(state, "ca.pem"),
 		"attributes":    []string{"uid", "cn", "mail"},
-		"organizations": map[string]any{org: map[string]string{"base_dn": "dc=evaluation,dc=zpr", "bind_dn": "cn=zpr-reader,dc=evaluation,dc=zpr", "bind_password_file": filepath.Join(state, "ldap-reader.secret")}},
+		"organizations": map[string]any{org: map[string]string{"base_dn": inventory.Config.directoryBaseDN(), "bind_dn": inventory.Config.directoryReaderDN(), "bind_password_file": filepath.Join(state, "ldap-reader.secret")}},
 	}}
 }
 

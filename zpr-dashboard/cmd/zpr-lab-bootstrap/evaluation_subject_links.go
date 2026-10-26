@@ -63,16 +63,16 @@ func evaluationSubjectUUID() (string, error) {
 	return text[:8] + "-" + text[8:12] + "-" + text[12:16] + "-" + text[16:20] + "-" + text[20:], nil
 }
 
-func evaluationSubjectLDIF(uuid string) string {
+func evaluationSubjectLDIF(baseDN, uuid string) string {
 	return fmt.Sprintf(`
-dn: uid=evaluation-subject,ou=People,dc=evaluation,dc=zpr
+dn: uid=evaluation-subject,ou=People,%s
 objectClass: inetOrgPerson
 uid: evaluation-subject
 cn: Evaluation Subject
 sn: Subject
 mail: evaluation-subject@evaluation.invalid
 entryUUID: %s
-`, uuid)
+`, baseDN, uuid)
 }
 
 func evaluationReviewerPassword(secret []byte) (map[string]string, error) {
@@ -111,8 +111,8 @@ func generateEvaluationSubjectLinks(files map[string][]byte, state string, inven
 	var err error
 	if files["subject-link-providers.json"], err = evaluationJSON(map[string]any{"version": 1, "providers": []map[string]string{{
 		"organization_id": organization, "source_id": evaluationSubjectSourceID, "source_version": "1", "provider_id": evaluationSubjectProviderID,
-		"url": fmt.Sprintf("ldaps://localhost:%d", config.LDAPPort), "ca_file": path("ca.pem"), "base_dn": "dc=evaluation,dc=zpr",
-		"bind_dn": "cn=zpr-reader,dc=evaluation,dc=zpr", "bind_password_file": path("ldap-reader.secret"),
+		"url": fmt.Sprintf("ldaps://localhost:%d", config.LDAPPort), "ca_file": path("ca.pem"), "base_dn": config.directoryBaseDN(),
+		"bind_dn": config.directoryReaderDN(), "bind_password_file": path("ldap-reader.secret"),
 	}}}); err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ Organization ID:        %s
 LDAP source ID:         %s (version 1, the only version the provider binds)
 LDAP provider ID:       %s
 Selector kind:          ldap_entry_uuid
-Sample LDAP subject:    uid=evaluation-subject,ou=People,dc=evaluation,dc=zpr
+Sample LDAP subject:    uid=evaluation-subject,ou=People,%s
 Sample entryUUID:       %s
 VS recipient ID:        %s
 Snapshot epoch:         %s
@@ -184,7 +184,7 @@ the first signed snapshot, initialize the VS checkpoint once:
 The running VS then polls every 15 seconds and posts delivery receipts.
 Editing the registered LDAP source advances its version and no longer
 matches the provider; keep version 1 for this evaluation.
-`, organization, evaluationSubjectSourceID, evaluationSubjectProviderID, subjectUUID, evaluationSubjectVSID, evaluationSubjectEpoch,
+`, organization, evaluationSubjectSourceID, evaluationSubjectProviderID, config.directoryBaseDN(), subjectUUID, evaluationSubjectVSID, evaluationSubjectEpoch,
 		evaluationReviewerEmail, path("vs.toml"))
 	return nil
 }

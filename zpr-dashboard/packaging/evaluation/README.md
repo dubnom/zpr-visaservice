@@ -362,13 +362,42 @@ With the registry:
   registered organizations, which one is selected and whether each has a data
   plane. It does not expose TLS file paths.
 
+### Organization directory (D6a)
+
+By default LDAP serves the empty starter tree under `dc=evaluation,dc=zpr`. To
+serve an organization's own directory instead, give its base DN and LDIF files
+(absolute paths, imported in order) when the install is created:
+
+```sh
+-directory-base-dn dc=greatlakes,dc=test \
+  -directory-ldif /abs/organizations/great-lakes/directory.ldif
+```
+
+- **Frozen:** the LDIF is rendered into the protected `directory.ldif` once.
+  Restarts need the same flags; changing the directory needs a new install.
+- **Unchanged import:** entries keep their DNs and attributes. The first entry
+  must be the base entry, every entry must be under the base DN, and only plain
+  content records are accepted (no change records or base64 DNs).
+- **No imported credentials:** entries carrying `userPassword` (an
+  organization's bind accounts) are skipped and listed in `EVALUATION.txt`;
+  entries below a skipped entry are rejected. The install adds its own reader
+  `cn=zpr-reader,<base>`, plus `ou=People`/`ou=Groups` if missing, and the
+  subject-link sample under `ou=People`.
+- **Schema:** the install also loads `zpr-evaluation.schema`, an
+  EVALUATION ONLY auxiliary class `zprMachine` (`zprMachineId`, `…Type`,
+  `…Model`, `…Location`, `…Secure`, `…Owner`) under a UUID OID arc.
+- Source registration, the subject-link provider and the LDAP health check use
+  the configured base DN. Nothing reads the Simulator; the LDIF is ordinary
+  operator input.
+
 ## Identity, health and lifecycle
 
 Every install receives a random install/Compose-project ID, its own CA and
 service/client certificates, and independent 256-bit random LDAP admin/reader,
 OpenObserve admin, operator and OIDC client secrets. A fixed complexity suffix
 satisfies the packaged OpenObserve password policy without reducing random
-entropy. There are **no shared/default passwords**. LDAP starts with an empty People/Groups tree and one read-only service
+entropy. There are **no shared/default passwords**. Unless an organization directory is
+configured (see above), LDAP starts with an empty People/Groups tree and one read-only service
 account. No synthetic people or Simulator data are copied. A verified empty LDAP
 search is valid for connection tests and selected-source browsing, but remains
 an error for assertion evaluation (no vacuous policy success).

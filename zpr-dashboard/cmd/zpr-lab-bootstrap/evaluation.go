@@ -58,6 +58,9 @@ type evaluationConfig struct {
 	// NodeLocation is operator configuration for the data-plane node's map
 	// position, written to vs.toml as [nodes."node"] latitude/longitude.
 	NodeLocation *evaluationNodeLocation `json:"node_location,omitempty"`
+	// Directory replaces the starter directory with operator LDIF under the
+	// operator's base DN; nil keeps dc=evaluation,dc=zpr.
+	Directory *evaluationDirectory `json:"directory,omitempty"`
 }
 
 type evaluationNodeLocation struct {
@@ -131,6 +134,12 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		config.NodeLocation = location
 		return err
 	})
+	directory := evaluationDirectory{}
+	flags.StringVar(&directory.BaseDN, "directory-base-dn", "", "serve an operator directory under this base DN instead of the starter directory (requires -directory-ldif)")
+	flags.Func("directory-ldif", "with -directory-base-dn: absolute path of an operator LDIF to import at creation (repeatable, in order); entries with userPassword are not imported", func(value string) error {
+		directory.LDIFFiles = append(directory.LDIFFiles, value)
+		return nil
+	})
 	runtime := evaluationRuntimeOptions{}
 	flags.StringVar(&runtime.DataPlaneImage, "data-plane-image", evaluationDataPlaneImage, "with -data-plane: local data-plane image")
 	flags.StringVar(&runtime.VisaServiceBinary, "vs-binary", "", "with -visa-service: absolute path of a built vs executable (cargo build -p vs)")
@@ -170,6 +179,13 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	} else if planeOnly {
 		fmt.Fprintln(stderr, "-data-plane-image, -data-plane-endpoints and -node-location require -data-plane")
 		return 2
+	}
+	if directory.BaseDN != "" || len(directory.LDIFFiles) != 0 {
+		if directory.BaseDN == "" {
+			fmt.Fprintln(stderr, "-directory-ldif requires -directory-base-dn")
+			return 2
+		}
+		config.Directory = &directory
 	}
 	if *state == "" || flags.NArg() != 0 {
 		fmt.Fprintln(stderr, "usage: zpr-lab-bootstrap -evaluation -state DIRECTORY [-visa-service -vs-binary FILE] [-render-only | -reset-admin [-password-file FILE]]")
@@ -250,6 +266,9 @@ func (config evaluationConfig) validate() error {
 		if _, err := parseEvaluationNodeLocation(location.String()); err != nil {
 			return err
 		}
+	}
+	if err := config.Directory.validate(); err != nil {
+		return err
 	}
 	for _, port := range config.ports() {
 		if port < 1024 || port > 65535 || ports[port] {
@@ -428,6 +447,9 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 	if config.subjectLinks() {
 		required = append(required, evaluationSubjectLinkFiles...)
 	}
+	if config.Directory != nil {
+		required = append(required, evaluationDirectorySchemaFile)
+	}
 	if len(inventory.Files) != len(required) {
 		return inventory, errors.New("evaluation inventory is missing required files")
 	}
@@ -494,10 +516,16 @@ func generateEvaluation(state string, config evaluationConfig, now time.Time) (m
 	if err != nil {
 		return nil, inventory, err
 	}
+	schemaInclude := ""
+	if config.Directory != nil {
+		files[evaluationDirectorySchemaFile] = []byte(evaluationDirectorySchema)
+		schemaInclude = "include /etc/zpr/evaluation/" + evaluationDirectorySchemaFile + "\n"
+	}
+	baseDN := config.directoryBaseDN()
 	files["slapd.conf"] = fmt.Appendf(nil, `include /etc/ldap/schema/core.schema
 include /etc/ldap/schema/cosine.schema
 include /etc/ldap/schema/inetorgperson.schema
-pidfile /var/lib/ldap/slapd.pid
+%spidfile /var/lib/ldap/slapd.pid
 argsfile /var/lib/ldap/slapd.args
 modulepath /usr/lib/ldap
 moduleload back_mdb
@@ -510,8 +538,8 @@ require authc
 security simple_bind=128
 database mdb
 maxsize 1073741824
-suffix "dc=evaluation,dc=zpr"
-rootdn "cn=admin,dc=evaluation,dc=zpr"
+suffix "%s"
+rootdn "cn=admin,%s"
 rootpw %s
 directory /var/lib/ldap
 index objectClass eq
@@ -519,9 +547,9 @@ access to attrs=userPassword
     by anonymous auth
     by * none
 access to *
-    by dn.exact="cn=zpr-reader,dc=evaluation,dc=zpr" read
+    by dn.exact="%s" read
     by * none
-`, admin)
+`, schemaInclude, baseDN, baseDN, admin, config.directoryReaderDN())
 	files["directory.ldif"] = fmt.Appendf(nil, `dn: dc=evaluation,dc=zpr
 objectClass: top
 objectClass: dcObject
@@ -543,12 +571,18 @@ dn: ou=Groups,dc=evaluation,dc=zpr
 objectClass: organizationalUnit
 ou: Groups
 `, inventory.InstallID, reader)
+	var skippedDirectoryEntries []string
+	if config.Directory != nil {
+		if files["directory.ldif"], skippedDirectoryEntries, err = renderEvaluationDirectoryLDIF(config.Directory, reader); err != nil {
+			return nil, inventory, err
+		}
+	}
 	subjectUUID := ""
 	if config.subjectLinks() {
 		if subjectUUID, err = evaluationSubjectUUID(); err != nil {
 			return nil, inventory, err
 		}
-		files["directory.ldif"] = append(files["directory.ldif"], evaluationSubjectLDIF(subjectUUID)...)
+		files["directory.ldif"] = append(files["directory.ldif"], evaluationSubjectLDIF(baseDN, subjectUUID)...)
 	}
 	files["serve-directory.sh"] = []byte(`#!/bin/sh
 set -eu
@@ -591,7 +625,11 @@ ZO_LOG_LEVEL=warn
 			"logging": map[string]any{"driver": "none"},
 		}
 	}
-	ldap := service(config.LDAPImage, "ldap-state", "/var/lib/ldap", config.LDAPPort, 1636, "server-chain.pem", "server-key.pem", "ca.pem", "slapd.conf", "directory.ldif", "serve-directory.sh", "ldap-reader.secret")
+	ldapFiles := []string{"server-chain.pem", "server-key.pem", "ca.pem", "slapd.conf", "directory.ldif", "serve-directory.sh", "ldap-reader.secret"}
+	if config.Directory != nil {
+		ldapFiles = append(ldapFiles, evaluationDirectorySchemaFile)
+	}
+	ldap := service(config.LDAPImage, "ldap-state", "/var/lib/ldap", config.LDAPPort, 1636, ldapFiles...)
 	ldap["entrypoint"] = []string{"/bin/sh", "/etc/zpr/evaluation/serve-directory.sh"}
 	logging := service(config.LogImage, "logging-state", "/data", config.LogPort, 5080, "server-chain.pem", "server-key.pem")
 	logging["platform"] = config.LogPlatform
@@ -655,6 +693,13 @@ ZO_LOG_LEVEL=warn
 			return nil, inventory, err
 		}
 		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte("Subject-link review, publication and pinned snapshot delivery to the loopback VS use EVALUATION-ONLY keys; see SUBJECT-LINKS.txt. Snapshots are fetched and checkpointed, never enforced.\n")...)
+	}
+	if config.Directory != nil {
+		note := "Directory: operator LDIF imported under " + baseDN + " at creation; the install's reader is " + config.directoryReaderDN() + ".\n"
+		if len(skippedDirectoryEntries) > 0 {
+			note += "Not imported (entries carrying userPassword): " + strings.Join(skippedDirectoryEntries, "; ") + ".\n"
+		}
+		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte(note)...)
 	}
 	registration := evaluationSourceRegistration(state, inventory)
 	data, err = json.MarshalIndent(registration, "", "  ")

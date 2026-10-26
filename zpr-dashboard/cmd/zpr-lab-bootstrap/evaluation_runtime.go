@@ -187,7 +187,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 	if err != nil {
 		return err
 	}
-	if err := waitEvaluation(startup, "starter LDAP", out, func() error { return checkEvaluationLDAP(inventory.Config.LDAPPort, state, tlsConfig) }); err != nil {
+	if err := waitEvaluation(startup, "starter LDAP", out, func() error { return checkEvaluationLDAP(inventory.Config, state, tlsConfig) }); err != nil {
 		return err
 	}
 	if err := waitEvaluation(startup, "OpenObserve (TLS, admin authentication)", out, func() error { return checkEvaluationLogging(inventory.Config.LogPort, state, tlsConfig) }); err != nil {
@@ -378,7 +378,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 				default:
 				}
 			}
-			if checkEvaluationHTTP(inventory.Config.OIDCPort, "/.well-known/openid-configuration", tlsConfig, "") != nil || checkEvaluationLDAP(inventory.Config.LDAPPort, state, tlsConfig) != nil || checkEvaluationLogging(inventory.Config.LogPort, state, tlsConfig) != nil {
+			if checkEvaluationHTTP(inventory.Config.OIDCPort, "/.well-known/openid-configuration", tlsConfig, "") != nil || checkEvaluationLDAP(inventory.Config, state, tlsConfig) != nil || checkEvaluationLogging(inventory.Config.LogPort, state, tlsConfig) != nil {
 				return errors.New("starter LDAP/logging lost readiness; stopping only this install; inspect private state and retry")
 			}
 		}
@@ -426,7 +426,8 @@ func evaluationTLS(state string, mutual bool) (*tls.Config, error) {
 	return config, nil
 }
 
-func checkEvaluationLDAP(port int, state string, config *tls.Config) error {
+func checkEvaluationLDAP(evaluation evaluationConfig, state string, config *tls.Config) error {
+	port := evaluation.LDAPPort
 	socket, err := tls.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}, "tcp", fmt.Sprintf("127.0.0.1:%d", port), config)
 	if err != nil {
 		return errors.New("LDAPS handshake failed")
@@ -439,10 +440,10 @@ func checkEvaluationLDAP(port int, state string, config *tls.Config) error {
 	if err != nil {
 		return errors.New("cannot read LDAP health credential")
 	}
-	if err := connection.Bind("cn=zpr-reader,dc=evaluation,dc=zpr", strings.TrimSpace(string(secret))); err != nil {
+	if err := connection.Bind(evaluation.directoryReaderDN(), strings.TrimSpace(string(secret))); err != nil {
 		return errors.New("LDAP health bind failed")
 	}
-	_, err = connection.Search(ldap.NewSearchRequest("dc=evaluation,dc=zpr", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 2, false, "(objectClass=*)", []string{"dn"}, nil))
+	_, err = connection.Search(ldap.NewSearchRequest(evaluation.directoryBaseDN(), ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 2, false, "(objectClass=*)", []string{"dn"}, nil))
 	if err != nil {
 		return errors.New("LDAP base search failed")
 	}
