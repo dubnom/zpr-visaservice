@@ -291,6 +291,30 @@ Endpoints outlive a Simulator restart and are removed by install teardown.
 state. Admitted endpoints appear in the VS actors and in Control Room through
 Control-Service. Control Room never reads the handoff.
 
+#### Allow/deny workloads (D4)
+
+The Simulator probes the data plane from its own endpoints every 30 seconds by
+default:
+
+- **Allowed:** each endpoint pings the next one, which the per-install policy
+  permits.
+- **Denied:** each endpoint pings the Visa Service's fixed ZPR address
+  `fd5a:5052::1`. The policy lets only the node ping it, so the VS denies the
+  visa with `NoMatch`.
+
+`SIMULATOR_DATA_PLANE_WORKLOAD_INTERVAL` sets the interval as a Go duration of
+at least `5s`; `0` or `off` disables the probes.
+
+`GET /api/simulator/data-plane-workloads` (`simulator.read`) reports each
+probe's expected outcome (`allow`/`deny`), the outcome the Simulator observed
+(`reachable`/`unreachable`/`error`), whether they match, and totals for
+`mismatches` and `errors`. A mismatch is also logged.
+
+The expectations are Simulator scenario intent only. Control Room observes the
+same traffic independently: Control-Service reads the visas, recent denies and
+the approved/denied counters from the VS admin API. The node caches denials,
+so a repeated denied probe does not increase the VS deny count.
+
 ## Identity, health and lifecycle
 
 Every install receives a random install/Compose-project ID, its own CA and

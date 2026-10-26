@@ -559,8 +559,14 @@ drives an evaluation install's own data plane instead.
   `SIMULATOR_DATA_PLANE_ENDPOINTS_FILE`, and install teardown removes them.
   This was verified live: three endpoints were admitted, ping worked between
   endpoints over ZPR, running endpoints were adopted, and teardown cleaned up.
-- [ ] **D4:** allow/deny workloads observed independently by Control Room
-  (U05).
+- [x] **D4:** allow/deny workloads observed independently by Control Room
+  (U05). The Simulator probes from every endpoint: a ping to the next endpoint
+  (allowed) and a ping to the VS (denied by policy, `NoMatch`). It reports
+  expected vs observed outcomes at `/api/simulator/data-plane-workloads`.
+  Control-Service independently reports the resulting visas, denies and
+  counters. This was verified live with zero mismatches. The rest of U05 is
+  still open: comparison with a non-Simulator client, and TCP/UDP service
+  workloads (the image currently has only `ping`).
 - [ ] **D5:** one evaluation install per organization for Simulator
   organization switching. This replaces the legacy reset script.
 
