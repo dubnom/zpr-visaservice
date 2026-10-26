@@ -11,11 +11,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,6 +55,34 @@ type evaluationConfig struct {
 	// DataPlaneEndpoints admits endpoint-01..N by per-install bootstrap keys
 	// (shortcut X15); the Simulator runs them from data-plane-endpoints.json.
 	DataPlaneEndpoints int `json:"data_plane_endpoints,omitempty"`
+	// NodeLocation is operator configuration for the data-plane node's map
+	// position, written to vs.toml as [nodes."node"] latitude/longitude.
+	NodeLocation *evaluationNodeLocation `json:"node_location,omitempty"`
+}
+
+type evaluationNodeLocation struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
+func (location *evaluationNodeLocation) String() string {
+	if location == nil {
+		return ""
+	}
+	return strconv.FormatFloat(location.Latitude, 'f', -1, 64) + "," + strconv.FormatFloat(location.Longitude, 'f', -1, 64)
+}
+
+func parseEvaluationNodeLocation(value string) (*evaluationNodeLocation, error) {
+	latitude, longitude, ok := strings.Cut(value, ",")
+	if !ok {
+		return nil, errors.New("-node-location must be LATITUDE,LONGITUDE")
+	}
+	lat, latErr := strconv.ParseFloat(strings.TrimSpace(latitude), 64)
+	lon, lonErr := strconv.ParseFloat(strings.TrimSpace(longitude), 64)
+	if latErr != nil || lonErr != nil || math.IsNaN(lat) || math.IsNaN(lon) || math.Abs(lat) > 90 || math.Abs(lon) > 180 {
+		return nil, errors.New("-node-location must be finite LATITUDE,LONGITUDE within [-90,90],[-180,180]")
+	}
+	return &evaluationNodeLocation{Latitude: lat, Longitude: lon}, nil
 }
 
 // Runtime-only executables are not frozen: upgrading them keeps install identity.
@@ -96,6 +126,11 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&config.SnapshotDeliveryPort, "snapshot-delivery-port", 18793, "with -visa-service: loopback Control-Service subject snapshot delivery mTLS port; 0 disables the subject-link publication cycle (installs created before it existed)")
 	flags.BoolVar(&config.DataPlane, "data-plane", false, "with -visa-service: run the VS with Valkey, one node and the vs.zpr adapter in a privileged Linux data-plane container (build: packaging/evaluation/data-plane/build.sh)")
 	flags.IntVar(&config.DataPlaneEndpoints, "data-plane-endpoints", 0, fmt.Sprintf("with -data-plane: admit endpoint-01..N (0 or %d-%d) by per-install bootstrap keys for Simulator endpoints (EVALUATION ONLY shortcut X15)", evaluationDataPlaneMinEndpoints, evaluationDataPlaneMaxEndpoints))
+	flags.Func("node-location", "with -data-plane: LATITUDE,LONGITUDE of the data-plane node for the Control Room map", func(value string) error {
+		location, err := parseEvaluationNodeLocation(value)
+		config.NodeLocation = location
+		return err
+	})
 	runtime := evaluationRuntimeOptions{}
 	flags.StringVar(&runtime.DataPlaneImage, "data-plane-image", evaluationDataPlaneImage, "with -data-plane: local data-plane image")
 	flags.StringVar(&runtime.VisaServiceBinary, "vs-binary", "", "with -visa-service: absolute path of a built vs executable (cargo build -p vs)")
@@ -109,13 +144,13 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	visaOnly, nativeOnly, planeOnly := false, false, false
 	flags.Visit(func(f *flag.Flag) {
 		switch f.Name {
-		case "vs-admin-port", "vs-api-port", "valkey-port", "snapshot-delivery-port", "vs-binary", "valkey-server", "data-plane", "data-plane-image", "data-plane-endpoints":
+		case "vs-admin-port", "vs-api-port", "valkey-port", "snapshot-delivery-port", "vs-binary", "valkey-server", "data-plane", "data-plane-image", "data-plane-endpoints", "node-location":
 			visaOnly = true
 		}
 		switch f.Name {
 		case "vs-api-port", "valkey-port", "vs-binary", "valkey-server":
 			nativeOnly = true
-		case "data-plane-image", "data-plane-endpoints":
+		case "data-plane-image", "data-plane-endpoints", "node-location":
 			planeOnly = true
 		}
 	})
@@ -133,7 +168,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		}
 		config.VSAPIPort, config.ValkeyPort = 0, 0
 	} else if planeOnly {
-		fmt.Fprintln(stderr, "-data-plane-image and -data-plane-endpoints require -data-plane")
+		fmt.Fprintln(stderr, "-data-plane-image, -data-plane-endpoints and -node-location require -data-plane")
 		return 2
 	}
 	if *state == "" || flags.NArg() != 0 {
@@ -207,6 +242,14 @@ func (config evaluationConfig) validate() error {
 	}
 	if config.DataPlaneEndpoints != 0 && (!config.DataPlane || config.DataPlaneEndpoints < evaluationDataPlaneMinEndpoints || config.DataPlaneEndpoints > evaluationDataPlaneMaxEndpoints) {
 		return fmt.Errorf("data-plane endpoints require -data-plane and must be 0 or %d-%d", evaluationDataPlaneMinEndpoints, evaluationDataPlaneMaxEndpoints)
+	}
+	if location := config.NodeLocation; location != nil {
+		if !config.DataPlane {
+			return errors.New("node location requires -data-plane")
+		}
+		if _, err := parseEvaluationNodeLocation(location.String()); err != nil {
+			return err
+		}
 	}
 	for _, port := range config.ports() {
 		if port < 1024 || port > 65535 || ports[port] {

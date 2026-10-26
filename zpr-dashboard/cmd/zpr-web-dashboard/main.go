@@ -144,6 +144,10 @@ func simulatorControlRoomURL(raw string) (string, error) {
 func handleSimulatorNavigationConfig(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	raw := os.Getenv("ZPR_SIMULATOR_CONTROL_ROOM_URL")
+	if registry := simulatorEvaluationInstallRegistry; registry != nil {
+		id, _ := registry.selected()
+		raw = registry.installs[id].ControlRoomURL
+	}
 	destination, err := simulatorControlRoomURL(raw)
 	if err != nil {
 		status := http.StatusUnprocessableEntity

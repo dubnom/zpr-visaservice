@@ -253,6 +253,11 @@ sh packaging/evaluation/bootstrap.sh \
   log, and any component exit stops the install. Ctrl-C removes the container,
   every other container on the install network (including endpoints) and the
   network; state is retained.
+- **Map position (optional):** `-node-location LAT,LON` (decimal degrees,
+  requires `-data-plane`) writes `[nodes."node"] latitude/longitude` into the
+  frozen `vs.toml`. The VS reports it as the node's actor details, so Control
+  Room can place the node on the map. The position is operator configuration;
+  it can only be set when the install is created.
 - **Still not production:** endpoint admission by keys compiled into the
   policy is a recorded evaluation stopgap (X15), and enrollment is deferred.
   Nothing is enforced outside this container.
@@ -314,6 +319,48 @@ The expectations are Simulator scenario intent only. Control Room observes the
 same traffic independently: Control-Service reads the visas, recent denies and
 the approved/denied counters from the VS admin API. The node caches denials,
 so a repeated denied probe does not increase the VS deny count.
+
+#### One install per organization (D5)
+
+To switch Simulator organizations against real installs, the operator starts one
+evaluation install per organization, each with its own state directory, ports
+and (usually) `-node-location`. The Simulator never starts, stops or resets an
+install; it only selects among installs listed in an operator-written registry:
+
+```json
+{"version": 1, "kind": "zpr-simulator-evaluation-installs", "evaluation_only": true,
+ "installs": [{
+   "organization_id": "northstar",
+   "control_room_url": "https://192.0.2.10:38787",
+   "operator_service_url": "https://localhost:38790",
+   "client_cert_file": "/abs/northstar/client-chain.pem",
+   "client_key_file": "/abs/northstar/client-key.pem",
+   "service_ca_file": "/abs/.zpr-evaluation-northstar/ca.pem",
+   "data_plane_endpoints_file": "/abs/.zpr-evaluation-northstar/data-plane-endpoints.json"
+ }]}
+```
+
+Set `SIMULATOR_EVALUATION_INSTALLS_FILE` to the registry. It replaces
+`SIMULATOR_OPERATOR_SERVICE_URL`, `SIMULATOR_DATA_PLANE_ENDPOINTS_FILE`,
+`SIMULATION_ORGANIZATION_RESET_SCRIPT` and `ZPR_SIMULATOR_CONTROL_ROOM_URL`;
+setting any of them alongside it fails startup. Each organization must exist in
+the catalog and appear once. Service URLs must be exact HTTPS origins, TLS file
+paths must be distinct absolute paths, and two installs cannot share a data
+plane. The Simulator client certificate for each install is issued from that
+install's `ca.pem`.
+
+With the registry:
+
+- Activating an organization checks that its install's Control-Service answers,
+  then selects it. Restore base is not available; reset or recreate the install
+  independently.
+- Snapshots, the Control Room link and the endpoint/workload status routes
+  follow the selected organization.
+- Endpoints and workloads run for **every** registered install that has a
+  handoff, not only the selected one, so idle installs stay exercised.
+- `GET /api/simulator/evaluation-installs` (`simulator.read`) lists the
+  registered organizations, which one is selected and whether each has a data
+  plane. It does not expose TLS file paths.
 
 ## Identity, health and lifecycle
 

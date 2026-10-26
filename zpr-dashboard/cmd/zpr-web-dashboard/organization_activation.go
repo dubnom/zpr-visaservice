@@ -30,6 +30,9 @@ type organizationActivationManager struct {
 var activeOrganizationActivation = &organizationActivationManager{
 	run: organizationActivation{State: "idle"},
 	reset: func(ctx context.Context, organizationID, operation string) error {
+		if registry := simulatorEvaluationInstallRegistry; registry != nil {
+			return registry.activate(ctx, organizationID, operation)
+		}
 		script := strings.TrimSpace(os.Getenv("SIMULATION_ORGANIZATION_RESET_SCRIPT"))
 		if script == "" {
 			return errors.New("organization reset is not configured")

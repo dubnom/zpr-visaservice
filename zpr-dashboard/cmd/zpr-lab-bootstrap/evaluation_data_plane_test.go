@@ -355,3 +355,57 @@ func TestEvaluationDataPlaneEndpointFlags(t *testing.T) {
 		t.Fatal("restart without -data-plane-endpoints must not silently change the frozen install")
 	}
 }
+
+func TestEvaluationDataPlaneNodeLocation(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "install")
+	config := testEvaluationDataPlaneConfig()
+	config.NodeLocation = &evaluationNodeLocation{Latitude: 44.98, Longitude: -93}
+	if _, err := prepareEvaluation(state, config, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readEvaluation(state, config); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(state, "vs.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "\n[nodes.\"node\"]\nlatitude = 44.98\nlongitude = -93.0\n") {
+		t.Fatalf("vs.toml: %s", data)
+	}
+	plain := filepath.Join(t.TempDir(), "plain")
+	if _, err := prepareEvaluation(plain, testEvaluationDataPlaneConfig(), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(plain, "vs.toml")); strings.Contains(string(data), "[nodes.") {
+		t.Fatal("installs without a location must keep vs.toml unchanged")
+	}
+	for _, value := range []string{"44.98", "91,0", "0,181", "nan,0", "north,0", "1,inf"} {
+		if _, err := parseEvaluationNodeLocation(value); err == nil {
+			t.Fatalf("%q accepted", value)
+		}
+	}
+	if location, err := parseEvaluationNodeLocation(" -33.9 , 151.2 "); err != nil || location.Latitude != -33.9 || location.Longitude != 151.2 {
+		t.Fatalf("%v %v", location, err)
+	}
+	var stdout, stderr bytes.Buffer
+	parent := t.TempDir()
+	if code := run([]string{"-evaluation", "-state", filepath.Join(parent, "x"), "-render-only", "-visa-service", "-node-location", "1,2"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("without data plane: code %d", code)
+	}
+	if code := run([]string{"-evaluation", "-state", filepath.Join(parent, "y"), "-render-only", "-visa-service", "-data-plane", "-node-location", "95,2"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("invalid location: code %d", code)
+	}
+	located := filepath.Join(parent, "located")
+	if code := run([]string{"-evaluation", "-state", located, "-render-only", "-visa-service", "-data-plane", "-node-location", "1,2"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("render with location: code %d: %s", code, stderr.String())
+	}
+	if code := run([]string{"-evaluation", "-state", located, "-render-only", "-visa-service", "-data-plane", "-node-location", "1,3"}, &stdout, &stderr); code != 1 {
+		t.Fatal("a changed location must not silently change the frozen install")
+	}
+	config = testEvaluationConfig()
+	config.NodeLocation = &evaluationNodeLocation{}
+	if config.validate() == nil {
+		t.Fatal("location without data plane accepted")
+	}
+}

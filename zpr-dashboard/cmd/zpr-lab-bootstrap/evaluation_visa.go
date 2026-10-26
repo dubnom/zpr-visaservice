@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -108,6 +109,16 @@ identity = "evaluation-%s"
 api_keys = %s
 file_ts_dir = %s
 `, evaluationDataPlaneAdminPort, quoted("server-chain.pem"), quoted("server-key.pem"), password, valkeyPort, inventory.InstallID, quoted("vs-admin-keys.toml"), quoted("vs-trusted-services"))
+		if location := inventory.Config.NodeLocation; location != nil {
+			coordinate := func(value float64) string {
+				text := strconv.FormatFloat(value, 'f', -1, 64)
+				if !strings.Contains(text, ".") {
+					text += ".0"
+				}
+				return text
+			}
+			files["vs.toml"] = fmt.Appendf(files["vs.toml"], "\n# Operator-configured map position of the data-plane node.\n[nodes.\"node\"]\nlatitude = %s\nlongitude = %s\n", coordinate(location.Latitude), coordinate(location.Longitude))
+		}
 		return nil
 	}
 	files["vs.toml"] = fmt.Appendf(nil, `# EVALUATION ONLY loopback Visa Service. No nodes, adapters or enforcement.

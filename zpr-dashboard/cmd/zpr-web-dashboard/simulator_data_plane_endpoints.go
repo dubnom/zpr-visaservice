@@ -135,6 +135,10 @@ func newSimulatorDataPlaneEndpointsFromEnv() (*simulatorDataPlaneEndpoints, erro
 	if path == "" {
 		return nil, nil
 	}
+	return newSimulatorDataPlaneEndpoints(path)
+}
+
+func newSimulatorDataPlaneEndpoints(path string) (*simulatorDataPlaneEndpoints, error) {
 	handoff, dir, err := loadSimulatorDataPlaneHandoff(path)
 	if err != nil {
 		return nil, err

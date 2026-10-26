@@ -232,7 +232,16 @@ func runSimulator(listen string) (runErr error) {
 	if err != nil {
 		return err
 	}
-	if dataPlaneEndpoints != nil {
+	var endpointsHandler, workloadsHandler, installsHandler http.Handler = dataPlaneEndpoints, dataPlaneWorkloads, (*simulatorEvaluationInstalls)(nil)
+	installs, err := newSimulatorEvaluationInstallsFromEnv()
+	if err != nil {
+		return err
+	}
+	if installs != nil {
+		simulatorEvaluationInstallRegistry = installs
+		installs.run(context.Background())
+		endpointsHandler, workloadsHandler, installsHandler = installs.endpointsHandler(), installs.workloadsHandler(), installs
+	} else if dataPlaneEndpoints != nil {
 		go dataPlaneEndpoints.run(context.Background())
 		go dataPlaneWorkloads.run(context.Background())
 	}
@@ -251,8 +260,9 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/restore-base", handleSimulatorOrganizationRestoreBase)
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
-	mux.Handle("GET /api/simulator/data-plane-endpoints", dataPlaneEndpoints)
-	mux.Handle("GET /api/simulator/data-plane-workloads", dataPlaneWorkloads)
+	mux.Handle("GET /api/simulator/data-plane-endpoints", endpointsHandler)
+	mux.Handle("GET /api/simulator/data-plane-workloads", workloadsHandler)
+	mux.Handle("GET /api/simulator/evaluation-installs", installsHandler)
 	worldHandler := newSimulatorWorldHandler()
 	mux.Handle("GET /api/simulator/world", worldHandler)
 	mux.Handle("POST /api/simulator/world/machines/{machine}/{action}", worldHandler)
@@ -1226,12 +1236,34 @@ func readControlRoomSnapshot() (snapshot, error) {
 }
 
 func readControlRoomSnapshotWithContext(parent context.Context) (snapshot, error) {
+	if registry := simulatorEvaluationInstallRegistry; registry != nil {
+		organizationID, err := registry.selectOrganization()
+		if err != nil {
+			return snapshot{}, err
+		}
+		target, err := registry.target(organizationID)
+		if err != nil {
+			return snapshot{}, err
+		}
+		return readOperatorSnapshot(parent, target)
+	}
+	serviceEndpoint := strings.TrimSpace(os.Getenv("SIMULATOR_OPERATOR_SERVICE_URL"))
+	if serviceEndpoint != "" {
+		return readOperatorSnapshot(parent, simulatorOperatorTarget{ServiceURL: serviceEndpoint, CertFile: os.Getenv("SIMULATOR_OPERATOR_CLIENT_CERT_FILE"),
+			KeyFile: os.Getenv("SIMULATOR_OPERATOR_CLIENT_KEY_FILE"), CAFile: os.Getenv("SIMULATOR_OPERATOR_SERVICE_CA_FILE")})
+	}
+	return readOperatorSnapshot(parent, simulatorOperatorTarget{})
+}
+
+// readOperatorSnapshot reads Control-Service over mTLS, or the legacy local
+// Control Room snapshot when target has no service URL.
+func readOperatorSnapshot(parent context.Context, target simulatorOperatorTarget) (snapshot, error) {
 	var snapshotData snapshot
 	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
 	endpoint := strings.TrimRight(envOr("SIMULATOR_CONTROL_ROOM_URL", "http://127.0.0.1:8787"), "/")
 	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	serviceEndpoint := strings.TrimSpace(os.Getenv("SIMULATOR_OPERATOR_SERVICE_URL"))
+	serviceEndpoint := target.ServiceURL
 	if serviceEndpoint != "" {
 		u, err := url.Parse(serviceEndpoint)
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" ||
@@ -1239,8 +1271,7 @@ func readControlRoomSnapshotWithContext(parent context.Context) (snapshot, error
 			return snapshotData, errors.New("Simulator operator service must be an exact HTTPS origin")
 		}
 		serverName := envOr("SIMULATOR_OPERATOR_SERVICE_TLS_SERVER_NAME", u.Hostname())
-		transport, transportErr := servicehttp.MutualTLSClientTransport(os.Getenv("SIMULATOR_OPERATOR_CLIENT_CERT_FILE"),
-			os.Getenv("SIMULATOR_OPERATOR_CLIENT_KEY_FILE"), os.Getenv("SIMULATOR_OPERATOR_SERVICE_CA_FILE"), serverName)
+		transport, transportErr := servicehttp.MutualTLSClientTransport(target.CertFile, target.KeyFile, target.CAFile, serverName)
 		if transportErr != nil {
 			return snapshotData, transportErr
 		}
