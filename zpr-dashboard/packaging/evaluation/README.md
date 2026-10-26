@@ -136,6 +136,69 @@ sh packaging/evaluation/bootstrap.sh \
   `logs/visa-service.log`. If either process exits, the install stops, like any
   other operator process.
 
+### Subject-link publication cycle (with `-visa-service`)
+
+A new `-visa-service` evaluation also configures the complete subject-link
+review, signing and pinned delivery cycle to its loopback VS. It is
+**evaluation only**: every key is generated for this install, and the VS
+verifies and checkpoints snapshots but **never enforces** them.
+
+- **Port:** Control-Service serves pinned snapshot delivery (TLS 1.3, mTLS) on
+  loopback `18793`; override it with `-snapshot-delivery-port`. Installs created
+  with `-visa-service` before this cycle existed have no delivery port. Restart
+  them with `-snapshot-delivery-port 0`, or create a new state directory.
+- **Second login:** `reviewer@evaluation.invalid` (password in
+  `operator-reviewer.secret`) is an independent Dex subject that may only read
+  and approve. The administrator gains `subject-link.read`, `.propose`,
+  `.registry.manage`, `.publish`, `.snapshot.capture` and `.snapshot.sign`.
+  It cannot approve its own proposals.
+- **Generated, protected files:**
+  - `subject-link-providers.json`: binds LDAP source `evaluation-directory`
+    version `1` to this install's LDAPS directory.
+  - `operator-delegation-signer.json` and `operator-delegation-key.pem`: the
+    Room delegation signer.
+  - `subject-snapshot-signing.json` (public pins) and
+    `subject-snapshot-signing-key.pem`.
+  - `vs-client-chain.pem` and `vs-client-key.pem`: the VS delivery identity.
+  - `subject-snapshot-recipients.json`: pins that identity's SPKI to
+    `evaluation-vs`.
+  - `SUBJECT-LINKS.txt`: the organization ID and identifiers below.
+  - `operator-delegation-trust.json`: written on first start, once both Dex
+    subjects are verified. As with `operator-oidc.json`, a later difference is
+    refused, never rebound.
+- **Synthetic subject:** the directory gains
+  `uid=evaluation-subject,ou=People` with a generated, explicit `entryUUID`
+  (listed in `SUBJECT-LINKS.txt`), because Control Room does not display LDAP
+  UUIDs.
+- **Explicit VS initialization:** `vs.toml` contains `[subject_snapshot_fetch]`
+  (poll every 15 s). Until the checkpoint is initialized, `logs/visa-service.log`
+  reports "checkpoint unavailable" on each poll. Initialization is never
+  automatic.
+
+Operator flow, using the Subject links and Publication pages:
+
+1. As the administrator, create the BAS authority (`kind` `bas_device`) and the
+   source `evaluation-directory` (`provider_id` `evaluation-ldap`,
+   `selector_kind` `ldap_entry_uuid`, for example `enrichment_keys` `["mail"]`).
+   Keep the source at version `1`: an edit advances its version, which the
+   provider no longer binds.
+2. Load the registry context, then propose a link from a device subject to the
+   sample `entryUUID`.
+3. Sign in as the reviewer and approve the review.
+4. As the administrator, on the Publication page:
+   - provision `evaluation-vs` / `evaluation`;
+   - promote the approved review;
+   - capture a candidate with explicit issued and expiry times;
+   - verify its digest and sign it.
+5. Initialize the VS checkpoint once, with the command printed at READY:
+
+   ```sh
+   "<vs-binary>" --initialize-subject-snapshot -c "<state>/vs.toml"
+   ```
+
+   The running VS then fetches each newly signed snapshot. Its receipt is the
+   stream's latest receipt on the Publication page.
+
 ## Identity, health and lifecycle
 
 Every install receives a random install/Compose-project ID, its own CA and
@@ -201,6 +264,9 @@ Run on the **same evaluation host**, as the OS account that owns the protected
 install directory. This is not a remote HTTP endpoint, Control Room button,
 production break-glass mechanism, or a reset for company identity providers.
 Stop the foreground bootstrap first and verify its containers/processes stopped.
+Recovery rotates only the administrator. A subject-link reviewer login is left
+unchanged, and both `operator-oidc.json` and `operator-delegation-trust.json`
+are retired so the next start rebinds verified subjects.
 Make a **complete offline backup** of the private state before resetting; keep
 that backup private and outside the install directory. Do not use a recorded or
 shared terminal session.

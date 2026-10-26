@@ -3183,6 +3183,23 @@ bodies, a wrong server root, an untrusted client certificate, and strict
 configuration. Not included: evaluation or enforcement of snapshots, push,
 envelopes for partial release, or production provisioning.
 
+#### Implemented: evaluation install publication cycle (not enforced)
+
+A new `-visa-service` evaluation install
+(`zpr-dashboard/packaging/evaluation/README.md`) wires the complete cycle with
+evaluation-only keys:
+
+- LDAP provider binding and a synthetic directory subject;
+- an independent reviewer login;
+- Room delegation signing and Control-Service delivery trust;
+- snapshot signing pins, the pinned VS client identity and the recipient file;
+- the VS `[subject_snapshot_fetch]` section.
+
+A live trial went registry → propose → independent approval → provision →
+promote → capture → sign, then explicit `vs --initialize-subject-snapshot`. The
+running VS then fetched a renewed snapshot without a restart, and both receipts
+were recorded. Production key provisioning and enforcement remain open.
+
 
 ### S05 minimal subject-link contract: review proposal (2026-10-24)
 

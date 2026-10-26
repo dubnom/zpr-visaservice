@@ -3251,6 +3251,9 @@ issuer-bound grants. The
 provisions a new evaluation and a localhost HTTPS redirecting entrypoint.
 The [optional loopback Visa Service](packaging/evaluation/README.md#optional-loopback-visa-service)
 adds a native, non-enforcing VS and private Valkey to a new evaluation.
+It also wires the full [subject-link publication cycle](packaging/evaluation/README.md#subject-link-publication-cycle-with--visa-service):
+review, independent approval, signing and pinned delivery to that VS, with
+evaluation-only keys.
 For `-mode control-room`, keep the existing Control-Service mTLS environment
 configuration and explicitly add:
 

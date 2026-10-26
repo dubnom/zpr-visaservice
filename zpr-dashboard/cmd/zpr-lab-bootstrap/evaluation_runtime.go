@@ -23,6 +23,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-ldap/ldap/v3"
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
+	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
 
 func evaluationEnvironment(state string, inventory evaluationInventory, mode string) []string {
@@ -50,7 +51,13 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 				"ZPR_ADMIN_CA_FILE="+file("ca.pem"),
 				"ZPR_ADMIN_KEY_FILE="+file("vs-admin-api.key"))
 		}
+		if config.subjectLinks() {
+			env = append(env, evaluationSubjectEnvironment(state, config, false)...)
+		}
 		return env
+	}
+	if config.subjectLinks() {
+		env = append(env, evaluationSubjectEnvironment(state, config, true)...)
 	}
 	if config.BrowserIP != "" {
 		env = append(env, "ZPR_CONTROL_ROOM_DIRECT_IP="+config.BrowserIP)
@@ -269,6 +276,16 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		}); err != nil {
 			return err
 		}
+		if mode == "control-service" && inventory.Config.subjectLinks() {
+			if err := waitEvaluation(startup, "subject snapshot delivery (pinned VS client mTLS)", out, func() error {
+				if err := exited(process); err != nil {
+					return err
+				}
+				return checkEvaluationDelivery(state, inventory.Config.SnapshotDeliveryPort)
+			}); err != nil {
+				return err
+			}
+		}
 	}
 	var aliasDone <-chan error
 	if inventory.Config.BrowserIP != "" {
@@ -294,6 +311,10 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		upstream = fmt.Sprintf("Loopback Visa Service admin at https://localhost:%d (bundled evaluation policy; no nodes or enforcement). Policy-Service is NOT configured.", inventory.Config.VSAdminPort)
 	}
 	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Administrator-scoped evaluation grants; no shared sessions.\nStarter directory registered; lifecycle events ingested into evaluation logging. "+upstream)
+	if inventory.Config.subjectLinks() {
+		fmt.Fprintf(out, "Subject links: independent reviewer %s (password: private operator-reviewer.secret); see %s for the publication cycle.\nAfter the first signed snapshot, initialize the VS checkpoint once: %s\n",
+			evaluationReviewerEmail, filepath.Join(state, "SUBJECT-LINKS.txt"), evaluationVSInitCommand(runtime.VisaServiceBinary, state))
+	}
 	fmt.Fprintln(out, "Foreground supervision active. Ctrl-C stops this install's services/containers; rerun the SAME command to preserve identity and directory/log data.")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -450,37 +471,61 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 	if err != nil {
 		return errors.New("cannot read private OIDC client secret")
 	}
-	password, err := os.ReadFile(filepath.Join(state, "operator-admin.secret"))
+	subject := func(username, secretFile string) (string, error) {
+		password, err := os.ReadFile(filepath.Join(state, secretFile))
+		if err != nil {
+			return "", errors.New("cannot read private bootstrap operator credential")
+		}
+		form := url.Values{"grant_type": {"password"}, "scope": {"openid profile email"}, "username": {username}, "password": {strings.TrimSpace(string(password))}}
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, provider.Endpoint().TokenURL, strings.NewReader(form.Encode()))
+		if err != nil {
+			return "", errors.New("invalid OIDC token endpoint")
+		}
+		request.SetBasicAuth("zpr-control-room", strings.TrimSpace(string(secret)))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		response, err := client.Do(request)
+		if err != nil {
+			return "", errors.New("bootstrap operator authentication not ready")
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			return "", errors.New("bootstrap operator authentication rejected")
+		}
+		var token struct {
+			IDToken string `json:"id_token"`
+		}
+		if json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&token) != nil || token.IDToken == "" {
+			return "", errors.New("OIDC returned no identity token")
+		}
+		identity, err := provider.Verifier(&oidc.Config{ClientID: "zpr-control-room"}).Verify(verifiedContext, token.IDToken)
+		if err != nil || identity.Subject == "" {
+			return "", errors.New("OIDC identity verification failed")
+		}
+		return identity.Subject, nil
+	}
+	adminSubject, err := subject("admin@evaluation.invalid", "operator-admin.secret")
 	if err != nil {
-		return errors.New("cannot read private bootstrap operator credential")
+		return err
 	}
-	form := url.Values{"grant_type": {"password"}, "scope": {"openid profile email"}, "username": {"admin@evaluation.invalid"}, "password": {strings.TrimSpace(string(password))}}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, provider.Endpoint().TokenURL, strings.NewReader(form.Encode()))
-	if err != nil {
-		return errors.New("invalid OIDC token endpoint")
-	}
-	request.SetBasicAuth("zpr-control-room", strings.TrimSpace(string(secret)))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := client.Do(request)
-	if err != nil {
-		return errors.New("bootstrap operator authentication not ready")
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return errors.New("bootstrap operator authentication rejected")
-	}
-	var token struct {
-		IDToken string `json:"id_token"`
-	}
-	if json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&token) != nil || token.IDToken == "" {
-		return errors.New("OIDC returned no identity token")
-	}
-	identity, err := provider.Verifier(&oidc.Config{ClientID: "zpr-control-room"}).Verify(verifiedContext, token.IDToken)
-	if err != nil || identity.Subject == "" {
-		return errors.New("OIDC identity verification failed")
+	organization := evaluationOrganization(inventory)
+	admin := operatorGrantIdentity{Subject: adminSubject, Permissions: []string{"monitor.read", "logs.read", "policy.read", "policy.edit", "policy.analyze"}}
+	var reviewer operatorGrantIdentity
+	if inventory.Config.subjectLinks() {
+		admin.Permissions = append(admin.Permissions, evaluationAdminSubjectLinkPermissions...)
+		reviewerSubject, err := subject(evaluationReviewerEmail, "operator-reviewer.secret")
+		if err != nil {
+			return err
+		}
+		if reviewerSubject == adminSubject {
+			return errors.New("evaluation reviewer must be an independent OIDC subject")
+		}
+		reviewer = operatorGrantIdentity{Subject: reviewerSubject, Permissions: evaluationReviewerPermissions}
 	}
 	config := operatorauth.Config{Version: 1, Issuer: issuer, ClientID: "zpr-control-room", RedirectURL: inventory.Config.browserOrigin(inventory.Config.RoomPort) + "/auth/operator/callback", SessionLifetimeSeconds: 3600,
-		Grants: []operatorauth.Grant{{Issuer: issuer, Subject: identity.Subject, Organizations: []string{"evaluation-" + inventory.InstallID}, Permissions: []string{"monitor.read", "logs.read", "policy.read", "policy.edit", "policy.analyze"}}}}
+		Grants: []operatorauth.Grant{{Issuer: issuer, Subject: admin.Subject, Organizations: []string{organization}, Permissions: admin.Permissions}}}
+	if reviewer.Subject != "" {
+		config.Grants = append(config.Grants, operatorauth.Grant{Issuer: issuer, Subject: reviewer.Subject, Organizations: []string{organization}, Permissions: reviewer.Permissions})
+	}
 	if err := config.Validate(); err != nil {
 		return errors.New("verified bootstrap operator grant is invalid")
 	}
@@ -488,9 +533,35 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	path := filepath.Join(state, "operator-oidc.json")
-	existing, err := os.ReadFile(path)
+	if err := writeEvaluationOnce(state, "operator-oidc.json", append(data, '\n')); err != nil {
+		return err
+	}
+	if reviewer.Subject == "" {
+		return nil
+	}
+	signerKey, err := os.ReadFile(filepath.Join(state, "operator-delegation-key.pem"))
+	if err != nil {
+		return errors.New("cannot read private operator delegation key")
+	}
+	clientChain, err := os.ReadFile(filepath.Join(state, "client-chain.pem"))
+	if err != nil {
+		return errors.New("cannot read Control Room client certificate")
+	}
+	trust, err := evaluationDelegationTrustFile(inventory.Config, issuer, organization, signerKey, clientChain, admin, reviewer)
+	if err != nil {
+		return err
+	}
+	var parsed operatordelegation.Config
+	if json.Unmarshal(trust, &parsed) != nil || parsed.Validate() != nil {
+		return errors.New("verified operator delegation trust is invalid")
+	}
+	return writeEvaluationOnce(state, evaluationDelegationTrust, trust)
+}
+
+// writeEvaluationOnce stores a verified identity binding once and refuses any
+// later difference rather than silently rebinding grants.
+func writeEvaluationOnce(state, name string, data []byte) error {
+	existing, err := os.ReadFile(filepath.Join(state, name))
 	if err == nil {
 		if string(existing) != string(data) {
 			return errors.New("stored operator identity changed; refuse implicit rebind")
@@ -505,7 +576,7 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 		return err
 	}
 	defer root.Close()
-	return writePrivate(root, "operator-oidc.json", data)
+	return writePrivate(root, name, data)
 }
 
 func evaluationDockerEnvironment() []string {

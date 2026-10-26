@@ -205,8 +205,14 @@ func resetEvaluationAdmin(state string, now time.Time) (string, error) {
 		Clients   []map[string]any    `json:"staticClients"`
 	}
 	var document map[string]json.RawMessage
-	if err != nil || json.Unmarshal(dexData, &dex) != nil || json.Unmarshal(dexData, &document) != nil || len(dex.Passwords) != 1 || len(dex.Clients) != 1 || dex.Passwords[0]["email"] != "admin@evaluation.invalid" || dex.Clients[0]["id"] != "zpr-control-room" {
-		return "", errors.New("recovery supports only the bundled single-admin Dex configuration")
+	// Subject-link installs add exactly one independent reviewer, left unchanged.
+	passwords := 1
+	if inventory.Config.subjectLinks() {
+		passwords = 2
+	}
+	if err != nil || json.Unmarshal(dexData, &dex) != nil || json.Unmarshal(dexData, &document) != nil || len(dex.Passwords) != passwords || len(dex.Clients) != 1 || dex.Passwords[0]["email"] != "admin@evaluation.invalid" || dex.Clients[0]["id"] != "zpr-control-room" ||
+		(passwords == 2 && dex.Passwords[1]["email"] != evaluationReviewerEmail) {
+		return "", errors.New("recovery supports only the bundled administrator (and subject-link reviewer) Dex configuration")
 	}
 	randomSecret := func() (string, error) {
 		value := make([]byte, 32)
@@ -277,8 +283,10 @@ func resetEvaluationAdmin(state string, now time.Time) (string, error) {
 		}
 	}
 	// Never leave the previous subject's grants available for manual package startup.
-	if err := root.Remove("operator-oidc.json"); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", errors.New("cannot retire old operator grants; keep stopped and restore backup")
+	for _, name := range []string{"operator-oidc.json", evaluationDelegationTrust} {
+		if err := root.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", errors.New("cannot retire old operator grants; keep stopped and restore backup")
+		}
 	}
 	if err := syncRecoveryDirectory(root); err != nil {
 		return "", err

@@ -31,8 +31,18 @@ func recoveryTempDir(t *testing.T) string {
 
 func recoveryFixture(t *testing.T) (string, evaluationInventory) {
 	t.Helper()
-	config := testEvaluationConfig()
+	return recoveryFixtureWith(t, testEvaluationConfig())
+}
+
+func recoveryFixtureWith(t *testing.T, config evaluationConfig) (string, evaluationInventory) {
+	t.Helper()
 	ports := []*int{&config.RoomPort, &config.ServicePort, &config.OIDCPort, &config.LDAPPort, &config.LogPort}
+	if config.VisaService {
+		ports = append(ports, &config.VSAdminPort, &config.VSAPIPort, &config.ValkeyPort)
+	}
+	if config.subjectLinks() {
+		ports = append(ports, &config.SnapshotDeliveryPort)
+	}
 	listeners := []net.Listener{}
 	for _, port := range ports {
 		listener, err := net.Listen("tcp4", "127.0.0.1:0")

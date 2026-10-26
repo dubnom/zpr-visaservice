@@ -45,6 +45,8 @@ type evaluationConfig struct {
 	VSAdminPort int  `json:"vs_admin_port,omitempty"`
 	VSAPIPort   int  `json:"vs_api_port,omitempty"`
 	ValkeyPort  int  `json:"valkey_port,omitempty"`
+	// Control-Service pinned snapshot delivery listener for the loopback VS.
+	SnapshotDeliveryPort int `json:"snapshot_delivery_port,omitempty"`
 }
 
 // Runtime-only executables are not frozen: upgrading them keeps install identity.
@@ -84,6 +86,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&config.VSAdminPort, "vs-admin-port", 18182, "with -visa-service: loopback Visa Service admin HTTPS port")
 	flags.IntVar(&config.VSAPIPort, "vs-api-port", 15002, "with -visa-service: loopback Visa Service VSAPI port")
 	flags.IntVar(&config.ValkeyPort, "valkey-port", 16379, "with -visa-service: loopback private Valkey port")
+	flags.IntVar(&config.SnapshotDeliveryPort, "snapshot-delivery-port", 18793, "with -visa-service: loopback Control-Service subject snapshot delivery mTLS port; 0 disables the subject-link publication cycle (installs created before it existed)")
 	runtime := evaluationRuntimeOptions{}
 	flags.StringVar(&runtime.VisaServiceBinary, "vs-binary", "", "with -visa-service: absolute path of a built vs executable (cargo build -p vs)")
 	flags.StringVar(&runtime.ValkeyServer, "valkey-server", "valkey-server", "with -visa-service: valkey-server executable name or absolute path")
@@ -96,7 +99,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	visaOnly := false
 	flags.Visit(func(f *flag.Flag) {
 		switch f.Name {
-		case "vs-admin-port", "vs-api-port", "valkey-port", "vs-binary", "valkey-server":
+		case "vs-admin-port", "vs-api-port", "valkey-port", "snapshot-delivery-port", "vs-binary", "valkey-server":
 			visaOnly = true
 		}
 	})
@@ -105,7 +108,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "Visa Service port/executable flags require -visa-service")
 			return 2
 		}
-		config.VSAdminPort, config.VSAPIPort, config.ValkeyPort = 0, 0, 0
+		config.VSAdminPort, config.VSAPIPort, config.ValkeyPort, config.SnapshotDeliveryPort = 0, 0, 0, 0
 	}
 	if *state == "" || flags.NArg() != 0 {
 		fmt.Fprintln(stderr, "usage: zpr-lab-bootstrap -evaluation -state DIRECTORY [-visa-service -vs-binary FILE] [-render-only | -reset-admin [-password-file FILE]]")
@@ -170,7 +173,7 @@ func (config evaluationConfig) validate() error {
 		return errors.New("logging platform must be linux/amd64 or linux/arm64")
 	}
 	ports := map[int]bool{}
-	if !config.VisaService && (config.VSAdminPort != 0 || config.VSAPIPort != 0 || config.ValkeyPort != 0) {
+	if !config.VisaService && (config.VSAdminPort != 0 || config.VSAPIPort != 0 || config.ValkeyPort != 0 || config.SnapshotDeliveryPort != 0) {
 		return errors.New("Visa Service ports require -visa-service")
 	}
 	for _, port := range config.ports() {
@@ -187,7 +190,16 @@ func (config evaluationConfig) ports() []int {
 	if config.VisaService {
 		ports = append(ports, config.VSAdminPort, config.VSAPIPort, config.ValkeyPort)
 	}
+	if config.subjectLinks() {
+		ports = append(ports, config.SnapshotDeliveryPort)
+	}
 	return ports
+}
+
+// subjectLinks reports whether the subject-link review, signing and pinned
+// delivery cycle to the loopback VS is configured.
+func (config evaluationConfig) subjectLinks() bool {
+	return config.VisaService && config.SnapshotDeliveryPort != 0
 }
 
 func (config evaluationConfig) browserHost() string {
@@ -332,6 +344,9 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 	if config.VisaService {
 		required = append(required, evaluationVisaFiles...)
 	}
+	if config.subjectLinks() {
+		required = append(required, evaluationSubjectLinkFiles...)
+	}
 	if len(inventory.Files) != len(required) {
 		return inventory, errors.New("evaluation inventory is missing required files")
 	}
@@ -379,7 +394,11 @@ func generateEvaluation(state string, config evaluationConfig, now time.Time) (m
 		leafKey.D.SetInt64(0)
 		files[name+"-chain.pem"], files[name+"-key.pem"] = append(leaf, caPEM...), secret
 	}
-	for _, name := range []string{"ldap-admin", "ldap-reader", "logging-admin", "operator-admin", "oidc-room-client"} {
+	secrets := []string{"ldap-admin", "ldap-reader", "logging-admin", "operator-admin", "oidc-room-client"}
+	if config.subjectLinks() {
+		secrets = append(secrets, "operator-reviewer")
+	}
+	for _, name := range secrets {
 		random := make([]byte, 32)
 		if _, err := rand.Read(random); err != nil {
 			return nil, inventory, err
@@ -443,6 +462,13 @@ dn: ou=Groups,dc=evaluation,dc=zpr
 objectClass: organizationalUnit
 ou: Groups
 `, inventory.InstallID, reader)
+	subjectUUID := ""
+	if config.subjectLinks() {
+		if subjectUUID, err = evaluationSubjectUUID(); err != nil {
+			return nil, inventory, err
+		}
+		files["directory.ldif"] = append(files["directory.ldif"], evaluationSubjectLDIF(subjectUUID)...)
+	}
 	files["serve-directory.sh"] = []byte(`#!/bin/sh
 set -eu
 umask 077
@@ -494,6 +520,14 @@ ZO_LOG_LEVEL=warn
 	if err != nil {
 		return nil, inventory, errors.New("cannot protect bootstrap administrator credential")
 	}
+	staticPasswords := []map[string]string{{"email": "admin@evaluation.invalid", "hash": string(hash), "username": "Evaluation Administrator", "userID": inventory.InstallID}}
+	if config.subjectLinks() {
+		reviewer, err := evaluationReviewerPassword(files["operator-reviewer.secret"])
+		if err != nil {
+			return nil, inventory, err
+		}
+		staticPasswords = append(staticPasswords, reviewer)
+	}
 	dexConfig := map[string]any{
 		"issuer":           config.browserOrigin(config.OIDCPort),
 		"storage":          map[string]any{"type": "sqlite3", "config": map[string]string{"file": "/var/lib/dex/dex.db"}},
@@ -501,7 +535,7 @@ ZO_LOG_LEVEL=warn
 		"oauth2":           map[string]any{"responseTypes": []string{"code"}, "passwordConnector": "local"},
 		"enablePasswordDB": true,
 		"staticClients":    []map[string]any{{"id": "zpr-control-room", "name": "ZPR Evaluation Control Room", "secret": string(files["oidc-room-client.secret"]), "redirectURIs": []string{config.browserOrigin(config.RoomPort) + "/auth/operator/callback"}}},
-		"staticPasswords":  []map[string]string{{"email": "admin@evaluation.invalid", "hash": string(hash), "username": "Evaluation Administrator", "userID": inventory.InstallID}},
+		"staticPasswords":  staticPasswords,
 		"logger":           map[string]string{"level": "error", "format": "json"},
 	}
 	data, err := json.MarshalIndent(dexConfig, "", "  ")
@@ -530,6 +564,12 @@ ZO_LOG_LEVEL=warn
 			return nil, inventory, err
 		}
 		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte("Loopback Visa Service with the bundled test-signed evaluation policy and private Valkey. No nodes, adapters or enforcement.\n")...)
+	}
+	if config.subjectLinks() {
+		if err := generateEvaluationSubjectLinks(files, state, inventory, now, subjectUUID, ca, key); err != nil {
+			return nil, inventory, err
+		}
+		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte("Subject-link review, publication and pinned snapshot delivery to the loopback VS use EVALUATION-ONLY keys; see SUBJECT-LINKS.txt. Snapshots are fetched and checkpointed, never enforced.\n")...)
 	}
 	registration := evaluationSourceRegistration(state, inventory)
 	data, err = json.MarshalIndent(registration, "", "  ")

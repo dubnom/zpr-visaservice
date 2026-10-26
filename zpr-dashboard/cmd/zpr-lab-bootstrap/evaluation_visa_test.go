@@ -141,7 +141,7 @@ func TestEvaluationVisaServiceFlags(t *testing.T) {
 		t.Fatalf("duplicate Visa Service port: code %d", code)
 	}
 	stderr.Reset()
-	if code := run([]string{"-evaluation", "-state", filepath.Join(parent, "c"), "-render-only", "-visa-service"}, &stdout, &stderr); code != 0 {
+	if code := run([]string{"-evaluation", "-state", filepath.Join(parent, "c"), "-render-only", "-visa-service", "-snapshot-delivery-port", "0"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("render with -visa-service: code %d: %s", code, stderr.String())
 	}
 	if _, err := readEvaluation(filepath.Join(parent, "c"), testEvaluationVisaConfig()); err != nil {
