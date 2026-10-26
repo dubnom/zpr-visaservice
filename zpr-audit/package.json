@@ -1,0 +1,13 @@
+{
+  "name": "zpr-audit",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "sync-assets": "node sync-assets.mjs",
+    "start": "python3 -m http.server 49282 --bind 127.0.0.1 --directory public",
+    "test": "node --test tests/fixtures.test.mjs tests/inventory.test.mjs && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

@@ -2,6 +2,11 @@
 
 ZPR visa service implementation (under active development).
 
+The standalone [ZPR Audit application](zpr-audit/README.md) provides sample access
+exploration, illustrative policy history and tailored reports, plus a separate
+read-only import of operator-supplied assertion-settings exports. It reuses
+shared UI palette assets without requiring Control Room or Simulator to run.
+
 For external attribute-provider authors and deployment operators, see the
 [trusted-source integration guide](TRUSTED_SOURCE_INTEGRATION.md): lookup
 protocol, independent policy/transport configuration, failure semantics,

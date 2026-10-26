@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZPR Audit — sample workspace</title>
+<link rel="stylesheet" href="shared/palette.css">
+<link rel="stylesheet" href="app.css">
+
+<header><span class="logo">ZPR</span><span>Audit</span><span class="env">NORTHSTAR · SAMPLE</span><span class="grow"></span><span class="muted">Standalone workspace</span></header>
+<div class="layout">
+<aside aria-label="Audit workspace"><div class="active">Audit workspace</div><div>Northstar Labs<br><small>Fictional organization</small></div><div><strong>Evidence mode</strong><br>Sample fixtures only</div><small>Independent of Control Room and Simulator.<br>No login or live sources configured.</small></aside>
+<main>
+<div class="prototype"><strong>SAMPLE DATA ONLY — NO LIVE CONNECTIONS.</strong></div>
+<div class="title-row"><h1>Audit</h1><span class="pill">Northstar Labs</span><span class="grow"></span><button data-ni="Save investigation">Save investigation</button><button id="report-button">Report / print</button><button class="help-trigger" id="help-button" aria-label="Help for this page" aria-haspopup="dialog" aria-controls="audit-help">Help</button></div>
+<nav class="tabs" aria-label="Audit views"><button class="selected" data-tab="access" aria-current="page">Access explorer</button><button data-tab="policy">Policy changes</button><button data-tab="assertions">Assertions</button><button data-tab="history">History</button><button data-tab="reports">Reports</button><button data-tab="inventory">Imported assertions</button></nav>
+
+<section id="inventory" class="hidden">
+<h2>Imported assertion settings</h2>
+<p>Read-only snapshot import · separate from sample workspaces · no network requests.</p>
+<label>Assertion-settings JSON (maximum 256 KiB)<input id="inventory-file" type="file" accept=".json,application/json"></label>
+<p id="inventory-status" role="status">No snapshot imported.</p>
+<p id="inventory-error" role="alert"></p>
+<button id="inventory-clear" disabled>Clear imported snapshot</button>
+<div id="inventory-record" class="hidden">
+<div class="panel"><h3>Organization and provenance</h3><div id="inventory-metadata"></div></div>
+<div class="panel"><h3>Compare an imported baseline</h3>
+<label>Baseline assertion-settings JSON (same organization, maximum 256 KiB)<input id="baseline-file" type="file" accept=".json,application/json"></label>
+<p id="baseline-status" role="status">No baseline imported.</p><p id="baseline-error" role="alert"></p>
+<button id="baseline-clear" disabled>Clear baseline</button>
+<div id="baseline-results" class="hidden"></div>
+<div id="comparison-review" class="hidden">
+<details id="baseline-provenance">
+<summary>Baseline source provenance · operator-entered, unverified</summary>
+<div class="filters">
+<label>Baseline source system<select id="baseline-system"><option value="unspecified">Not specified</option><option value="policy-service">Policy-Service export</option><option value="control-room">Control Room export</option></select></label>
+<label class="wide">Baseline source reference (optional, no credentials)<input id="baseline-reference" maxlength="1000"></label>
+<label>Baseline retrieved at (optional, UTC)<input id="baseline-retrieved" placeholder="2026-10-26T14:00:00Z" maxlength="20"></label>
+</div>
+<p id="baseline-provenance-status" role="status"></p><p id="baseline-provenance-error" role="alert"></p>
+<small>Independent of current-snapshot provenance. Retrieval cannot be later than this baseline's import time. No freshness or chronological history is verified.</small>
+</details>
+<h3>Review differing line positions</h3>
+<div class="filters">
+<label class="wide">Find literal text on either side<input id="comparison-search" type="search" maxlength="1000"></label>
+<label>Position type<select id="comparison-kind"><option value="all">All differences</option><option value="changed">Changed</option><option value="added">Added</option><option value="removed">Removed</option></select></label>
+<label>Case sensitivity<select id="comparison-case"><option value="insensitive">Ignore case</option><option value="sensitive">Match case</option></select></label>
+<button id="comparison-reset">Reset comparison filters</button>
+</div>
+<p id="comparison-count" role="status"></p>
+<div class="row"><button id="comparison-page-previous">Previous page</button><span id="comparison-page" role="status"></span><button id="comparison-page-next">Next page</button></div>
+<div id="comparison-lines" class="comparison-table"></div>
+<div class="row">
+<button id="comparison-previous">Previous difference</button><button id="comparison-next">Next difference</button>
+<label>Go to differing position<input id="comparison-position" inputmode="numeric" placeholder="Line position"></label><button id="comparison-go">Go to position</button>
+<button id="comparison-note">Add comparison reference to notes</button>
+</div>
+<p id="comparison-selection" role="status"></p><p id="comparison-error" role="alert"></p>
+<small>Filters and pages affect review only. Reports always include every difference and both full sources.</small>
+</div>
+</div>
+<div class="panel"><h3>Assertion source · as exported</h3>
+<p id="source-summary" role="status"></p>
+<div class="filters">
+<label class="wide">Find literal text<input id="source-search" type="search" maxlength="1000"></label>
+<label>Case sensitivity<select id="source-case"><option value="insensitive">Ignore case</option><option value="sensitive">Match case</option></select></label>
+<button id="source-previous">Previous match</button><button id="source-next">Next match</button><button id="source-reset">Reset source search</button>
+</div>
+<p id="source-matches" role="status"></p>
+<div class="row"><label>Go to line<input id="source-line" inputmode="numeric" placeholder="Line number"></label><button id="source-go">Go</button><button id="source-note">Add selected line reference to notes</button></div>
+<p id="source-error" role="alert"></p>
+<pre id="inventory-source" class="code" tabindex="0" aria-label="Imported source text with line numbers"></pre>
+</div>
+<div class="panel"><h3>Report preparation · operator-entered, unverified</h3>
+<div class="filters">
+<label>Source system<select id="inventory-system"><option value="unspecified">Not specified</option><option value="policy-service">Policy-Service export</option><option value="control-room">Control Room export</option></select></label>
+<label class="wide">Source reference (optional, no credentials)<input id="inventory-reference" maxlength="1000" placeholder="Endpoint, deployment label or export reference"></label>
+<label>Retrieved at (optional, UTC)<input id="inventory-retrieved" placeholder="2026-10-26T14:00:00Z" maxlength="20"></label>
+<label>Prepared by<input id="inventory-preparer" maxlength="200"></label>
+<label class="wide">Report purpose<input id="inventory-purpose" maxlength="1000"></label>
+</div>
+<label>Reviewer notes (optional)<textarea id="inventory-notes" rows="3" maxlength="4000"></textarea></label>
+<small>These labels do not verify origin or authorize delivery. Retrieval time is optional and distinct from import time. Do not enter secrets.</small>
+</div>
+<p>No evaluation performed. Roles, individual assertion IDs, policy references, source freshness and historical outcomes are not established by this settings export. Empty source text means the export contains no source text, not that no assertions exist elsewhere.</p>
+</div>
+</section>
+
+<section id="access">
+<div class="panel">
+<div class="seg" aria-label="Access direction"><button class="selected" data-direction="service">Service → users / groups / machines</button><button data-direction="identity">User / group / machine → services</button></div>
+<div class="filters">
+<label id="subject-category-label" class="hidden">Subject category<select id="subject-category"><option value="user">User</option><option value="group">Group</option><option value="machine">Machine</option></select></label>
+<label id="target-label" class="wide"><span id="target-caption">Service</span><select id="target"></select></label>
+<label id="cohort-label"><span id="cohort-caption">Request context</span><select id="cohort"></select></label>
+<label id="group-filter-label">Group membership<select id="group-filter"><option value="all">All groups</option><option>Finance</option><option>Engineering</option><option>Employees</option><option>Managed devices</option><option value="unknown">Membership unavailable</option></select></label>
+<label>Policy revision<select id="access-revision"><option>r42 · Active</option><option>r41 · Previous</option></select></label>
+<button class="primary" id="show-access">Show sample analysis</button>
+</div>
+<div class="context"><strong>Selected context:</strong> <span id="access-context"></span> <button class="link" id="context-button">Inspect context</button></div>
+<details id="membership-context"><summary>Membership scope and interpretation</summary><div class="context" id="membership-summary"></div></details>
+</div>
+<div class="row spaced"><div><h2 id="access-heading">Who could access Finance Reports?</h2><small id="coverage"></small></div><label>Outcome<select id="outcome"><option value="all">All outcomes</option><option value="permitted">Permitted</option><option value="denied">Denied</option><option value="conditional">Context required</option><option value="unknown">Indeterminate</option></select></label></div>
+<div class="row" id="candidate-tools"><label class="wide">Search candidate name or ID<input type="search" id="candidate-search" placeholder="e.g. Alice or user:alice"></label><label id="candidate-kind-label">Result type<select id="candidate-kind"><option value="all">Users, groups and machines</option><option value="user">Users</option><option value="group">Groups</option><option value="machine">Machines</option></select></label><label>Sort candidates<select id="candidate-sort"><option value="name">Name A–Z</option><option value="reverse">Name Z–A</option><option value="outcome">Outcome, then name</option></select></label><label>Rows per page<select id="candidate-size"><option>25</option><option>10</option><option>2</option><option>5</option></select></label><button id="access-reset">Reset filters</button><button id="browse-groups">Browse groups</button></div><p id="search-count" role="status" class="muted"></p>
+<div class="stats" id="access-stats"></div>
+<div id="category-results"></div>
+<div class="panel" style="padding:0"><div class="table-wrap"><table><thead><tr><th id="entity-column">User / machine</th><th>Group membership</th><th>Policy result</th><th>Reason / dependency</th><th>Investigate</th></tr></thead><tbody id="access-rows"></tbody></table></div></div>
+<div class="row spaced"><span id="page-summary" role="status"></span><div class="row"><button id="page-previous">Previous page</button><button id="page-next">Next page</button></div></div>
+<button data-ni="Evaluate against production policy engine">Run live analysis · Not Implemented</button>
+</section>
+
+<section id="policy" class="hidden">
+<div class="panel filters"><label class="wide">Policy<select id="policy-name"><option>Corporate service access</option></select></label><label>Before<select id="before"><option>r41</option><option>r40</option></select></label><label>After<select id="after"><option>r42 · Active</option><option>r41</option></select></label><button class="primary" id="compare">Show sample comparison</button></div>
+<p id="policy-scope" role="status" class="note"></p>
+<div class="split" id="policy-results">
+<div>
+<div class="panel"><div class="row spaced"><h2>r41 → r42</h2><span class="badge">ILLUSTRATIVE DIFF</span></div><p>Restrict Finance Reports to Finance staff on managed devices.</p><div class="code"><span class="removed">− Finance Reports: employee membership required</span>
+<span class="added">+ Finance Reports: finance membership required</span>
+<span class="added">+ Finance Reports: managed device required</span>
+  Payroll API: unchanged</div><button data-ni="Open exact policy source">Open exact source · Not Implemented</button> <button data-ni="Compare membership snapshots independently of policy revisions">Compare membership changes · Not Implemented</button></div>
+<div class="panel"><div class="row spaced"><h2>Potential access impact</h2><span class="pill">Same pinned context</span></div><p class="muted">Illustrative outcomes for 4 selected request pairs—not all users or services.</p><table><thead><tr><th>Request</th><th>r41</th><th>r42</th></tr></thead><tbody><tr><td>Alice · managed laptop → Reports</td><td>Permitted</td><td>Permitted</td></tr><tr><td>Bob · managed laptop → Reports</td><td>Permitted</td><td><span class="status denied">Newly denied</span></td></tr><tr><td>Priya · device unspecified → Reports</td><td>Permitted</td><td><span class="status conditional">Context required</span></td></tr><tr><td>Payroll worker → Payroll API</td><td>Permitted</td><td>Permitted</td></tr></tbody></table><p><small>Identity/source inputs held constant in this scenario. Historical attributes were not replayed.</small></p><button id="impact-access">Explore affected service</button></div>
+</div>
+<div class="panel"><h2>Revision timeline</h2><div class="timeline"><div class="event"><time>26 Oct · 09:12</time><strong>r42 activated</strong><p>2 of 3 acknowledgments observed</p><span class="status conditional">Partial activation evidence</span></div><div class="event"><time>26 Oct · 09:10</time><strong>r42 published</strong><p>Approved by Sam Rivera · review CR-128</p><button class="link" data-ni="Open policy review CR-128">Review details</button></div><div class="event"><time>26 Oct · 08:45</time><strong>r42 saved &amp; validated</strong><p>Author: Morgan Lee</p></div><div class="event"><time>23 Oct · 14:20</time><strong>r41 activated</strong><p>Previous revision</p></div></div><div class="note">Published is not the same as activated everywhere. Exact enforcement scope must be retained with each acknowledgment.</div><button id="policy-history">View policy events</button></div>
+</div>
+</section>
+
+<section id="assertions" class="hidden">
+<h2>Assertion review</h2>
+<div class="panel filters"><label class="wide">Search assertions<input type="search" id="assertion-search" placeholder="Name, revision ID, definition, policy or source"></label><label>Assertion role<select id="assertion-role"><option value="all">All roles</option><option value="enforcing">Enforcing</option><option value="diagnostic">Diagnostic only</option></select></label><button id="assertion-reset">Reset assertion filters</button></div>
+<p id="assertion-count" role="status"></p>
+<div class="split"><div class="panel"><h3>Sample assertion catalog</h3><div id="assertion-list" class="seg"></div></div><div class="panel">
+<h3 id="assertion-heading"></h3><div id="assertion-details"></div>
+<div class="row"><button id="assertion-policy">View referenced policy fixture</button><button id="assertion-access">Explore referenced service</button><button id="assertion-add">Add selected assertion to pack</button></div>
+<p id="assertion-feedback" role="status"></p>
+<button data-ni="Retrieve executable assertion source and historical evaluations">Authoritative assertion evidence · Not Implemented</button>
+</div></div>
+</section>
+
+<section id="history" class="hidden">
+<div class="panel filters"><label>Entity type<select id="history-kind"><option>Visa</option><option>User</option><option>Machine</option><option>Service</option><option>Policy</option></select></label><label class="wide">Entity reference<input id="history-ref" value="visa-demo-7f23"></label><label>Time range<select id="history-window"><option>Last 24 hours</option><option>Last 7 days</option><option>Custom range</option></select></label><button class="primary" id="show-history">Show sample history</button></div>
+<div class="split"><div class="panel"><div class="row spaced"><h2 id="history-heading">Visa · visa-demo-7f23</h2><span class="pill">Sample timeline</span></div><p class="muted">Observed events and evidence gaps. Arrival order may differ from event time.</p><div id="history-events" class="timeline"></div></div><div><div class="panel"><h2>Investigation context</h2><div id="history-context"></div><button id="history-access">Explore potential access</button></div><div class="panel"><h2>Evidence coverage</h2><p><span class="status conditional">Incomplete · sample scenario</span></p><p>Visa Service and destination adapter observed. Source-adapter acknowledgment unavailable.</p><small>Retention: 7-day sample window.<br>No matching record does not prove an action never happened.</small><p><button data-ni="Inspect ingestion health">Inspect ingestion health</button></p></div></div></div>
+<button data-ni="Query persistent history sources">Query live history · Not Implemented</button>
+</section>
+<section id="reports" class="hidden">
+<div class="row spaced"><h2>Tailored reports</h2><button data-ni="Load saved report configuration">Load saved pack</button></div>
+<div class="split"><div>
+<div class="panel"><h3>1. Choose a template</h3><label>Search templates<input type="search" id="template-search" placeholder="Name or description"></label><p id="template-count" role="status"></p><div id="template-catalog"></div></div>
+<div class="panel"><h3>2. Tailor this report</h3><h4 id="template-name"></h4><div class="filters"><label id="template-category-label" class="hidden">Identity category<select id="template-category"><option value="user">Users</option><option value="machine">Machines</option></select></label><label class="wide">Subject / scope<select id="template-scope"></select></label></div><details><summary>Template description and included sections</summary><p id="template-description" class="muted"></p><p id="template-sections" class="note"></p></details><button id="template-preview">Preview template</button> <button id="pack-add">Add to pack</button> <button id="pack-add-all">Add all scopes</button> <button id="pack-remove-template">Remove this template's reports</button><p id="pack-feedback" role="status"></p></div>
+</div><div>
+<div class="panel"><h3>3. Review pack</h3><p id="pack-summary" role="status"></p><details><summary>Template coverage checklist</summary><p>Assembly checklist only, not evidence completeness or compliance. No template is mandatory.</p><ul id="pack-coverage"></ul></details><p id="pack-empty" class="muted">Add one or more reports. You can remove or reorder them before previewing.</p><ol id="pack-list"></ol><button id="pack-clear">Clear pack</button><div class="note">Every report retains provenance, sample-data markings and evidence limitations. Tailoring cannot remove these warnings.</div></div>
+<div class="panel"><h3>4. Shared reporting details</h3><div class="filters"><label class="wide">Pack title<input id="pack-title" value="Northstar access review"></label><label class="wide">Prepared by<input id="pack-author" placeholder="Name / audit team"></label><label class="wide">Purpose / audience<input id="pack-purpose" value="Quarterly access review · internal auditors"></label><label>Period start (UTC date)<input type="date" id="pack-start" value="2026-10-26"></label><label>Period end (UTC date)<input type="date" id="pack-end" value="2026-10-26"></label></div><p class="note">Evidence cutoff: 26 Oct 2026, 10:30 UTC · fixed fictional snapshot, not historical replay. Reporting dates are metadata only; they do not date-filter these fixtures. Audience is a label, not an access grant.</p><p id="pack-error" role="alert"></p><button class="primary" id="pack-preview">Preview sample pack</button> <button data-ni="Schedule report generation and delivery">Schedule · Not Implemented</button></div>
+<div class="panel"><label>Reviewer notes (optional; included in downloaded pack)<textarea id="pack-notes" rows="4" maxlength="4000" placeholder="Questions, follow-ups, or review context. Do not enter sensitive data."></textarea></label><p class="note">User-entered commentary, not verified evidence. Notes cannot replace mandatory limitations and remain temporary until downloaded.</p></div>
+</div></div>
+</section>
+<footer>ZPR Audit · Sample workspace · All names, revisions, IDs and events are fictional · No production connections · Reload resets the workspace</footer>
+</main></div>
+<dialog id="detail"><div class="row spaced"><h2 id="detail-title"></h2><button id="close-detail" aria-label="Close dialog">Close</button></div><div id="detail-body"></div></dialog>
+<dialog id="audit-help" aria-labelledby="audit-help-title" aria-describedby="audit-help-intro">
+<div class="help-heading"><div><p class="eyebrow">HELP · CURRENT PAGE</p><h2 id="audit-help-title"></h2></div><button data-help-close aria-label="Close help">Close</button></div>
+<p id="audit-help-intro"></p>
+<h3>Workflow</h3><ol id="audit-help-steps"></ol>
+<h3>If something fails</h3><p id="audit-help-recovery"></p>
+<footer><a id="audit-help-docs" target="_blank" rel="noopener">Read full help</a><button data-help-close>Close</button></footer>
+</dialog>
+<p id="print-empty">No report prepared. Use Report / print or Reports to prepare a sample report preview before printing.</p>
+<section id="report-preview" class="hidden" aria-label="Report preview"><div class="row spaced report-controls"><h2>Report preview</h2><div class="row"><button id="report-back">Back to Audit</button><button id="report-download">Download HTML</button><button class="primary" id="report-print">Print / Save PDF</button></div></div><article id="report-document"></article></section>
+
+<script src="fixtures.js" defer></script>
+<script src="ui.js" defer></script>
+<script src="inventory.js" defer></script>
+<script src="app.js" defer></script>
+</html>
