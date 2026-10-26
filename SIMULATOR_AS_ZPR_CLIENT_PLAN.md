@@ -527,7 +527,7 @@ Depends on M1 and the required M2 operator contracts.
   endpoint identities. For the demo, pre-enroll a small fixed set through
   existing supported tools rather than making native key/helper development a
   prerequisite. Persist each identity; do not clone endpoint keys.
-- [ ] **U05:** Run normal allow/deny workloads against services. Compare one
+- [x] **U05:** Run normal allow/deny workloads against services. Compare one
   generated client and one non-Simulator client under equivalent policy.
   Scenario intent/expected outcomes stay in Simulator; Control Room reports
   only independently observed production events.
