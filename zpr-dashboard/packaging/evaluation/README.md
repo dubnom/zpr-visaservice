@@ -220,7 +220,9 @@ sh packaging/evaluation/bootstrap.sh \
 - **Build:** `build.sh` compiles `ph`, `ph-cli` (`zpr-core`), `vs` and
   `vs-admin` (this worktree) and `zplc` (`zpr-compiler`) for Linux in a builder
   image. The sibling checkouts are mounted read-only, and `ZPR_WORKSPACE`
-  overrides their parent. The cargo cache and target live under
+  overrides their parent. `ZPR_CORE_DIR` overrides only `zpr-core`, for
+  example to build a zpr-core fix branch from its own worktree; tag such
+  builds separately with `-tag`. The cargo cache and target live under
   `.evaluation-build/data-plane/`. `-data-plane-image` (default
   `zpr-evaluation-data-plane:local`) is runtime-only, like `-vs-binary`. It is
   never pulled.

@@ -627,8 +627,9 @@ Open defects found while running the live installs. They are outside the
 Simulator/Control Room boundary work, but they affect long-running
 environments, so each must be fixed or explicitly accepted before M5.
 
-- [ ] **DP-K01 (open, found 2026-10-26, owner: zpr-core adapter/node):** an
-  endpoint adapter whose dock link fails keep-alive never recovers.
+- [ ] **DP-K01 (fixed on a zpr-core branch, live rollout pending; found
+  2026-10-26, owner: zpr-core adapter/node):** an endpoint adapter whose dock
+  link fails keep-alive never recovers.
   - **Seen:** once, on northstar endpoint-02, about 4 minutes after start
     while `make test` loaded the host. Both the node (link 5) and the adapter
     logged "failed to respond to keep-alive messages" at 15:27:00Z. The node
@@ -647,15 +648,50 @@ environments, so each must be fixed or explicitly accepted before M5.
     CA and passwords are kept). After that, all 18 Simulator probes matched.
   - **Evidence:** `zpr-dashboard/.evaluation-build/stuck-endpoint-02-adapter.log`
     and `stuck-endpoint-02-node.log` (local, not committed).
-  - **To fix:**
-    1. Reproduce by pausing an endpoint container (`docker pause`) past the
-       keep-alive timeout, then unpausing it.
-    2. Make the adapter rebuild its Noise session from scratch after a
-       failed keep-alive, rather than retrying the stale handshake.
-    3. Find which node state keeps ICMP flows from re-requesting visas after
-       a peer link is removed and re-added.
-    4. Add a regression test for both.
-  - Until it is fixed, the Simulator's workload mismatches are the detector.
+  - **Reproduced** on a two-endpoint trial install by pausing endpoint-02 for
+    10 s (`docker pause`): TCP recovered (each connection is a new 5-tuple)
+    but ICMP to and from endpoint-02 stayed broken.
+  - **Root causes (three, all in `zpr-core/adapter/ph`):**
+    1. Revoking a visa (VS revocation, expiry, or ejection for a removed
+       link) silently removed the node's PFT entries on *surviving* adapter
+       links. Those adapters kept sending on the stale stream ID and the node
+       dropped it ("Unknown Stream ID"). ICMP echo always reuses one 5-tuple,
+       so it never re-bound.
+    2. Tether IDs are scoped to the dock link, but the adapter kept its ELT
+       across a dock-link restart, so the restarted adapter also sent on
+       stale IDs.
+    3. **DP-K02:** when a replacement adapter re-authorized an address before
+       the stale link timed out, the stale link's deregistration made the VS
+       delete the new actor (`SourceNotFound`/`DestNotFound` for good). This
+       is the likely cause of the "never recovers" symptom after the
+       container replacement above.
+  - **Fix:** zpr-core branch `dp-k01/link-recovery`, commit `9e7fc00` (from
+    `3c7ef60`; local only, not merged into the default zpr-core checkout):
+    1. Revocation paths return the removed forwarding entries, and the node
+       sends a per-flow `StreamIdWithdrawal` to each affected adapter, which
+       drops the matching ELT entry so its next packet re-binds.
+    2. The adapter clears its ELT during dock-link cleanup.
+    3. Deregistration skips addresses now held by another live link.
+  - **Verification:**
+    - `ph` unit tests: 321 pass, including new regression tests for the
+      withdrawn entries and ELT removal/clear.
+    - Clippy warnings are identical to the `3c7ef60` baseline.
+    - On the trial install (image built with `ZPR_CORE_DIR`), these all
+      recovered every allow probe in every direction for ping and TCP: three
+      10 s and one 30 s endpoint pauses, a 10 s node pause, and replacing all
+      endpoint containers in place.
+  - **Not reproduced:** the adapter retrying "noise: handshake timeout"
+    forever. Node and endpoint pauses both re-tethered cleanly. Reopen this
+    if it recurs with the fixed image.
+  - **Follow-up (not a correctness issue):** a restarted adapter leaks its
+    stale DLT entries; the node binds fresh egress IDs, so they are not
+    reused. The node's `Pft::clear` is also still a TODO.
+  - **Remaining:** roll out to the live installs. Build with
+    `ZPR_CORE_DIR=<zpr-core worktree> sh packaging/evaluation/data-plane/build.sh`,
+    restart each install with its same command, have the Simulator recreate
+    endpoints, then confirm 0 mismatches. Merge the zpr-core branch upstream
+    separately.
+  - Until the rollout, the Simulator's workload mismatches are the detector.
 
 ### M4 - Enforce separation in builds, configuration and lifecycle
 
