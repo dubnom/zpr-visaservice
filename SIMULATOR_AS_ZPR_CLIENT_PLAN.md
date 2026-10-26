@@ -571,7 +571,10 @@ drives an evaluation install's own data plane instead.
     the install policy, `tcp/7009` and `udp/7010` are not. The handoff lists
     the listeners, and the Simulator probes each one on the next endpoint.
     Verified in a trial install: published ports echo, unpublished ports are
-    dropped by ZPR while answering locally.
+    dropped by ZPR while answering locally. Live on the northstar,
+    great-lakes and redwood installs: 18 probes per install with no
+    mismatches or errors, including across nodes. The VS admin API shows TCP
+    visas for port 7007 and `NoMatch` denials for port 7009.
   - [ ] **U05b:** compare with a client the Simulator does not run, under
     equivalent policy.
 - [x] **D5:** one evaluation install per organization for Simulator
