@@ -1,5 +1,6 @@
 let organizationCatalog = [];
 let activeOrganizationID = "";
+let activeOrganizationRuntime = "unknown";
 let organizationActivationStatus = { state: "idle" };
 let selectedOrganizationID = "";
 let selectedOrganizationDraft = null;
@@ -52,12 +53,22 @@ function organizationRuntimeLabel(organization) {
   return `${runtime.topology || "runtime unspecified"} · ${nodes.length} ${nodes.length === 1 ? "node" : "nodes"}${locations.length ? ` · ${locations.join(" / ")}` : ""}`;
 }
 
+function organizationActiveLabel() {
+  return activeOrganizationRuntime === "not_running" ? "Selected · not running in this environment" : "Active";
+}
+
+function organizationActiveTitle() {
+  if (activeOrganizationRuntime === "not_running") return "Selected in this Simulator, but none of its components appear in the connected operator environment.";
+  if (activeOrganizationRuntime === "unknown") return "Selected in this Simulator; the connected operator environment could not be checked.";
+  return "Selected and observed running in the connected operator environment.";
+}
+
 function renderOrganizationList() {
   renderOrganizationOperationStatus();
   const selected = selectedOrganizationID || activeOrganizationID;
   document.getElementById("organization-list").innerHTML = organizationCatalog.map((organization) => {
     const active = organization.id === activeOrganizationID;
-    return `<button class="organization-card${organization.id === selected ? " selected" : ""}" type="button" data-organization-id="${organizationEscape(organization.id)}" aria-pressed="${organization.id === selected}"><strong>${organizationEscape(organization.name)}${active ? " · ACTIVE" : ""}</strong><small>${organizationEscape(organization.directory.base_dn)} · ${organizationEscape(organizationRuntimeLabel(organization))} · ${organization.policies.length} policies · ${organization.services.length} services</small></button>`;
+    return `<button class="organization-card${organization.id === selected ? " selected" : ""}" type="button" data-organization-id="${organizationEscape(organization.id)}" aria-pressed="${organization.id === selected}"><strong>${organizationEscape(organization.name)}${active ? ` · ${organizationActiveLabel().toUpperCase()}` : ""}</strong><small>${organizationEscape(organization.directory.base_dn)} · ${organizationEscape(organizationRuntimeLabel(organization))} · ${organization.policies.length} policies · ${organization.services.length} services</small></button>`;
   }).join("") || '<p class="organization-empty">No bundled organizations available.</p>';
   const organization = organizationCatalog.find((item) => item.id === selected);
   if (organization) renderOrganizationDetails(organization);
@@ -132,7 +143,7 @@ function renderOrganizationDetails(organization, draft = null) {
   const activationAction = draft
     ? '<span class="organization-draft-status">Private draft · not runnable</span>'
     : isActive
-      ? '<span class="organization-active-status">Active</span>'
+      ? `<span class="organization-active-status${activeOrganizationRuntime === "not_running" ? " not-running" : ""}" title="${organizationEscape(organizationActiveTitle())}">${organizationEscape(organizationActiveLabel())}</span>`
       : `<button class="organization-activate" type="button" data-activate-organization="${draftID}" ${activationBusy ? "disabled" : ""}>${activationBusy ? `${operationLabel} · ${organizationEscape(activationProgress)}` : "Activate organization"}</button>`;
   control.innerHTML = activationAction;
   heading.append(control);
@@ -355,14 +366,16 @@ async function refreshOrganizations({ signal, isCurrent }) {
   const error = document.getElementById("organization-error");
   const nextOrganizations = data.organizations || [];
   const nextActiveID = data.active_id || "";
+  const nextActiveRuntime = data.active_runtime || "unknown";
   organizationActivationStatus = data.activation || { state: "idle" };
   window.dispatchEvent(new CustomEvent("simulator:organization-context", {
     detail: nextOrganizations.find((item) => item.id === nextActiveID) || null,
   }));
-  const signature = JSON.stringify({ active_id: nextActiveID, organizations: nextOrganizations, activation: organizationActivationStatus });
+  const signature = JSON.stringify({ active_id: nextActiveID, active_runtime: nextActiveRuntime, organizations: nextOrganizations, activation: organizationActivationStatus });
   if (signature !== organizationCatalogSignature) {
     organizationCatalog = nextOrganizations;
     activeOrganizationID = nextActiveID;
+    activeOrganizationRuntime = nextActiveRuntime;
     organizationCatalogSignature = signature;
     if (!selectedOrganizationDraft && !organizationCatalog.some((item) => item.id === selectedOrganizationID)) selectedOrganizationID = activeOrganizationID;
     renderOrganizationList();

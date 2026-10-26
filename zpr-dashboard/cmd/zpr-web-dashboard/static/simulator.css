@@ -277,6 +277,7 @@ pre { margin: 0; padding: 14px; min-height: 110px; max-height: 180px; overflow: 
 .section-head [data-organization-activation-control] { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .organization-activate, .organization-active-status { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; padding: 7px 10px; border: 1px solid var(--teal); border-radius: 4px; font: 600 11px var(--mono); }
 .organization-active-status { background: var(--simulator-active-surface); border-color: var(--simulator-active-border); color: var(--simulator-active-text); }
+.organization-active-status.not-running { background: transparent; border-color: var(--line, #8a8f98); border-style: dashed; color: inherit; }
 .organization-draft-status { display: inline-flex; min-height: 34px; align-items: center; color: var(--muted); font: 600 11px var(--mono); }
 .organization-create-modes { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px; padding: 10px; border: 1px solid var(--line); }
 .organization-create-modes legend { padding: 0 5px; color: var(--muted); font: 11px var(--mono); }

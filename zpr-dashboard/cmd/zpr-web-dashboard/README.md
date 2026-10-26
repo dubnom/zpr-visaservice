@@ -1477,6 +1477,22 @@ process, but does not yet provide user-specific record permissions: all local
 Control Room operators still share the Control-Service identity. The Policy
 Repository is not an attribute source queried during ZPL policy evaluation.
 
+## Selected versus running organization
+
+The Simulator stores its selected organization locally. That selection does not
+mean the organization is deployed in the operator environment the Simulator
+reads. `/api/simulator/organizations` returns `active_runtime`:
+
+- `running`: at least one of the selected organization's components appears in
+  the connected operator snapshot.
+- `not_running`: the snapshot is connected but none of them appear.
+- `unknown`: the snapshot is unavailable or disconnected.
+
+The Organizations page shows **Selected · not running in this environment** for
+`not_running`. This happens, for example, when the Simulator reads an
+evaluation install it cannot yet deploy into. It is a read-only observation.
+Control Room is unaffected and does not depend on it.
+
 ## Restore organization base state
 
 The Simulator Organizations page provides an explicit **Restore base state**

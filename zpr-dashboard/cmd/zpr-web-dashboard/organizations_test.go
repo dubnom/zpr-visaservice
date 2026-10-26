@@ -992,3 +992,34 @@ func TestGreatLakesThreeSiteRuntimeScenarioIsSeeded(t *testing.T) {
 		t.Fatalf("Great Lakes workday coverage people=%d machines=%d DNS=%d denials=%d requests=%d pauses=%d", len(people), len(machines), lookups, deniedProbes, requests, delays)
 	}
 }
+
+func TestObservedSimulatorRuntimeDistinguishesSelectionFromDeployment(t *testing.T) {
+	manifest := simulatorManifest{Components: []simulatorComponent{{Name: "echo-service", Agent: "echo.northstar"}, {Name: "finance-client"}}}
+	for _, test := range []struct {
+		name   string
+		status int
+		body   snapshot
+		want   string
+	}{
+		{"running", http.StatusOK, snapshot{APIStatus: "connected", Actors: []actor{{CN: "vs.zpr"}, {CN: "echo.northstar"}}}, "running"},
+		{"other environment", http.StatusOK, snapshot{APIStatus: "connected", Actors: []actor{{CN: "vs.zpr"}}}, "not_running"},
+		{"disconnected", http.StatusOK, snapshot{APIStatus: "disconnected"}, "unknown"},
+		{"unavailable", http.StatusServiceUnavailable, snapshot{}, "unknown"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if test.status != http.StatusOK {
+					http.Error(w, "unavailable", test.status)
+					return
+				}
+				json.NewEncoder(w).Encode(test.body)
+			}))
+			defer server.Close()
+			t.Setenv("SIMULATOR_OPERATOR_SERVICE_URL", "")
+			t.Setenv("SIMULATOR_CONTROL_ROOM_URL", server.URL)
+			if got := observedSimulatorRuntime(t.Context(), manifest); got != test.want {
+				t.Fatalf("observed runtime = %q, want %q", got, test.want)
+			}
+		})
+	}
+}

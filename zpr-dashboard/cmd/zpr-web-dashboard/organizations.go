@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -682,11 +683,32 @@ func handleSimulatorOrganizations(w http.ResponseWriter, r *http.Request) {
 	if identity, restricted := simulatorOperatorIdentity(r.Context()); restricted {
 		organizations, activeID, activation = filterSimulatorOrganizationCatalog(organizations, activeID, activation, identity.Organizations)
 	}
+	runtime := "unknown"
+	if activeID != "" {
+		runtime = observedSimulatorRuntime(r.Context(), manifest)
+	}
 	writeSimulatorJSON(w, map[string]any{
-		"active_id":     activeID,
-		"organizations": organizations,
-		"activation":    activation,
+		"active_id":      activeID,
+		"active_runtime": runtime,
+		"organizations":  organizations,
+		"activation":     activation,
 	})
+}
+
+// observedSimulatorRuntime reports whether any of the selected organization's
+// components appear in the connected operator snapshot. Selection alone does
+// not mean the organization is deployed into that environment.
+func observedSimulatorRuntime(ctx context.Context, manifest simulatorManifest) string {
+	current, err := readControlRoomSnapshotWithContext(ctx)
+	if err != nil || current.APIStatus == "disconnected" {
+		return "unknown"
+	}
+	for _, state := range simulatorComponentStates(manifest, current.Actors) {
+		if state == "running" {
+			return "running"
+		}
+	}
+	return "not_running"
 }
 
 func filterSimulatorOrganizationCatalog(organizations []simulatorOrganization, activeID string, activation any, allowedIDs []string) ([]simulatorOrganization, string, any) {
