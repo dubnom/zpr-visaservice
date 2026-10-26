@@ -162,7 +162,7 @@ signing_pins_file = %s
 checkpoint_dir = %s
 poll_seconds = 15
 `, config.SnapshotDeliveryPort, quoted("ca.pem"), quoted("vs-client-chain.pem"), quoted("vs-client-key.pem"), organization,
-		evaluationSubjectVSID, evaluationSubjectEpoch, quoted("subject-snapshot-signing.json"), quoted("vs-subject-snapshot"))
+		evaluationSubjectVSID, evaluationSubjectEpoch, quoted("subject-snapshot-signing.json"), quoted(evaluationSubjectCheckpointDir(inventory.Config)))
 	files["SUBJECT-LINKS.txt"] = fmt.Appendf(nil, `ZPR EVALUATION ONLY subject-link publication cycle
 
 Organization ID:        %s
@@ -273,4 +273,14 @@ func checkEvaluationDelivery(state string, port int) error {
 		return errors.New("subject snapshot delivery rejected the pinned VS client")
 	}
 	return nil
+}
+
+// evaluationSubjectCheckpointDir is relative to the state directory. The VS
+// creates it at initialization, so the data plane keeps it inside its
+// writable data-plane mount rather than binding a not-yet-existing path.
+func evaluationSubjectCheckpointDir(config evaluationConfig) string {
+	if config.DataPlane {
+		return filepath.Join("data-plane", "vs-subject-snapshot")
+	}
+	return "vs-subject-snapshot"
 }

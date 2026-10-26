@@ -31,6 +31,15 @@ var evaluationVisaPolicy []byte
 
 var evaluationVisaFiles = []string{"vs-policy.bin2", "vs.toml", "vs-admin-keys.toml", "vs-admin-api.key", "valkey.conf", "valkey.secret"}
 
+// evaluationVisaRequired lists protected VS files; the data plane compiles its
+// own per-install policy instead of the bundled one.
+func evaluationVisaRequired(config evaluationConfig) []string {
+	if !config.DataPlane {
+		return evaluationVisaFiles
+	}
+	return append(slices.DeleteFunc(slices.Clone(evaluationVisaFiles), func(name string) bool { return name == "vs-policy.bin2" }), evaluationDataPlaneFiles...)
+}
+
 // evaluationVisaPolicyMarker is mutable state: the bundled policy is installed
 // into Valkey once; later starts keep any policy applied through Control Room.
 const evaluationVisaPolicyMarker = "vs-policy.installed"
@@ -53,7 +62,18 @@ func generateEvaluationVisa(files map[string][]byte, state string, inventory eva
 		data, _ := json.Marshal(filepath.Join(state, name))
 		return string(data)
 	}
-	files["vs-policy.bin2"] = slices.Clone(evaluationVisaPolicy)
+	valkeyPort, valkeyBind := config.ValkeyPort, "127.0.0.1"
+	if config.DataPlane {
+		if err := evaluationDataPlaneMountsSafe(state); err != nil {
+			return err
+		}
+		if err := generateEvaluationDataPlane(files, now); err != nil {
+			return err
+		}
+		valkeyPort = 6379
+	} else {
+		files["vs-policy.bin2"] = slices.Clone(evaluationVisaPolicy)
+	}
 	files["valkey.secret"] = []byte(password + "\n")
 	files["vs-admin-api.key"] = []byte("zpr_vsapi." + id + "." + base64.RawURLEncoding.EncodeToString(secret) + "\n")
 	files["vs-admin-keys.toml"] = fmt.Appendf(nil, `[keys.%s]
@@ -64,7 +84,7 @@ created = %q
 secret_hash = %q
 description = "EVALUATION ONLY Control-Service administration"
 `, id, now.Format(time.RFC3339), hex.EncodeToString(hash[:]))
-	files["valkey.conf"] = fmt.Appendf(nil, `bind 127.0.0.1
+	files["valkey.conf"] = fmt.Appendf(nil, `bind %s
 port %d
 protected-mode yes
 requirepass %s
@@ -73,7 +93,23 @@ appendonly yes
 save ""
 daemonize no
 logfile ""
-`, config.ValkeyPort, password, quoted("valkey-state"))
+`, valkeyBind, valkeyPort, password, quoted("valkey-state"))
+	if config.DataPlane {
+		// vs_addr/vsapi_port keep their ZPR defaults (fd5a:5052::1, 5002) inside
+		// the data plane; admin is relayed and published only to host loopback.
+		files["vs.toml"] = fmt.Appendf(nil, `# EVALUATION ONLY data-plane Visa Service: one node and the vs.zpr adapter.
+[core]
+admin_addr = "10.0.0.2"
+admin_port = %d
+admin_cert = %s
+admin_key = %s
+vk_uri = "redis://:%s@127.0.0.1:%d"
+identity = "evaluation-%s"
+api_keys = %s
+file_ts_dir = %s
+`, evaluationDataPlaneAdminPort, quoted("server-chain.pem"), quoted("server-key.pem"), password, valkeyPort, inventory.InstallID, quoted("vs-admin-keys.toml"), quoted("vs-trusted-services"))
+		return nil
+	}
 	files["vs.toml"] = fmt.Appendf(nil, `# EVALUATION ONLY loopback Visa Service. No nodes, adapters or enforcement.
 [core]
 vs_addr = "127.0.0.1"
@@ -93,6 +129,15 @@ file_ts_dir = %s
 // resolve checks executables before any port is reserved or container started.
 func (options evaluationRuntimeOptions) resolve(config evaluationConfig) (evaluationRuntimeOptions, error) {
 	if !config.VisaService {
+		return options, nil
+	}
+	if config.DataPlane {
+		if options.DataPlaneImage == "" || strings.ContainsAny(options.DataPlaneImage, " \t\n") {
+			return options, errors.New("-data-plane-image must name a local image")
+		}
+		if err := exec.Command("docker", "image", "inspect", "--format", "{{.Id}}", options.DataPlaneImage).Run(); err != nil {
+			return options, fmt.Errorf("data-plane image %s not found; build it with packaging/evaluation/data-plane/build.sh", options.DataPlaneImage)
+		}
 		return options, nil
 	}
 	if !filepath.IsAbs(options.VisaServiceBinary) {

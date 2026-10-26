@@ -115,7 +115,7 @@ func TestEvaluationVisaServiceOptional(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"visa_service", "vs_admin_port", "vs_api_port", "valkey_port"} {
+	for _, key := range []string{"visa_service", "vs_admin_port", "vs_api_port", "valkey_port", "data_plane"} {
 		if bytes.Contains(data, []byte(key)) {
 			t.Fatalf("existing inventories would change: %s", key)
 		}

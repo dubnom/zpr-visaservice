@@ -199,6 +199,64 @@ Operator flow, using the Subject links and Publication pages:
    The running VS then fetches each newly signed snapshot. Its receipt is the
    stream's latest receipt on the Publication page.
 
+   With `-data-plane`, run the `docker exec … vs --initialize-subject-snapshot`
+   command printed at READY instead. Its checkpoint is
+   `data-plane/vs-subject-snapshot`.
+
+### Data-plane container (with `-visa-service -data-plane`)
+
+The native VS has no ZPR overlay, so it can never admit a node. ZPR nodes reach
+the VS only at its fixed ZPR address `fd5a:5052::1` (VSAPI `5002`), through the
+VS's own `vs.zpr` adapter. For a **new** evaluation, `-data-plane` therefore
+runs the VS, private Valkey, one node and the `vs.zpr` adapter in a privileged
+Linux container. Control Room then shows the live node and VS actors.
+
+```sh
+packaging/evaluation/data-plane/build.sh   # once; builds zpr-evaluation-data-plane:local
+sh packaging/evaluation/bootstrap.sh \
+  -state "$PWD/.zpr-evaluation-dp" -visa-service -data-plane
+```
+
+- **Build:** `build.sh` compiles `ph`, `ph-cli` (`zpr-core`), `vs` and
+  `vs-admin` (this worktree) and `zplc` (`zpr-compiler`) for Linux in a builder
+  image. The sibling checkouts are mounted read-only, and `ZPR_WORKSPACE`
+  overrides their parent. The cargo cache and target live under
+  `.evaluation-build/data-plane/`. `-data-plane-image` (default
+  `zpr-evaluation-data-plane:local`) is runtime-only, like `-vs-binary`. It is
+  never pulled.
+- **Ports:** only the VS admin API is published, to `127.0.0.1:<vs-admin-port>`.
+  VSAPI and Valkey stay inside the container. `-vs-api-port`, `-valkey-port`,
+  `-vs-binary` and `-valkey-server` are rejected. `-data-plane` is frozen with
+  the install.
+- **Unique per-install ZPR identities (protected `dp-*` files):**
+  - an RSA ZPR CA (`dp-ca.crt`; its key is discarded);
+  - X25519 Noise certificates for `node` and `vs.zpr`. The `vs.zpr` subject is
+    the exact DER the node uses to recognize the VS;
+  - RSA bootstrap keys for both;
+  - an RSA policy-signing key;
+  - the policy source `dp-policy.zpl` and `dp-policy.zplc`. They admit only the
+    node and `vs.zpr`, plus ping between them.
+- **Policy:** on first start, the container compiles the policy with `zplc` into
+  `data-plane/vs-policy.bin2` and installs it into Valkey once, recorded in
+  `vs-policy.installed`. Later starts keep the stored policy, as in
+  native mode.
+- **Minimal mounts:** the container sees only the files it needs, at their
+  original absolute paths, so `vs.toml` stays valid. Everything is read-only
+  except `valkey-state/` and `data-plane/`. It never sees the install CA key,
+  operator secrets or the VS admin API key.
+- **Network:** a per-install Docker network,
+  `zpr-evaluation-<install-id>-data-plane`, which later endpoint containers will
+  join. Inside the container, namespace `zpr-vs` holds Valkey, the VS and the
+  `vs.zpr` adapter; the node runs in the root namespace. Snapshot delivery is
+  relayed to the host's loopback delivery port.
+- **Readiness:** the VS admin API must be healthy *and* list both `node` and
+  `vs.zpr` as admitted actors. `logs/data-plane.log` holds every component's
+  log, and any component exit stops the install. Ctrl-C removes the container
+  and network; state is retained.
+- **Still not production:** there are no endpoint adapters yet. Endpoint
+  admission by keys compiled into the policy is a recorded evaluation stopgap,
+  and enrollment is deferred. Nothing is enforced outside this container.
+
 ## Identity, health and lifecycle
 
 Every install receives a random install/Compose-project ID, its own CA and

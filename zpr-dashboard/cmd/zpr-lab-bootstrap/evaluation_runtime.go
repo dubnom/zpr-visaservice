@@ -169,6 +169,11 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		}
 		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
 		defer stop()
+		if inventory.Config.DataPlane {
+			if err := removeEvaluationDataPlane(cleanup, inventory); err != nil {
+				fmt.Fprintf(out, "Cleanup incomplete: run docker rm -f %[1]s; docker network rm %[1]s. Private persistent state is retained.\n", evaluationDataPlaneName(inventory))
+			}
+		}
 		if err := compose(cleanup, "down", "--timeout", "5"); err != nil {
 			fmt.Fprintf(out, "Cleanup incomplete: from the state directory run docker compose -p zpr-evaluation-%s -f compose.json down. Private persistent state is retained.\n", inventory.InstallID)
 		}
@@ -217,7 +222,30 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 			return nil
 		}
 	}
-	if inventory.Config.VisaService {
+	if inventory.Config.DataPlane {
+		if err := createEvaluationDataPlaneNetwork(startup, inventory); err != nil {
+			return err
+		}
+		_, markerErr := os.Stat(filepath.Join(state, evaluationVisaPolicyMarker))
+		plane, err := launch("data-plane", "docker", evaluationDataPlaneArguments(state, inventory, runtime.DataPlaneImage, errors.Is(markerErr, os.ErrNotExist)), evaluationDockerEnvironment())
+		if err != nil {
+			return err
+		}
+		if err := waitEvaluation(startup, "data plane: Visa Service admin API with node and vs.zpr admitted", out, func() error {
+			if err := exited(plane); err != nil {
+				return err
+			}
+			if err := checkEvaluationVisa(state, inventory.Config.VSAdminPort, tlsConfig); err != nil {
+				return err
+			}
+			return checkEvaluationDataPlaneActors(state, inventory.Config.VSAdminPort, tlsConfig)
+		}); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(state, evaluationVisaPolicyMarker), []byte("per-install data-plane policy installed\n"), 0o600); err != nil {
+			return errors.New("cannot record Visa Service policy installation")
+		}
+	} else if inventory.Config.VisaService {
 		valkey, err := launch("valkey", runtime.ValkeyServer, []string{filepath.Join(state, "valkey.conf")}, evaluationVisaEnvironment())
 		if err != nil {
 			return err
@@ -309,11 +337,18 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 	upstream := "Upstream Visa/Policy services are NOT configured. Control Room reports unavailable dependencies explicitly."
 	if inventory.Config.VisaService {
 		upstream = fmt.Sprintf("Loopback Visa Service admin at https://localhost:%d (bundled evaluation policy; no nodes or enforcement). Policy-Service is NOT configured.", inventory.Config.VSAdminPort)
+		if inventory.Config.DataPlane {
+			upstream = fmt.Sprintf("Data-plane Visa Service admin at https://localhost:%d (container %s: one node and vs.zpr admitted; no endpoints). Policy-Service is NOT configured.", inventory.Config.VSAdminPort, evaluationDataPlaneName(inventory))
+		}
 	}
 	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Administrator-scoped evaluation grants; no shared sessions.\nStarter directory registered; lifecycle events ingested into evaluation logging. "+upstream)
 	if inventory.Config.subjectLinks() {
+		initCommand := evaluationVSInitCommand(runtime.VisaServiceBinary, state)
+		if inventory.Config.DataPlane {
+			initCommand = evaluationDataPlaneInitCommand(inventory, state)
+		}
 		fmt.Fprintf(out, "Subject links: independent reviewer %s (password: private operator-reviewer.secret); see %s for the publication cycle.\nAfter the first signed snapshot, initialize the VS checkpoint once: %s\n",
-			evaluationReviewerEmail, filepath.Join(state, "SUBJECT-LINKS.txt"), evaluationVSInitCommand(runtime.VisaServiceBinary, state))
+			evaluationReviewerEmail, filepath.Join(state, "SUBJECT-LINKS.txt"), initCommand)
 	}
 	fmt.Fprintln(out, "Foreground supervision active. Ctrl-C stops this install's services/containers; rerun the SAME command to preserve identity and directory/log data.")
 	ticker := time.NewTicker(5 * time.Second)

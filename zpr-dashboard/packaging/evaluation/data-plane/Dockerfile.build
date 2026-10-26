@@ -1,0 +1,11 @@
+# EVALUATION ONLY Rust builder for the data-plane image.
+FROM debian:trixie-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential ca-certificates capnproto curl git libpcap-dev libssl-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup.sh \
+    && sh /tmp/rustup.sh --default-toolchain stable --profile minimal -y \
+    && rm /tmp/rustup.sh
+ENV PATH="/root/.cargo/bin:${PATH}"
+WORKDIR /src

@@ -47,12 +47,16 @@ type evaluationConfig struct {
 	ValkeyPort  int  `json:"valkey_port,omitempty"`
 	// Control-Service pinned snapshot delivery listener for the loopback VS.
 	SnapshotDeliveryPort int `json:"snapshot_delivery_port,omitempty"`
+	// DataPlane hosts the VS, Valkey, a node and the vs.zpr adapter in a Linux
+	// container instead of the native loopback VS (VSAPI/Valkey stay internal).
+	DataPlane bool `json:"data_plane,omitempty"`
 }
 
 // Runtime-only executables are not frozen: upgrading them keeps install identity.
 type evaluationRuntimeOptions struct {
 	VisaServiceBinary string
 	ValkeyServer      string
+	DataPlaneImage    string
 }
 
 type evaluationInventory struct {
@@ -87,7 +91,9 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&config.VSAPIPort, "vs-api-port", 15002, "with -visa-service: loopback Visa Service VSAPI port")
 	flags.IntVar(&config.ValkeyPort, "valkey-port", 16379, "with -visa-service: loopback private Valkey port")
 	flags.IntVar(&config.SnapshotDeliveryPort, "snapshot-delivery-port", 18793, "with -visa-service: loopback Control-Service subject snapshot delivery mTLS port; 0 disables the subject-link publication cycle (installs created before it existed)")
+	flags.BoolVar(&config.DataPlane, "data-plane", false, "with -visa-service: run the VS with Valkey, one node and the vs.zpr adapter in a privileged Linux data-plane container (build: packaging/evaluation/data-plane/build.sh)")
 	runtime := evaluationRuntimeOptions{}
+	flags.StringVar(&runtime.DataPlaneImage, "data-plane-image", evaluationDataPlaneImage, "with -data-plane: local data-plane image")
 	flags.StringVar(&runtime.VisaServiceBinary, "vs-binary", "", "with -visa-service: absolute path of a built vs executable (cargo build -p vs)")
 	flags.StringVar(&runtime.ValkeyServer, "valkey-server", "valkey-server", "with -visa-service: valkey-server executable name or absolute path")
 	if err := flags.Parse(args); err != nil {
@@ -96,11 +102,17 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		}
 		return 2
 	}
-	visaOnly := false
+	visaOnly, nativeOnly, planeOnly := false, false, false
 	flags.Visit(func(f *flag.Flag) {
 		switch f.Name {
-		case "vs-admin-port", "vs-api-port", "valkey-port", "snapshot-delivery-port", "vs-binary", "valkey-server":
+		case "vs-admin-port", "vs-api-port", "valkey-port", "snapshot-delivery-port", "vs-binary", "valkey-server", "data-plane", "data-plane-image":
 			visaOnly = true
+		}
+		switch f.Name {
+		case "vs-api-port", "valkey-port", "vs-binary", "valkey-server":
+			nativeOnly = true
+		case "data-plane-image":
+			planeOnly = true
 		}
 	})
 	if !config.VisaService {
@@ -109,6 +121,16 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		config.VSAdminPort, config.VSAPIPort, config.ValkeyPort, config.SnapshotDeliveryPort = 0, 0, 0, 0
+	}
+	if config.DataPlane {
+		if nativeOnly {
+			fmt.Fprintln(stderr, "-data-plane keeps VSAPI and Valkey inside the container; -vs-api-port, -valkey-port, -vs-binary and -valkey-server do not apply")
+			return 2
+		}
+		config.VSAPIPort, config.ValkeyPort = 0, 0
+	} else if planeOnly {
+		fmt.Fprintln(stderr, "-data-plane-image requires -data-plane")
+		return 2
 	}
 	if *state == "" || flags.NArg() != 0 {
 		fmt.Fprintln(stderr, "usage: zpr-lab-bootstrap -evaluation -state DIRECTORY [-visa-service -vs-binary FILE] [-render-only | -reset-admin [-password-file FILE]]")
@@ -176,6 +198,9 @@ func (config evaluationConfig) validate() error {
 	if !config.VisaService && (config.VSAdminPort != 0 || config.VSAPIPort != 0 || config.ValkeyPort != 0 || config.SnapshotDeliveryPort != 0) {
 		return errors.New("Visa Service ports require -visa-service")
 	}
+	if config.DataPlane && (!config.VisaService || config.VSAPIPort != 0 || config.ValkeyPort != 0) {
+		return errors.New("data plane requires -visa-service and keeps VSAPI/Valkey ports inside the container")
+	}
 	for _, port := range config.ports() {
 		if port < 1024 || port > 65535 || ports[port] {
 			return errors.New("evaluation ports must be distinct unprivileged TCP ports")
@@ -188,7 +213,10 @@ func (config evaluationConfig) validate() error {
 func (config evaluationConfig) ports() []int {
 	ports := []int{config.OIDCPort, config.RoomPort, config.ServicePort, config.LDAPPort, config.LogPort}
 	if config.VisaService {
-		ports = append(ports, config.VSAdminPort, config.VSAPIPort, config.ValkeyPort)
+		ports = append(ports, config.VSAdminPort)
+		if !config.DataPlane {
+			ports = append(ports, config.VSAPIPort, config.ValkeyPort)
+		}
 	}
 	if config.subjectLinks() {
 		ports = append(ports, config.SnapshotDeliveryPort)
@@ -261,6 +289,9 @@ func prepareEvaluation(output string, config evaluationConfig, now time.Time) (e
 	dirs := []string{"ldap-state", "logging-state", "oidc-state", "logs", "build"}
 	if config.VisaService {
 		dirs = append(dirs, "valkey-state", "vs-trusted-services")
+	}
+	if config.DataPlane {
+		dirs = append(dirs, "data-plane")
 	}
 	for _, name := range dirs {
 		if err := root.Mkdir(name, 0o700); err != nil {
@@ -342,7 +373,7 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 	}
 	required := []string{"ca.pem", "ca-key.pem", "server-chain.pem", "server-key.pem", "client-chain.pem", "client-key.pem", "ldap-admin.secret", "ldap-reader.secret", "logging-admin.secret", "openobserve.env", "slapd.conf", "directory.ldif", "serve-directory.sh", "compose.json", "dex.json", "operator-admin.secret", "oidc-room-client.secret", "EVALUATION.txt", "source-registration.json"}
 	if config.VisaService {
-		required = append(required, evaluationVisaFiles...)
+		required = append(required, evaluationVisaRequired(config)...)
 	}
 	if config.subjectLinks() {
 		required = append(required, evaluationSubjectLinkFiles...)
@@ -563,7 +594,11 @@ ZO_LOG_LEVEL=warn
 		if err := generateEvaluationVisa(files, state, inventory, now); err != nil {
 			return nil, inventory, err
 		}
-		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte("Loopback Visa Service with the bundled test-signed evaluation policy and private Valkey. No nodes, adapters or enforcement.\n")...)
+		note := "Loopback Visa Service with the bundled test-signed evaluation policy and private Valkey. No nodes, adapters or enforcement.\n"
+		if config.DataPlane {
+			note = "Data-plane container: Visa Service, private Valkey, one node and the vs.zpr adapter with unique per-install keys and a per-install policy. No endpoints or production enforcement.\n"
+		}
+		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte(note)...)
 	}
 	if config.subjectLinks() {
 		if err := generateEvaluationSubjectLinks(files, state, inventory, now, subjectUUID, ca, key); err != nil {
