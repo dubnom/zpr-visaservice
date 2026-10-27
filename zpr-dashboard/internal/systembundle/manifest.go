@@ -67,8 +67,10 @@ var (
 		"visa-service",
 		"state-backend",
 		"node-runtime",
+		"bootstrap-config",
 		"endpoint-adapter",
 		"policy-service",
+		"initial-policy",
 		"control-service",
 		"control-room",
 		"enrollment-service",
@@ -83,6 +85,7 @@ var (
 		"actor-authentication",
 		"trusted-attributes",
 		"logging",
+		"ldap-bootstrap",
 	}
 	requiredCompanionCapabilities = []string{
 		"simulator",

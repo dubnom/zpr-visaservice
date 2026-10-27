@@ -5,6 +5,12 @@ not an installer specification ready for release. This contract does not select
 release artifacts, create credentials, or claim that the services can currently
 be composed.
 
+The [common minimum for a working ZPR network](../../../System%20release%20plan.md#common-minimum-for-a-working-zpr-network)
+applies across deployment profiles. This production first-install contract
+specifies one implementation profile; passing its service/container checks
+alone does not satisfy the baseline without the end-to-end evidence recorded
+there.
+
 ## Approved first-qualification profile
 
 - One fresh Ubuntu 24.04 x86-64 host.
@@ -65,11 +71,11 @@ production service set.
 | Visa Service and state backend | Own authoritative ZPR state and expose the configured private APIs to the node and management services. | Exact image/runtime recipe, backend implementation and digest, state location/ownership, TLS bootstrap, and readiness that proves the expected policy and node are active. |
 | Production node | Establish the authenticated node-to-Visa connection and report the installed node identity. | A headless supervised executable, address/identity config, reconnect/stop behavior, container privileges/devices, and an end-to-end health probe. The current `lntest` entry point is not this contract. |
 | Endpoint adapter | Apply the supported endpoint traffic path using a provisioned per-device identity. | Supported target and privilege boundary, credential-delivery API, install/remove behavior, and an actual allow/deny test. No static demo key or bootstrap credential may be packaged. |
-| Policy-Service and compiler/evaluator | Validate, persist, compile and evaluate the configured company policy; publish only an explicitly activated policy. | Compatible pinned compiler/common-library set, storage and signing ownership, TLS identities, and a probe that verifies the active policy digest and a known decision. |
+| Policy-Service and compiler/evaluator | Validate, persist, compile and evaluate the configured company policy; publish only an explicitly activated policy. | Compatible pinned compiler/common-library set, storage and signing ownership, TLS identities, a provisioned initial policy, and a probe that verifies the active policy digest plus expected allow and deny decisions. |
 | Control-Service | Serve the production operator API over authenticated service TLS and relay owned Enrollment operations without opening Enrollment's database. | Final Enrollment lifecycle API and sole-writer boundary, required service configuration, dependency policy, and readiness beyond a listening socket. |
 | Control Room | Serve named operator login over company-hostname HTTPS; call Control-Service over mTLS. | The existing schema-v2 inputs cover only this slice. The installer must validate installed mount access, company OIDC grants and first-admin recovery before reporting ready. |
 | Enrollment | Own the device registry and credential lifecycle; expose only the approved device and administrative trust boundaries. | Complete lifecycle/bootstrap contract and proof that BAS or another process cannot independently write the production registry. No shared SQLite mount is permitted. |
-| Operator identity and trusted attributes | Supply the bundled first-install operator login and required actor authentication/attribute decisions. | Dex plus OpenLDAP are qualification candidates. Select/pin both production images, define identity/attribute mappings, initial administrator creation/recovery, TLS, durable state, and explicit fail-closed behavior. |
+| Operator identity and trusted attributes | Supply the bundled first-install operator login, a usable identity source and required actor authentication/attribute decisions. | Dex plus OpenLDAP are qualification candidates. Select/pin both production images, define identity/attribute mappings, readable initial directory data/configuration, initial administrator creation/recovery, TLS, durable state, and explicit fail-closed behavior. |
 | Protected DNS | Provide ZPR-managed service DNS, with its adapter and narrowly authorized publisher integration. | Pin and qualify the DNS artifact, define service discovery/bootstrap ordering, zone/state ownership, publisher identity, and DNS readiness. It must not depend on ZPR DNS to start. |
 | Gateway | Enforce configured egress rules for clients explicitly configured to use its HTTP proxy. | Final activation/rollback API, client routing/provisioning, identity, health, and tested host firewall/network rules. Draft-save is not activation. |
 | Logging | Provide the bundled durable, access-controlled logging capability. | OpenObserve is the qualification candidate, not a distribution approval. Complete AGPL-3.0/license review; pin and qualify the image; specify retention/capacity and credentials; redact secrets; and verify ingestion/query health. |
@@ -152,15 +158,19 @@ selects a documented destructive action.
    publisher, and client configuration is ready. The final ordering must be
    refined when the bootstrap API and service-health contracts are settled.
 7. Run protocol-level readiness and acceptance checks. Success requires named
-   operator login, one endpoint credential delivered through the supported
-   Enrollment flow, successful admission, a loaded policy, and observed allowed
-   and denied traffic through the selected Gateway path. A running container or
-   open port is not success.
+   operator login; a successful lookup against the configured, readable
+   bootstrap identity source; one endpoint credential delivered through the
+   supported Enrollment flow and successful node/endpoint admission; a loaded
+   initial policy and observed allowed and denied traffic through the selected
+   Gateway path; resolution of a Visa-published ZPR service name through the
+   protected DNS path; and a real lifecycle event accepted, retained across
+   restart, and returned by an authorized logging query. A running container,
+   open port, or manifest capability declaration is not success.
 8. Write a redacted install receipt with release ID, manifest digest, config
    schema, service states, and probe results. Never include secret contents.
 9. On failure, stop only services started by this transaction and retain all
-   pre-existing data and identities. Explain the failed gate and recovery
-   command; never silently reset, remove volumes, or report success.
+   pre-existing data and identities. Explain the failed baseline gate and
+   recovery command; never silently reset, remove volumes, or report success.
 
 Stop/restart must preserve state. Removal is non-destructive by default and
 requires a separate explicit operator action to erase data. Upgrade and

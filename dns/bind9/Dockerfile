@@ -5,6 +5,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY named.conf.example /etc/bind/named.conf
+COPY named.conf.simulator /etc/bind/named.conf.simulator
 COPY entrypoint.sh /usr/local/bin/zpr-bind-entrypoint
 RUN chmod 0755 /usr/local/bin/zpr-bind-entrypoint
 

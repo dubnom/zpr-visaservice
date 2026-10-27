@@ -20,12 +20,13 @@ manage scenario containers. This grants root-equivalent host access and is
 allowed only on an isolated disposable demo host. Do not use it on a shared,
 exposed or production host.
 
-The companion will supply Simulator, lab LDAP, OIDC and optional bootstrap DNS.
-Protected ZPR service DNS belongs to the real ZPR package, including its adapter,
-Visa Service publisher integration and persistent state; it is not owned by
-Simulator. Existing bootstrap-tool generation of protected DNS configuration is
-an engineering input, not evidence that this packaging handoff is complete.
-The real ZPR
+The companion supplies Simulator and may supply independently supervised lab
+LDAP and OIDC. Bootstrap names use existing network DNS; the companion does not
+run a separate bootstrap BIND service. Protected ZPR service DNS belongs to the
+real ZPR package, including its adapter, Visa Service publisher integration
+and persistent state; it is not owned by Simulator. Bootstrap-tool generation
+of protected DNS configuration is an engineering input, not evidence that this
+packaging handoff is complete. The real ZPR
 package will consume their explicit standard integration settings, using the
 same artifacts and installer as a production company installation. Supporting
 services must remain available when the Simulator application is stopped.

@@ -4,7 +4,7 @@
 FROM debian:trixie-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates iproute2 iputils-ping libpcap0.8t64 libssl3t64 procps socat valkey-server \
+        bind9 bind9-utils ca-certificates dnsutils iproute2 iputils-ping libpcap0.8t64 libssl3t64 procps socat valkey-server \
     && rm -rf /var/lib/apt/lists/*
 COPY ph ph-cli vs vs-admin zplc /usr/local/bin/
 COPY data-plane.sh /usr/local/bin/zpr-evaluation-data-plane

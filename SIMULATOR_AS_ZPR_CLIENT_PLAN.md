@@ -112,12 +112,14 @@ the existing M0-M6 ordinary-client and production-boundary gates:
   TLS verification. B3 now supplies ordinary named-source configuration,
   allowlisted lifecycle ingestion and authorized Control Room querying; raw
   application-log collection and release acceptance remain separate.
-- **B1-RECOVERY (design/task, not implemented):** local CLI reset generates a
-  unique one-time password into a new protected file, never stdout/logs; verify
-  local ownership, lock, supported provider update, invalidate sessions and require
-  replacement on first use. Include expiry/replay/rollback and independent logging
-  admin tests. Dex static credentials cannot enforce this safely as a small reset
-  script; do not claim editing a hash or deleting state is admin recovery.
+- **B1-RECOVERY (evaluation-only implementation):** the stopped-host CLI reset
+  rotates the Dex static password, client secret and subject, preserves provider
+  data, audits without credentials and delivers a fresh 256-bit password once to
+  a new protected file or terminal. Focused tests cover local ownership, lifecycle
+  locking, safe delivery and fail-closed interruption. This is one-time disclosure,
+  not enforced single-use: Dex does not enforce replacement, expiry or replay, old
+  signed JWTs remain valid until expiry, and OpenObserve's independent admin is not
+  reset. Live IdP/browser recovery and production qualification remain open.
 - **B4 decision:** Control-Service owns durable **per-source** change-watcher
   checkpoints/resync health. B4 now embeds the existing RFC 4533 consumer with
   production-source opt-in, restart resume, metadata-only health and the existing
@@ -717,8 +719,10 @@ Depends on M2 and M3. This closes deployable boundaries, not just code naming.
   configuration. Production source/import and asset tests cover the compiled
   and served boundaries. The installed-deployment/cold-start acceptance remains
   open; this is not deployment evidence.
-- [ ] **P03:** Independently supervise lab LDAP/OIDC/DNS. Document which
-  disposable resources belong to the lab and which services are shared.
+- [ ] **P03:** Independently supervise lab LDAP/OIDC. Document which disposable
+  resources belong to the lab and which services are shared; keep bootstrap
+  names on existing network DNS and integrate protected DNS with the production
+  package lifecycle.
   The companion LDAP/Dex Compose project has independent per-install identity
   and persistent state, with generated stop/restart instructions and a
   container-recreation identity test. Ownership is now documented in the
@@ -729,8 +733,17 @@ Depends on M2 and M3. This closes deployable boundaries, not just code naming.
   namespace/state/supervisor integration and restart evidence. The envelope
   model is deferred and is not an implemented namespace boundary.
 - [ ] **P04:** Add CI import/configuration/route checks and runtime boundary
-  tests. Capture browser and server egress plus file-access evidence; browser
-  request interception alone cannot detect server-side reverse dependencies.
+  tests. The dashboard workflow now has explicit production-tagged build/test/
+  vet and production browser-boundary jobs covering compiler-selected imports,
+  configuration rejection, production routes/assets, process startup, browser
+  navigation and reverse-request interception. CI also builds the protected
+  BIND image and validates both standalone and Simulator configurations,
+  including their configured zones, with disposable owner-only key/zone inputs.
+  The checker requires a local Docker Unix socket and disables networking for
+  validation containers. Capture browser and server egress plus file-access
+  evidence; browser request interception alone cannot detect server-side
+  reverse dependencies. BIND configuration checks do not establish service
+  lifecycle or restart evidence.
 - [ ] **P05:** Test cold start, independent restart and client disconnects.
   Stopping Simulator may naturally stop its workload traffic and disconnect its
   endpoints, but must not cause production dependency errors or erase state.

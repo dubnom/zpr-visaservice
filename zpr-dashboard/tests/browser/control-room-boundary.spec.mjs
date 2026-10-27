@@ -21,6 +21,7 @@ const productionReads = new Set([
   "/auth/operator/config", "/api/snapshot", "/api/policy", "/api/diagnostics",
   "/api/dns/records", "/api/dns/stats/json/v1/server", "/api/adapter-logs",
   "/api/assertions", sourcePath, "/api/trusted-sources/change-feeds",
+  "/api/trusted-sources/runtime",
   "/api/gateways/assistant", "/api/gateways/contracts", "/api/gateways/configs",
   "/api/enrollment/v1/catalog",
 ]);
@@ -73,6 +74,7 @@ for (const scenario of cases) {
           directory: { people: ["ordinary-person"], groups: {}, attributes: [], person_attributes: {}, group_attributes: {} },
         },
         "/api/trusted-sources/change-feeds": { sources: [] },
+        "/api/trusted-sources/runtime": [],
       };
       if (Object.hasOwn(bodies, url.pathname) && (
         scenario.available || url.pathname === "/auth/operator/config" ||

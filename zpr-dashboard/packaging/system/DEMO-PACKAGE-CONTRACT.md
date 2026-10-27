@@ -6,11 +6,20 @@ remaining full-demo scenarios are still open. This is deliberately less strict
 than the production contract. A passing demo is not a production release or a
 supported customer installation.
 
+This package is a runnable dataplane demonstration, not a complete working ZPR
+network under the
+[product-wide minimum](../../../System%20release%20plan.md#common-minimum-for-a-working-zpr-network).
+In particular, this contract does not provide an independent Control Room and
+operator service or prove durable, queryable logging. Demo-specific substitutes
+may simplify implementation, but do not waive the common functional baseline;
+do not describe this pair as a baseline-complete network.
+
 ## Goal
 
 Produce two separately downloadable but version-matched Linux/amd64 archives:
 
-1. **ZPR demo package:** the existing `zpr-demo/multinode-demo` scenario,
+1. **ZPR dataplane demo package:** the existing
+   `zpr-demo/multinode-demo` scenario,
    including its runnable ZPR service/node/adapters, sample organization and
    policy, demo web workload, runtime configuration/setup, and stop/status
    instructions.

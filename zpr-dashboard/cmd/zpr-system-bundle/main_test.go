@@ -19,8 +19,10 @@ var testSystemCapabilities = []string{
 	"visa-service",
 	"state-backend",
 	"node-runtime",
+	"bootstrap-config",
 	"endpoint-adapter",
 	"policy-service",
+	"initial-policy",
 	"control-service",
 	"control-room",
 	"enrollment-service",
@@ -36,6 +38,7 @@ var testSystemSupportCapabilities = []string{
 	"actor-authentication",
 	"trusted-attributes",
 	"logging",
+	"ldap-bootstrap",
 }
 
 func TestRunRequiresManifestAndBundleDirectory(t *testing.T) {
@@ -45,6 +48,35 @@ func TestRunRequiresManifestAndBundleDirectory(t *testing.T) {
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("run() wrote success output for invalid arguments: %q", stdout.String())
+	}
+}
+
+func TestRunRejectsSystemBundleMissingBaselineArtifacts(t *testing.T) {
+	for _, capability := range []string{"bootstrap-config", "initial-policy", "ldap-bootstrap"} {
+		t.Run(capability, func(t *testing.T) {
+			manifest := testSystemManifest()
+			components := make([]systembundle.Component, 0, len(manifest.Components))
+			for _, component := range manifest.Components {
+				if len(component.Provides) != 1 || component.Provides[0] != capability {
+					components = append(components, component)
+				}
+			}
+			manifest.Components = components
+
+			directory := filepath.Join(t.TempDir(), "system")
+			writeTestBundle(t, directory, manifest)
+			var stdout, stderr bytes.Buffer
+			args := []string{"-manifest", testBundleManifestPath, "-bundle-dir", directory}
+			if code := run(args, &stdout, &stderr); code != 1 {
+				t.Fatalf("run() exit code = %d, want 1; stdout = %q; stderr = %q", code, stdout.String(), stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("run() wrote success output for an incomplete baseline: %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), `"`+capability+`"`) {
+				t.Fatalf("run() stderr = %q, want missing %s diagnostic", stderr.String(), capability)
+			}
+		})
 	}
 }
 

@@ -10,11 +10,12 @@ listener or accepts unauthenticated dynamic updates. Service identity and
 client permissions are ordinary ZPL policy, not DNS ACLs alone.
 
 For the paired system/Simulator packages, this is the **protected ZPR DNS**
-role, separate from the companion's bootstrap DNS for initial login/setup.
-The [lab bootstrap generator](../../zpr-dashboard/packaging/simulator/README.md#separate-bootstrap-and-protected-zpr-dns)
-can now render both configurations, zones and independent TSIG credentials
-from explicit addresses. It does not deploy the adapter or activate policy;
-the complete combined network is not yet packaged or certified.
+role. Bootstrap names for initial login and setup use existing network DNS;
+the Simulator companion does not run a second bootstrap BIND service. The
+[lab bootstrap generator](../../zpr-dashboard/packaging/simulator/README.md#separate-bootstrap-and-protected-zpr-dns)
+can render protected-DNS configuration, zone data and separate TSIG credentials
+from explicit inputs. It does not deploy the adapter or activate policy; the
+complete protected-DNS service handoff is not yet packaged or certified.
 
 ## ZPR policy
 
@@ -137,6 +138,13 @@ $TTL 30
 
 Validate the BIND configuration with `named-checkconf` and the zone with
 `named-checkzone svc.zpr /var/lib/bind/db.svc.zpr` before starting `named`.
+Run `sh dns/bind9/test-config.sh` from the repository root to build the image
+and check both the standalone and Simulator protected-DNS configurations with
+disposable test keys and zone data. The check requires a local Docker Unix
+socket, creates its temporary files with owner-only permissions, and disables
+networking for key generation and validation containers. This catches
+configuration/zone syntax regressions; it does not qualify package integration,
+persistent state, supervision, or restart behavior.
 
 ## Visa Service
 
