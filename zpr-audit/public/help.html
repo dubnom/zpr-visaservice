@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZPR Audit Help</title>
+<link rel="stylesheet" href="shared/palette.css">
+<link rel="stylesheet" href="app.css">
+<header><span class="logo">ZPR</span><strong>Audit Help</strong><span class="env">SAMPLE WORKSPACE</span></header>
+<main class="help-page">
+<h1>Using Audit</h1>
+<section id="inventory" class="panel">
+<h2>Imported assertion settings</h2>
+<p>Export the JSON response from Policy-Service GET /api/assertions/settings
+using your existing authorized operator tooling. Audit accepts organization_id,
+organization_name and settings containing revision, source, enabled and
+interval_seconds. It does not request credentials or contact that service.
+An authorized Control Room GET /api/assertions response is also supported.
+Service-error responses and nonempty settings_error values are rejected, even
+if other settings are present. Wait for the source to recover and export again;
+Audit does not repair or restart the source. Runtime results and watcher metadata
+are excluded from the settings-only import.
+Import only data you are authorized to view. Files stay in memory until cleared
+or the page reloads; downloads contain policy source text.</p>
+<p>Organization values come from the exported production response, not Simulator
+or an inferred directory name. Audit does not independently verify them.
+There is no live refresh, evaluation or historical reconstruction. Invalid files
+clear previous data. Import time is not source retrieval time. A file SHA-256
+requires HTTPS or localhost and is explicitly unavailable over private-IP HTTP;
+even when present it does not authenticate the file's origin.</p>
+<p>Report / print produces a separate imported inventory report with provenance
+and limitations. Imported settings never populate sample access outcomes,
+assertion fixtures or report packs.</p>
+<p>Before reporting, enter a preparer and purpose. Optional source-system,
+reference, retrieval-time and reviewer-note fields are operator statements,
+not verified source facts. Use UTC YYYY-MM-DDTHH:mm:ssZ for retrieval time;
+it cannot be later than import time. Reports include a unique report reference,
+generation time, source byte size and empty-source status. Replacing or clearing
+the snapshot clears review fields to prevent misattribution.</p>
+<p>Source review uses display line numbers and literal text search, optionally
+case-sensitive. Match counts refer to matching lines; Previous/Next wraps through
+them. Go to line accepts only valid line numbers. Add a line reference to notes
+to retain the file, organization and settings revision in unverified commentary.
+Search never filters exported source. Display line numbers are not assertion
+identities, compiler diagnostics or evaluation results.</p>
+<h3>Baseline comparison</h3>
+<p>Import a second settings export as baseline after loading the current
+snapshot. Organization IDs must match. Name changes, newer baseline revisions
+and same-revision/content conflicts are flagged. Comparison shows settings
+values, exact source-change detection and differing line positions, not semantic
+edits or access impact. Insertions may shift later line positions. Line-ending
+normalization in the line view does not alter exact source-change detection.</p>
+<p>Comparison status distinguishes identical settings, revision-only changes,
+same-revision conflicts, changed settings across revisions and reversed order.
+Settings content equality excludes revision and compares exact source, enabled
+and interval only; organization-name differences remain separate. Revision
+distance is current minus baseline, not a count of edits, missing exports or
+activations. Source measures show UTF-8 bytes and displayed lines on each side
+with signed differences. Empty source has zero lines; trailing blank lines count.
+File size is separate from source size. File formatting and ignored runtime
+fields do not affect settings equality.</p>
+<p>Open Baseline source provenance to enter a separate optional source system,
+reference and UTC retrieval time. These are unverified operator statements,
+not exported facts, and reports label them separately from current provenance.
+Retrieval cannot exceed that baseline's own import time; invalid provenance
+blocks reporting until corrected or cleared. Replacing or clearing baseline,
+including an invalid replacement, resets baseline provenance without changing
+current provenance.</p>
+<p>Counts classify changed, added, removed and unchanged positions. Added and
+removed mean a line exists on only one side at that position, not an aligned edit.
+Blank lines are present lines and are labeled separately from missing lines.
+Find literal text searches either side, optionally case-sensitive; type filtering
+narrows differences further. Results show 25 positions per page. Previous/Next
+difference wraps across all matching pages; clicking a position selects it.
+Go to position must match a differing position within the active filters. Reset
+comparison filters if a position is hidden. No matches does not prove no change.</p>
+<p>Add comparison reference to notes retains the position, organization and both
+files' revisions, names, import times and fingerprints (or explicit unavailability).
+These remain unverified commentary, subject to the notes limit. Baseline changes
+reset review controls but retain notes already attributed to their original pair;
+those references do not describe a replacement baseline. Current-snapshot
+replacement clears notes. Clear baseline also cancels a pending import.</p>
+<p>Each file keeps separate provenance. Reports retain both complete source
+texts, all differing positions and comparison limitations regardless of review
+filters or pagination. Reporting waits for a pending baseline import.
+Clear baseline keeps the current source;
+replacing current clears baseline. An invalid baseline removes any previous
+comparison and cannot silently export it.</p>
+</section>
+<p>This workspace contains fictional fixtures only. It has no authentication,
+production connections, policy evaluator or persistent evidence store. Reloading
+resets selections and report packs. No live query or mutation is performed.</p>
+<nav aria-label="Help topics"><a href="#access">Access</a> · <a href="#policy">Policy</a> · <a href="#assertions">Assertions</a> · <a href="#history">History</a> · <a href="#reports">Reports</a></nav>
+<p>Help opens separately so your investigation stays in its original tab.
+Close this tab to return to it.</p>
+<section id="access" class="panel">
+<h2>Access and group membership</h2>
+<p>Choose only a service to show separate Users, Groups and Machines sections,
+each with independent counts and pagination, not a merged result set.
+In reverse, choose a category, then a subject within it to list services. Result type,
+membership, search and outcome filters narrow the list afterward; no user or
+cohort selection is required for a service query.
+Results use per-row sample contexts, not every hypothetical
+location, time, device or user-machine pairing.</p>
+<p>Policy permission is not proof of connectivity, a live session or an installed
+visa. Machine permission does not grant access to every user on that machine.
+Group membership is one policy input, not a grant. User and machine authorities
+are separate. Nested membership paths are source-reported examples, not live
+directory traversal. Unavailable membership evidence is not an empty membership.</p>
+<p>Search and outcome filters narrow results; membership filtering changes the
+candidate cohort. Summary counts describe the cohort before search/outcome
+and result-type filters. Group entries are candidate relationships with remaining
+constraints, never permission for every member. Sorting and pagination affect the screen; current-view reports include
+all filtered matches, not just the visible page. Reset filters retains the
+selected request, context and revision.</p>
+</section>
+<section id="policy" class="panel">
+<h2>Policy changes</h2>
+<p>The r41 → r42 comparison is a plain-language semantic summary, not executable
+ZPL. No compiler or effective-policy comparison has run. Membership and source
+inputs are held at the same sample snapshot to isolate policy changes; historical
+attributes have not been replayed. Four selected request examples are not an
+exhaustive impact analysis.</p>
+<p>Publication is not activation everywhere. Activation acknowledgments must
+retain their exact enforcement scope; partial acknowledgments do not demonstrate
+universal enforcement. Unsupported revision selections show no comparison.</p>
+</section>
+<section id="assertions" class="panel">
+<h2>Assertions</h2>
+<p>Search by name, canonical revision reference, definition, policy or source,
+and combine that search with the enforcing/diagnostic role filter.</p>
+<p>Definitions and selected-context outcomes are fictional, not executable
+source or evaluator results. Satisfying one assertion does not prove policy
+permission. Diagnostic observations do not independently grant or deny access.
+No aggregate pass rate or complete evaluation population is available.
+Record-specific dependencies and missing-evidence details remain in the workspace.</p>
+</section>
+<section id="history" class="panel">
+<h2>History and evidence gaps</h2>
+<p>Sample timelines distinguish observations, gaps and derived facts.
+Arrival order can differ from event time. Derived expiry is not an observed
+expiry event; a missing acknowledgment does not prove installation failure.
+No matching record does not prove an action never happened.</p>
+<p>Entity links and the seven-day retention window are illustrative, not
+resolved correlations or verified retention. The selected time range does
+not query or filter these fixtures.</p>
+</section>
+<section id="reports" class="panel">
+<h2>Reports and report packs</h2>
+<p>For user/machine reviews, choose the identity category before the subject.
+Add all users or Add all machines adds only that category. User groups and
+machine groups also remain separate in the group directory.</p>
+<p>Choose templates, tailor their subjects and assemble a pack. Preview a
+template before adding it. Add all scopes skips existing template/scope pairs;
+individual reports can be previewed, reordered or removed. The template coverage
+checklist describes assembly, not evidence completeness or compliance.</p>
+<p>Current-view reports capture all filtered matches. Template reports use
+their separately selected scopes, not Access Explorer filters. Shared reporting
+dates are requested-scope metadata only; they do not filter fictional events
+or reconstruct historical attributes. The evidence cutoff is a fixed sample
+snapshot, distinct from the browser-generated timestamp.</p>
+<p>Prepared-by and audience fields are user-entered labels, not authentication
+or delivery authorization. Reviewer notes are unverified commentary; do not
+enter sensitive data. Notes cannot replace evidence or mandatory limitations.</p>
+<p>Preview before downloading HTML or using Print / Save PDF. Exports retain
+sample markings, provenance and limitations. They are editable and have no
+signature, chain-of-custody guarantee, compliance certification or immutable
+retention. Saving packs, scheduling, signed exports and live evidence remain
+Not Implemented.</p>
+</section>
+</main>
+</html>
