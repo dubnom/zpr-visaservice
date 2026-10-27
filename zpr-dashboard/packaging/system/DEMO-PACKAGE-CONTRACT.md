@@ -150,6 +150,20 @@ with start/stop/status commands. Do not rebuild images merely to repeat the
 completed image-import step, and do not describe image loading as service
 installation or startup.
 
+### Bundled Audit UI package slice
+
+The ZPR runtime archive now includes the regular static files from the reviewed
+`zpr-audit/public` source directory and a package-owned `serve-audit.py`
+launcher. Build requires the explicit `--audit-public-dir` input; isolated
+candidate preflight requires that directory's `index.html` in the selected
+`zpr-visaservice` source snapshot. Archive verification requires both the
+launcher and `audit/index.html`; symlinks and private/credential-named files are
+rejected, and test-prefixed assets are omitted. Package tests cover asset
+inclusion, safe install, and local HTTP serving. The launcher binds to `127.0.0.1` and
+serves only static files. This is not an Audit backend integration, does not
+connect the UI to production audit data, and does not close clean-host,
+Simulator-scenario, or complete-demo acceptance.
+
 ### Paired Simulator-world source implementation
 
 The source package runtime now passes the installed ZPR package and persistent
