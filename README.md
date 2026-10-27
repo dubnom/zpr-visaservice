@@ -2,10 +2,11 @@
 
 ZPR visa service implementation (under active development).
 
-The standalone [ZPR Audit application](zpr-audit/README.md) provides sample access
-exploration, illustrative policy history and tailored reports, plus a separate
-read-only import of operator-supplied assertion-settings exports. It reuses
-shared UI palette assets without requiring Control Room or Simulator to run.
+The [ZPR Audit application](zpr-audit/README.md) is included in the minimal ZPR
+package. It provides sample access exploration, illustrative policy history
+and tailored reports, plus a separate read-only import of operator-supplied
+assertion-settings exports. Its UI remains independent of Control Room and
+Simulator, and does not require either service to run.
 
 For external attribute-provider authors and deployment operators, see the
 [trusted-source integration guide](TRUSTED_SOURCE_INTEGRATION.md): lookup
@@ -19,6 +20,10 @@ requirements. It is not implemented envelope support.
 For the B1 **evaluation-only**, Simulator-independent local operator/LDAP/logging
 bootstrap, see [the one-command evaluation runbook](zpr-dashboard/packaging/evaluation/README.md).
 This is not the complete production appliance or source-registration milestone.
+
+For the two persistent local environments (`stable` and `dev`), their fixed
+port assignments, and the cleanup rule for temporary environments, see the
+[environment inventory and runbook](environments/README.md).
 
 On a state-preserving restart, retained node identities are not evidence of a
 live node session. Policy-authorized peer bootstrap visas remain available until

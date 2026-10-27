@@ -1,41 +1,14 @@
 # ZPR Audit
 
-Standalone Audit application with sample workspaces and a separate read-only
-assertion-settings import, independent of Control Room,
-Control-Service, Simulator, OpenObserve and authentication services.
-No real policy evaluation or historical query is implemented.
+Audit is included in the minimal ZPR package. It provides sample workspaces and
+a separate read-only assertion-settings import. The UI remains independent of
+Control Room, Control-Service, Simulator, OpenObserve and authentication
+services. Package inclusion does not add live policy evaluation, historical
+queries or a dependency on those services.
 
-## Maturity integration gate
-
-Audit feature development is paused at this checkpoint while maturity undergoes
-user acceptance testing. Keep Audit standalone; do not alter the maturity UAT
-baseline, deployment or running services to integrate it.
-
-The maturity worktree had uncommitted UAT changes when this checkpoint was
-prepared. Its observed committed HEAD was
-`9ebf10bb651ddce862502564410bc4855a4e71a5`; this is **not** an approved integration
-baseline. Wait for the maturity owner to supply a committed or tagged UAT
-candidate. Do not copy or commit their working-tree changes.
-
-Once that candidate is identified:
-
-1. Create a separate integration worktree/branch from the exact candidate.
-2. Bring the Audit checkpoint into that branch, preserving the maturity branch.
-3. Validate the final production assertion-settings contract and import a
-   successful authorized real export. Never treat a service-error response as
-   empty settings or reuse credentials/browser sessions.
-4. Check organization, revision, source, paired-snapshot provenance, comparison
-   and downloaded/printed reports against that export.
-5. Run Audit tests and relevant maturity regressions with Simulator unavailable.
-   Retain category separation and the independent production-service boundary.
-6. Agree independent deployment/navigation and complete focused operator
-   acceptance. A development preview is not a production deployment.
-7. Merge only after maturity UAT acceptance and those gates pass, as a separately
-   reviewed additive change. No automatic merge or deployment is authorized.
-
-Successful real-data validation, final-contract compatibility and operator
-acceptance remain open gates. Synthetic automated tests are not production
-evidence. Do not resume broad UI feature batches in place of these checks.
+The local development UI is served from `public/`; see [Run](#run). Imported
+assertion settings remain operator-supplied data and are not submitted to a
+service by Audit.
 
 ## Importing real assertion settings
 

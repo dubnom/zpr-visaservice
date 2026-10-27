@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "stable",
+  "lifecycle": "persistent",
+  "runtime": {
+    "engine": "colima",
+    "profile": "zpr-original-20261016",
+    "docker_context": "colima-zpr-original-20261016",
+    "source_checkout": "../../zpr-visaservice",
+    "state_path": "../../.local-runtime"
+  },
+  "port_bindings": [
+    { "service": "control-room", "host_ip": "127.0.0.1", "host_port": 28787, "container_port": 28787 },
+    { "service": "simulator", "host_ip": "127.0.0.1", "host_port": 28788, "container_port": 28788 },
+    { "service": "policy-service", "host_ip": "127.0.0.1", "host_port": 28789, "container_port": 8789 },
+    { "service": "control-service", "host_ip": "127.0.0.1", "host_port": 28790, "container_port": 8790 },
+    { "service": "dns-records-relay", "host_ip": "127.0.0.1", "host_port": 28055, "container_port": 8055 },
+    { "service": "admin-relay", "host_ip": "127.0.0.1", "host_port": 28184, "container_port": 8184 },
+    { "service": "visa-service-admin", "host_ip": "127.0.0.1", "host_port": 28186, "container_port": 8183 },
+    { "service": "directory-manager", "host_ip": "127.0.0.1", "host_port": 28793, "container_port": 8080 },
+    { "service": "ldap-ui-relay", "host_ip": "127.0.0.1", "host_port": 28797, "container_port": 8797 },
+    { "service": "observability-ui-relay", "host_ip": "127.0.0.1", "host_port": 28798, "container_port": 8798 },
+    { "service": "local-operator-idp", "host_ip": "127.0.0.1", "host_port": 25556, "container_port": 5556 },
+    { "service": "machine-control", "host_ip": "172.31.0.1", "host_port": 28791, "container_port": 8791 }
+  ]
+}

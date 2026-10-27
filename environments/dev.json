@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "dev",
+  "lifecycle": "persistent",
+  "runtime": {
+    "engine": "docker",
+    "docker_context": "desktop-linux",
+    "install_id": "e18d7c386deecf8c06fc5ee4",
+    "source_checkout": ".",
+    "state_path": "zpr-dashboard/.zpr-evaluation-acceptance"
+  },
+  "port_bindings": [
+    { "service": "control-room", "host_port": 58787, "bind": ["loopback", "selected-private-ipv4"] },
+    { "service": "control-service", "host_ip": "127.0.0.1", "host_port": 58790 },
+    { "service": "snapshot-delivery", "host_ip": "127.0.0.1", "host_port": 58793 },
+    { "service": "simulator", "host_ip": "selected-private-ipv4", "host_port": 38888 },
+    { "service": "ldap", "host_ip": "127.0.0.1", "host_port": 51636, "container_port": 1636 },
+    { "service": "logging", "host_ip": "127.0.0.1", "host_port": 55080, "container_port": 5080 },
+    { "service": "operator-oidc", "host_port": 55556, "bind": ["loopback", "selected-private-ipv4"], "container_port": 5556 },
+    { "service": "visa-service-admin", "host_ip": "127.0.0.1", "host_port": 58182, "container_port": 8182 }
+  ]
+}
