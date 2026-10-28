@@ -226,6 +226,11 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		if err := createEvaluationDataPlaneNetwork(startup, inventory); err != nil {
 			return err
 		}
+		if gateway, err := evaluationLinuxDeliveryHost(startup, inventory); err != nil {
+			return err
+		} else if gateway != "" {
+			inventory.Config.DeliveryHost = gateway
+		}
 		_, markerErr := os.Stat(filepath.Join(state, evaluationVisaPolicyMarker))
 		plane, err := launch("data-plane", "docker", evaluationDataPlaneArguments(state, inventory, runtime.DataPlaneImage, errors.Is(markerErr, os.ErrNotExist)), evaluationDockerEnvironment())
 		if err != nil {
@@ -349,7 +354,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 				if err := exited(process); err != nil {
 					return err
 				}
-				return checkEvaluationDelivery(state, inventory.Config.SnapshotDeliveryPort)
+				return checkEvaluationDeliveryAt(state, inventory.Config.deliveryHost(), inventory.Config.SnapshotDeliveryPort)
 			}); err != nil {
 				return err
 			}

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -236,7 +237,7 @@ func evaluationSubjectEnvironment(state string, config evaluationConfig, room bo
 		"ZPR_OPERATOR_DELEGATION_TRUST_FILE=" + path(evaluationDelegationTrust),
 		"ZPR_SUBJECT_SNAPSHOT_SIGNING_FILE=" + path("subject-snapshot-signing.json"),
 		"ZPR_SUBJECT_SNAPSHOT_SIGNING_KEY_FILE=" + path("subject-snapshot-signing-key.pem"),
-		fmt.Sprintf("ZPR_SUBJECT_SNAPSHOT_DELIVERY_LISTEN=127.0.0.1:%d", config.SnapshotDeliveryPort),
+		fmt.Sprintf("ZPR_SUBJECT_SNAPSHOT_DELIVERY_LISTEN=%s", net.JoinHostPort(config.deliveryHost(), strconv.Itoa(config.SnapshotDeliveryPort))),
 		"ZPR_SUBJECT_SNAPSHOT_DELIVERY_CLIENT_CA_FILE=" + path("ca.pem"),
 		"ZPR_SUBJECT_SNAPSHOT_RECIPIENTS_FILE=" + path("subject-snapshot-recipients.json"),
 	}
@@ -249,6 +250,17 @@ func evaluationVSInitCommand(binary, state string) string {
 // checkEvaluationDelivery completes a TLS 1.3 handshake with the VS client
 // identity; the listener rejects unpinned certificates during the handshake.
 func checkEvaluationDelivery(state string, port int) error {
+	return checkEvaluationDeliveryAt(state, "127.0.0.1", port)
+}
+
+func (config evaluationConfig) deliveryHost() string {
+	if config.DeliveryHost != "" {
+		return config.DeliveryHost
+	}
+	return "127.0.0.1"
+}
+
+func checkEvaluationDeliveryAt(state, host string, port int) error {
 	config, err := evaluationTLS(state, false)
 	if err != nil {
 		return err
@@ -258,7 +270,7 @@ func checkEvaluationDelivery(state string, port int) error {
 		return errors.New("invalid VS delivery client identity")
 	}
 	config.MinVersion, config.Certificates = tls.VersionTLS13, []tls.Certificate{certificate}
-	connection, err := tls.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}, "tcp", fmt.Sprintf("127.0.0.1:%d", port), config)
+	connection, err := tls.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}, "tcp", net.JoinHostPort(host, strconv.Itoa(port)), config)
 	if err != nil {
 		return errors.New("subject snapshot delivery handshake failed")
 	}

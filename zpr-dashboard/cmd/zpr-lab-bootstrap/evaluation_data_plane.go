@@ -18,11 +18,13 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -591,6 +593,9 @@ func evaluationDataPlaneArguments(state string, inventory evaluationInventory, i
 	}
 	if inventory.Config.subjectLinks() {
 		args = append(args, "-e", fmt.Sprintf("ZPR_DP_DELIVERY_PORT=%d", inventory.Config.SnapshotDeliveryPort))
+		if inventory.Config.DeliveryHost != "" {
+			args = append(args, "--add-host", "host.docker.internal:"+inventory.Config.DeliveryHost)
+		}
 	}
 	if inventory.Config.ProtectedDNS {
 		args = append(args, "-e", "ZPR_DP_PROTECTED_DNS=1")
@@ -762,4 +767,25 @@ func evaluationProtectedDNSAnswerMatches(output []byte, expected string) bool {
 		}
 	}
 	return false
+}
+
+// evaluationLinuxDeliveryHost returns the data-plane network gateway on Linux,
+// where host.docker.internal does not exist and a loopback-only listener is
+// unreachable from the container. Other hosts keep the loopback listener.
+func evaluationLinuxDeliveryHost(ctx context.Context, inventory evaluationInventory) (string, error) {
+	if runtime.GOOS != "linux" || !inventory.Config.subjectLinks() {
+		return "", nil
+	}
+	command := exec.CommandContext(ctx, "docker", "network", "inspect", "-f", "{{range .IPAM.Config}}{{.Gateway}} {{end}}", evaluationDataPlaneName(inventory))
+	command.Env = evaluationDockerEnvironment()
+	output, err := command.Output()
+	if err != nil {
+		return "", errors.New("cannot inspect the data-plane Docker network")
+	}
+	for _, field := range strings.Fields(string(output)) {
+		if address := net.ParseIP(field); address != nil && address.To4() != nil {
+			return address.String(), nil
+		}
+	}
+	return "", errors.New("the data-plane Docker network has no IPv4 gateway")
 }

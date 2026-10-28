@@ -49,6 +49,9 @@ type evaluationConfig struct {
 	ValkeyPort  int  `json:"valkey_port,omitempty"`
 	// Control-Service pinned snapshot delivery listener for the loopback VS.
 	SnapshotDeliveryPort int `json:"snapshot_delivery_port,omitempty"`
+	// DeliveryHost is the data-plane Docker network gateway on Linux, where
+	// containers cannot reach a host loopback listener; empty means loopback.
+	DeliveryHost string `json:"-"`
 	// DataPlane hosts the VS, Valkey, a node and the vs.zpr adapter in a Linux
 	// container instead of the native loopback VS (VSAPI/Valkey stay internal).
 	DataPlane bool `json:"data_plane,omitempty"`
