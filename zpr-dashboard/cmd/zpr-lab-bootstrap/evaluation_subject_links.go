@@ -43,7 +43,7 @@ const (
 
 var evaluationAdminSubjectLinkPermissions = []string{
 	"subject-link.read", "subject-link.propose", "subject-link.registry.manage", "subject-link.publish",
-	"subject-link.snapshot.capture", "subject-link.snapshot.sign",
+	"subject-link.snapshot.capture", "subject-link.snapshot.sign", "subject-link.approve",
 }
 
 var evaluationReviewerPermissions = []string{"monitor.read", "subject-link.read", "subject-link.approve"}
@@ -174,11 +174,13 @@ Sample LDAP subject:    uid=evaluation-subject,ou=People,%s
 Sample entryUUID:       %s
 VS recipient ID:        %s
 Snapshot epoch:         %s
-Reviewer login:         %s (password in operator-reviewer.secret)
+Optional 2nd login:     %s (password in operator-reviewer.secret)
 
 Administrator registers the BAS authority and the LDAP source, proposes a
-link and captures/signs snapshots; the independent reviewer approves. After
-the first signed snapshot, initialize the VS checkpoint once:
+link and captures/signs snapshots, then approves the review as a separate
+step. A single operator may do both; approving your own proposal is allowed
+but flagged in the audit as a less secure single-operator review. The
+optional second login may approve instead. After the first signed snapshot, initialize the VS checkpoint once:
 
   <vs-binary> --initialize-subject-snapshot -c %s
 

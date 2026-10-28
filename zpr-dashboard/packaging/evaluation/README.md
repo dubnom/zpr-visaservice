@@ -153,10 +153,12 @@ verifies and checkpoints snapshots but **never enforces** them.
   with `-visa-service` before this cycle existed have no delivery port. Restart
   them with `-snapshot-delivery-port 0`, or create a new state directory.
 - **Second login:** `reviewer@evaluation.invalid` (password in
-  `operator-reviewer.secret`) is an independent Dex subject that may only read
+  `operator-reviewer.secret`) is an optional second Dex subject that may only read
   and approve. The administrator gains `subject-link.read`, `.propose`,
-  `.registry.manage`, `.publish`, `.snapshot.capture` and `.snapshot.sign`.
-  It cannot approve its own proposals.
+  `.registry.manage`, `.publish`, `.snapshot.capture`, `.snapshot.sign` and
+  `.approve`. A single operator may propose and approve; the two steps stay
+  separate, and a proposer's own approval is flagged in the audit as a less
+  secure single-operator review.
 - **Generated, protected files:**
   - `subject-link-providers.json`: binds LDAP source `evaluation-directory`
     version `1` to this install's LDAPS directory.
@@ -189,7 +191,7 @@ Operator flow, using the Subject links and Publication pages:
    provider no longer binds.
 2. Load the registry context, then propose a link from a device subject to the
    sample `entryUUID`.
-3. Sign in as the reviewer and approve the review.
+3. Approve the review (as the administrator, or as the optional second login).
 4. As the administrator, on the Publication page:
    - provision `evaluation-vs` / `evaluation`;
    - promote the approved review;

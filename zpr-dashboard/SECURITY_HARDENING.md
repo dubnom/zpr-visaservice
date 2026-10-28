@@ -85,18 +85,12 @@ LDAP access, complete isolation and security certification remain open.
 
 ### P1: Enrollment Approval Separation of Duties
 
-- [ ] **Remove creator self-approval before multi-operator production use.**
-  The initial single-operator deployment permits the named invitation creator
-  to approve that device's key-bound request. This weakens independent review
-  and is a deferred security risk, not a credential or authorization bypass:
-  current approval still requires the configured named-user permission,
-  matching organization, key fingerprint, and current revision, and is audited.
-  Before adding more operators or enabling production enrollment, enforce a
-  distinct issuer/subject for create and approval in the Enrollment Service
-  decision transaction (not only in the GUI), including concurrent requests
-  and delegated Control-Service calls. Keep any later single-operator exception
-  explicit, narrowly scoped, operator-configured, and audited. Test denial by
-  default, allowed configured exception, forged caller identity, organization
+- [x] **Decision (2026-10-28): the two-person rule is removed everywhere.**
+  A small organization may have one operator. Create/propose and approve stay
+  separate steps, and the same person may do both. Control Room policy-change
+  and subject-link reviews flag such approvals as `self_review` and log an
+  `AUDIT WARNING` (less secure). Enrollment approval by the invitation creator
+  remains allowed; surfacing the same warning in its audit trail is still to do.
   isolation, stale revisions, and audit rollback.
 
 ### P0: Organization Isolation and Activation

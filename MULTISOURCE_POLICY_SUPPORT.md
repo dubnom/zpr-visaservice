@@ -3621,10 +3621,9 @@ subject exists, or that a configured field is approved by the provider.
 The only decision transition is
 `submitted -> review-approved` with review version `"1" -> "2"`. Approval reads
 the immutable proposer inside the transaction, compares exact digest/version
-and the supplied current registry revision, requires a different verified
-issuer/subject, and writes the decision and event together. There is no
-self-approval override, including the generic review feature's single-operator
-setting. A changed display name or caller-side proposal copy cannot bypass
+and the supplied current registry revision, requires a verified issuer/subject (the proposer may approve; the event is
+flagged as a single-operator review), and writes the decision and event together. Decision (2026-10-28): the
+two-person rule is removed; self-approval is allowed and flagged in the audit. A changed display name or caller-side proposal copy cannot bypass
 the persisted-author check. Failed/stale/conflicting decisions write no audit
 event; an audit write failure rolls back the state transition. The immutable
 proposal/event triggers reject updates/deletion of the review evidence.

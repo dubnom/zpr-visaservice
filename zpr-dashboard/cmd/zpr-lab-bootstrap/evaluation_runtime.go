@@ -418,7 +418,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		if inventory.Config.DataPlane {
 			initCommand = evaluationDataPlaneInitCommand(inventory, state)
 		}
-		fmt.Fprintf(out, "Subject links: independent reviewer %s (password: private operator-reviewer.secret); see %s for the publication cycle.\nAfter the first signed snapshot, initialize the VS checkpoint once: %s\n",
+		fmt.Fprintf(out, "Subject links: the administrator can propose and approve (a self-approval is flagged in the audit); optional second login %s (password: private operator-reviewer.secret); see %s for the publication cycle.\nAfter the first signed snapshot, initialize the VS checkpoint once: %s\n",
 			evaluationReviewerEmail, filepath.Join(state, "SUBJECT-LINKS.txt"), initCommand)
 	}
 	fmt.Fprintln(out, "Foreground supervision active. Ctrl-C stops this install's services/containers; rerun the SAME command to preserve identity and directory/log data.")

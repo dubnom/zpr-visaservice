@@ -1096,7 +1096,7 @@ using only release artifacts and company inputs, with Simulator unavailable.
   validation. Do not claim HTTP method/path enforcement inside opaque CONNECT.
 - [ ] Verify named-user authorization, organization isolation, audit attribution,
   first-admin recovery and enrollment approval separation for the supported
-  operator model. Any single-operator exception must be explicit and audited.
+  operator model. Single-operator approval is supported (the two steps remain) and is flagged in the audit as less secure.
 - [ ] Present component versions, applied versus draft revisions, certificate
   status, diagnostics and readiness without requiring developer shell access.
 
