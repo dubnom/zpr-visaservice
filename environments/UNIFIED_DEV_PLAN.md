@@ -60,3 +60,23 @@ into the home directory, no root); the repositories are not on the workbench
   not collide with the r5 ports (49300, 49385, 49388) while r5 still runs.
 - Nothing is deleted. The old stacks stay stopped, not removed.
 - The state directory stays outside synchronized folders and is not committed.
+
+## Workbench dev results (2026-10-28, Simulator absent)
+
+Install `a26f4b9e392b516eb0c0df59`, state `~/zpr-dev/state-dev` on the
+workbench (Ubuntu 24.04 amd64), started with `-visa-service -data-plane
+-protected-dns -data-plane-endpoints 3`, packaged image pins, platform amd64.
+Linux fixes: host-arch image build, BIND config staged for the `bind` user, and
+state ownership restored on stop.
+
+| Gate | Evidence |
+|---|---|
+| Node + Visa | Launcher health: node and `vs.zpr` admitted; endpoint-01 and client-01 admitted. |
+| Protected DNS | From client-01 over ZPR: `dns.svc.zpr`, `vs.zpr.adapters.svc.zpr`, `endpoint-01.adapters.svc.zpr` resolve. |
+| Logging | Launcher: ingest/query and retention across restart. |
+| Allow/deny | client-01 to endpoint-01: ping, tcp/7007, udp/7008 reply; tcp/7009, udp/7010 dropped; ping to Visa address denied (`no match`). |
+| Control Room | HTTPS UI serves with the install CA. Named-operator login and Visa views not yet exercised in a browser. |
+
+Finding: a ping sent before its target adapter existed kept failing after the
+target connected (no Visa request was made) until the sending adapter was
+restarted. To be root-caused; probe only after peers are up.
