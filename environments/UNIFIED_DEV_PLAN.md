@@ -80,3 +80,11 @@ state ownership restored on stop.
 Finding: a ping sent before its target adapter existed kept failing after the
 target connected (no Visa request was made) until the sending adapter was
 restarted. To be root-caused; probe only after peers are up.
+
+## Update 2026-10-28 (evening): single-operator review and fresh dev install
+
+- Two-person review removed everywhere (commits `b9a0875` and the launcher/docs commit after it). Submit and approve remain separate steps; a proposer's own approval is allowed and flagged `self_review` in the audit, UI and server log (`AUDIT WARNING`). The launcher now grants the administrator `subject-link.approve`; the second login (`reviewer@evaluation.invalid`) is optional.
+- Operator grants are written once per state, so the dev install was recreated: the previous state is retained, stopped, at `~/zpr-dev/state-dev-v1`; the active state is `~/zpr-dev/state-dev` (install `9b2c3e8c6374338b207b18c1`). New CA and new passwords.
+- Subject-link snapshot delivery runs on Linux (bound to the data-plane network gateway, `host.docker.internal` added).
+- Probes on the fresh install: tcp/7007 and udp/7008 reply, tcp/7009 denied. Open issue (ICMP): after a client's first probe, a probe of the other kind to the same destination gets no reply. Ping first then tcp/7007 fails; tcp/udp first then ping fails; restarting client-01 clears it. Not yet root-caused (adapter DP-K03 vs stock, or Visa-side dedup).
+- Endpoints 01-03 are Simulator-launched; endpoint-01 was started by hand for probing.
