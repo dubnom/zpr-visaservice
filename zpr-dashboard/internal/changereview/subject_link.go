@@ -278,6 +278,7 @@ func readSubjectLink(ctx context.Context, q queryer, org, id string) (SubjectLin
 		}
 		record.Events = append(record.Events, event)
 	}
+	markSelfReview(record.Events, record.Proposal.Author)
 	return record, rows.Err()
 }
 
@@ -385,11 +386,10 @@ func (s *Store) approveSubjectLink(ctx context.Context, org, id, reviewedDigest,
 		record.Proposal.RegistryRevision != registryRevision || !record.Proposal.ExpiresAt.After(time.Now()) {
 		return record, ErrConflict
 	}
-	if err = operatorauth.RequireIndependentReviewer(
-		operatorauth.Identity{Issuer: reviewer.Issuer, Subject: reviewer.Subject},
-		operatorauth.Identity{Issuer: record.Proposal.Author.Issuer, Subject: record.Proposal.Author.Subject},
-	); err != nil {
-		return record, ErrSelfReview
+	for _, identity := range []Principal{reviewer, record.Proposal.Author} {
+		if !operatorauth.ValidPrincipal(operatorauth.Identity{Issuer: identity.Issuer, Subject: identity.Subject}) {
+			return record, ErrInvalid
+		}
 	}
 	if requireAuthority && !requireRegistry {
 		if _, err := captureSubjectLinkAuthority(ctx, tx, record.Proposal.Organization, record.Proposal.Root); err != nil {
@@ -428,6 +428,7 @@ func (s *Store) approveSubjectLink(ctx context.Context, org, id, reviewedDigest,
 	}
 	record.State, record.Version = "review-approved", "2"
 	record.Events = append(record.Events, event)
+	markSelfReview(record.Events, record.Proposal.Author)
 	if err = retry.write(ctx, tx, record); err != nil {
 		return record, err
 	}
@@ -482,4 +483,14 @@ func (retry subjectLinkRetry) write(ctx context.Context, tx *sql.Tx, record Subj
 	_, err = tx.ExecContext(ctx, "INSERT INTO subject_link_review_retries VALUES(?,?,?,?,?,?)",
 		retry.org, retry.issuer, retry.subject, retry.key, retry.fingerprint, string(data))
 	return err
+}
+
+// SelfReviewed reports whether any approval came from the proposer.
+func (r SubjectLinkReview) SelfReviewed() bool {
+	for _, event := range r.Events {
+		if event.SelfReview {
+			return true
+		}
+	}
+	return false
 }

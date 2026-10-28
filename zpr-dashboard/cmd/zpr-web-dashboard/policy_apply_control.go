@@ -173,7 +173,7 @@ func (p *policyReviewApply) request(ctx context.Context, method, route string, b
 	return decodeOperatorConfig(data, out)
 }
 
-func (p *policyReviewApply) apply(ctx context.Context, store *changereview.Store, record changereview.Record, current changereview.Proposal, allowSelf bool) (changereview.PolicyOperationRecord, error) {
+func (p *policyReviewApply) apply(ctx context.Context, store *changereview.Store, record changereview.Record, current changereview.Proposal) (changereview.PolicyOperationRecord, error) {
 	// Read receiver CAS state exclusively through authenticated Policy-Service.
 	var candidate policyApplyCandidate
 	cached, cacheErr := store.PolicyArtifact(ctx, record.Proposal.Organization, record.ID, nil)
@@ -199,7 +199,7 @@ func (p *policyReviewApply) apply(ctx context.Context, store *changereview.Store
 		return changereview.PolicyOperationRecord{}, err
 	}
 	// Verify immutable approval before recording the first operation intent.
-	if _, _, err = store.ApprovedPolicy(ctx, record.Proposal.Organization, record.ID, current, allowSelf); err != nil {
+	if _, _, err = store.ApprovedPolicy(ctx, record.Proposal.Organization, record.ID, current); err != nil {
 		return changereview.PolicyOperationRecord{}, err
 	}
 	proposed := operatordelegation.PolicyOperation{
@@ -210,7 +210,7 @@ func (p *policyReviewApply) apply(ctx context.Context, store *changereview.Store
 		// Validate before freezing any artifact; later retries use only this exact
 		// approved snapshot, never a replacement stage or newly observed CAS state.
 		if _, _, err = prepareReviewedPolicyPair(ctx, store, p.signer, record.Proposal.Organization, record.ID, proposed.OperationID,
-			current, candidate.Stage, container, candidate.Current, allowSelf, time.Now()); err != nil {
+			current, candidate.Stage, container, candidate.Current, time.Now()); err != nil {
 			return changereview.PolicyOperationRecord{}, err
 		}
 		encoded, err := json.Marshal(candidate)
@@ -236,7 +236,7 @@ func (p *policyReviewApply) apply(ctx context.Context, store *changereview.Store
 	}
 	candidate.Current.CurrentDigest, candidate.Current.CurrentVinst = op.ExpectedCurrentDigest, op.ExpectedCurrentVinst
 	body, proof, err := prepareReviewedPolicyPair(ctx, store, p.signer, record.Proposal.Organization, record.ID, op.OperationID, current,
-		candidate.Stage, container, candidate.Current, allowSelf, time.Now())
+		candidate.Stage, container, candidate.Current, time.Now())
 	if err != nil {
 		return changereview.PolicyOperationRecord{}, err
 	}

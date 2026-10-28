@@ -87,7 +87,7 @@ func TestSubjectLinkReviewPersistenceAndQueueIsolation(t *testing.T) {
 	if list, err := reopened.List(context.Background(), p.Organization, 0); err != nil || len(list) != 0 {
 		t.Fatal("shared queue contaminated", list, err)
 	}
-	if _, _, err := reopened.ApprovedPolicy(context.Background(), p.Organization, record.ID, Proposal{}, true); !errors.Is(err, ErrNotFound) {
+	if _, _, err := reopened.ApprovedPolicy(context.Background(), p.Organization, record.ID, Proposal{}); !errors.Is(err, ErrNotFound) {
 		t.Fatal("subject-link approval usable for policy installation", err)
 	}
 	if _, err := approveLink(reopened, record, reviewer); !errors.Is(err, ErrConflict) {
@@ -146,10 +146,6 @@ func TestSubjectLinkReviewDecisionBindsPersistedAuthorAndExactReview(t *testing.
 		t.Fatal(err)
 	}
 	self := record.Proposal.Author
-	self.Name = "Changed display name"
-	if _, err := approveLink(store, record, self); !errors.Is(err, ErrSelfReview) {
-		t.Fatal("renamed proposer approved self", err)
-	}
 	reviewer := Principal{Issuer: self.Issuer, Subject: "reviewer"}
 	for _, test := range []struct{ org, digest, version, registry string }{
 		{"foreign", record.Digest, "1", record.Proposal.RegistryRevision},
@@ -165,13 +161,36 @@ func TestSubjectLinkReviewDecisionBindsPersistedAuthorAndExactReview(t *testing.
 	if err != nil || loaded.State != "submitted" || len(loaded.Events) != 1 {
 		t.Fatal("failed decisions mutated review", loaded, err)
 	}
-	// Changing the caller's copy of the author cannot bypass the transactional read.
+	// The proposer comes from the stored proposal, so a forged caller copy
+	// cannot hide or fake a self review.
 	record.Proposal.Author.Subject = "forged-author"
-	if _, err := approveLink(store, record, self); !errors.Is(err, ErrSelfReview) {
-		t.Fatal("caller author replaced stored author", err)
+	approved, err := approveLink(store, record, reviewer)
+	if err != nil || approved.SelfReviewed() {
+		t.Fatal("independent approval failed or was flagged", err)
 	}
-	if _, err := approveLink(store, record, reviewer); err != nil {
+	_ = self
+}
+
+func TestSubjectLinkSelfApprovalIsAllowedAndFlagged(t *testing.T) {
+	store, _ := subjectLinkStore(t)
+	ctx := context.Background()
+	p := subjectLinkFixture()
+	record, err := store.SubmitSubjectLinkOnce(ctx, p, "submit")
+	if err != nil {
 		t.Fatal(err)
+	}
+	self := record.Proposal.Author
+	self.Name = "Renamed proposer"
+	approved, err := approveLink(store, record, self)
+	if err != nil {
+		t.Fatal("single-operator approval rejected", err)
+	}
+	if approved.State != "review-approved" || !approved.SelfReviewed() || !approved.Events[len(approved.Events)-1].SelfReview {
+		t.Fatal("proposer approval not flagged", approved)
+	}
+	loaded, err := store.GetSubjectLink(ctx, p.Organization, record.ID)
+	if err != nil || !loaded.SelfReviewed() || loaded.Events[0].SelfReview {
+		t.Fatal("flag not derived on read", loaded, err)
 	}
 }
 
@@ -475,8 +494,8 @@ func TestSubjectLinkRetryFailedDecisionDoesNotConsumeKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := store.ApproveSubjectLinkOnce(ctx, p.Organization, record.ID, record.Digest,
-		"1", p.RegistryRevision, "Self review", p.Author, "retry"); !errors.Is(err, ErrSelfReview) {
-		t.Fatal("self-review was not rejected", err)
+		"1", strings.Repeat("b", 64), "Stale registry", p.Author, "retry"); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale registry decision was not rejected", err)
 	}
 	var count int
 	if err := store.db.QueryRow("SELECT count(*) FROM subject_link_review_retries").Scan(&count); err != nil || count != 1 {

@@ -118,17 +118,17 @@
     const audit = byId("audit"); audit.replaceChildren();
     for (const event of selected.events) {
       const li = document.createElement("li");
-      li.textContent = `${event.at}: ${event.action} by ${event.actor.name || event.actor.subject} (${event.actor.issuer}) — ${event.reason}`;
+      li.textContent = `${event.at}: ${event.action} by ${event.actor.name || event.actor.subject} (${event.actor.issuer}) — ${event.reason}${event.self_review ? " ⚠ single-operator review: approved by the proposer" : ""}`;
       audit.append(li);
     }
     const pending = selected.state === "submitted" && !busy && !uncertain;
     for (const button of byId("decision").querySelectorAll("button")) {
       const action = button.dataset.action;
       button.disabled = !pending || (action === "cancel" ? !permissions("change.submit") || !sameAuthor(selected)
-        : !permissions("change.review") || (action === "approve" && sameAuthor(selected) && !capabilities?.allow_self_approval));
+        : !permissions("change.review"));
     }
     byId("decision-note").textContent = uncertain ? "Outcome unknown. Reload the queue and reconcile before another decision."
-      : sameAuthor(selected) && !capabilities?.allow_self_approval ? "Approval requires a different operator; single-operator approval is not enabled."
+      : sameAuthor(selected) ? "You submitted this change. Approving it is a single-operator review: it is allowed, but less secure and is flagged in the audit."
       : "Approval does not apply this revision.";
   }
   async function load(offset = 0) {
@@ -143,14 +143,13 @@
         request(`/api/change-review/requests?organization=${encodeURIComponent(org)}&offset=${offset}`, { signal: controller.signal }),
       ]);
       if (token !== generation) return;
-      if (!page.requests?.every(recordValid) || typeof caps.allow_self_approval !== "boolean" ||
+      if (!page.requests?.every(recordValid) ||
           caps.application_enabled !== false || !Number.isInteger(page.next_offset)) throw new Error("Invalid review queue response.");
       if (page.requests.some(record => record.proposal.organization !== org)) throw new Error("Review organization mismatch.");
       capabilities = caps; nextOffset = page.next_offset;
       records = offset ? [...new Map([...records, ...page.requests].map(record => [record.id, record])).values()] : page.requests;
       selected = records.find(record => record.id === selected?.id) || null;
-      byId("capabilities").textContent = caps.allow_self_approval
-        ? "Single-operator self-approval explicitly enabled. Application disabled." : "A different operator must approve. Application disabled.";
+      byId("capabilities").textContent = "Submit and approve are separate steps; one operator may do both (flagged in the audit). Application disabled.";
       uncertain = false;
       for (const button of byId("submission").querySelectorAll("button")) button.disabled = !permissions("change.submit");
       render(); status("Queue refreshed. Approval is separate from application.");

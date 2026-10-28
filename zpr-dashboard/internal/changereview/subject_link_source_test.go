@@ -58,10 +58,6 @@ func TestSubjectLinkSourceCheckOrderIsolationAndRollback(t *testing.T) {
 	if _, err := store.SubmitSubjectLinkWithAuthorityOnce(ctx, p, "submit"); !errors.Is(err, ErrConflict) {
 		t.Fatal("source receipt accepted as authority-only", err)
 	}
-	if _, err := store.ApproveSubjectLinkWithSourceOnce(ctx, p.Organization, record.ID, record.Digest,
-		"1", p.RegistryRevision, "Self", p.Author, "self", check); !errors.Is(err, ErrSelfReview) || calls != 2 {
-		t.Fatal("self-review reached provider validation", calls, err)
-	}
 	available = false
 	if _, err := store.ApproveSubjectLinkWithSourceOnce(ctx, p.Organization, record.ID, record.Digest,
 		"1", p.RegistryRevision, "Review", reviewer, "approve", check); err == nil {

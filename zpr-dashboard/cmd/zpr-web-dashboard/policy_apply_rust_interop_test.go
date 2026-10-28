@@ -313,14 +313,14 @@ func testPolicyApplyRustInterop(t *testing.T, recovery bool) {
 		t.Fatal(err)
 	}
 	if _, err = store.Decide(ctx, trust.Organization, review.ID, review.Digest, 1, "approve", "Reviewed actual container",
-		changereview.Principal{Issuer: actor.Issuer, Subject: actor.Subject}, false); err != nil {
+		changereview.Principal{Issuer: actor.Issuer, Subject: actor.Subject}); err != nil {
 		t.Fatal(err)
 	}
 	stage := stagedPolicyCandidate{ID: digest, RecordID: proposal.Target, RecordRevision: proposal.Revision,
 		SourceSHA256: proposal.Candidate.SourceSHA256, ConfigSHA256: proposal.Candidate.ConfigSHA256,
 		BundleSHA256: digest, BundleSize: int64(len(ready.Container))}
 	body, proof, err := prepareReviewedPolicyPair(ctx, store, signer, trust.Organization, review.ID, op.OperationID,
-		proposal, stage, ready.Container, initial, false, time.Now())
+		proposal, stage, ready.Container, initial, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

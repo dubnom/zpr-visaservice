@@ -24,17 +24,17 @@ func TestApprovedPolicyUsesImmutableReviewerAndExactCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = s.ApprovedPolicy(ctx, p.Organization, r.ID, p, false); err == nil {
+	if _, _, err = s.ApprovedPolicy(ctx, p.Organization, r.ID, p); err == nil {
 		t.Fatal("unapproved policy accepted")
 	}
 	reviewer := Principal{Issuer: p.Author.Issuer, Subject: "reviewer"}
-	r, err = s.Decide(ctx, p.Organization, r.ID, r.Digest, r.Version, "approve", "Reviewed exact artifact", reviewer, false)
+	r, err = s.Decide(ctx, p.Organization, r.ID, r.Digest, r.Version, "approve", "Reviewed exact artifact", reviewer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Request/capture actor assertions cannot replace the immutable reviewer.
 	p.Author = Principal{Issuer: "https://forged.example", Subject: "forged"}
-	_, actor, err := s.ApprovedPolicy(ctx, p.Organization, r.ID, p, false)
+	_, actor, err := s.ApprovedPolicy(ctx, p.Organization, r.ID, p)
 	if err != nil || actor != reviewer {
 		t.Fatalf("reviewer provenance: %+v %v", actor, err)
 	}
@@ -47,7 +47,7 @@ func TestApprovedPolicyUsesImmutableReviewerAndExactCandidate(t *testing.T) {
 	} {
 		wrong := p
 		mutate(&wrong)
-		if _, _, err = s.ApprovedPolicy(ctx, p.Organization, r.ID, wrong, false); err == nil {
+		if _, _, err = s.ApprovedPolicy(ctx, p.Organization, r.ID, wrong); err == nil {
 			t.Fatal("stale/replaced policy accepted")
 		}
 	}
@@ -57,12 +57,29 @@ func TestApprovedPolicyUsesImmutableReviewerAndExactCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Decide(ctx, self.Organization, sr.ID, sr.Digest, 1, "approve", "Explicit self approval", self.Author, true)
+	if sr, err = s.Decide(ctx, self.Organization, sr.ID, sr.Digest, 1, "approve", "Single-operator approval", self.Author); err != nil {
+		t.Fatal(err)
+	}
+	if !sr.SelfReviewed() || !sr.Events[1].SelfReview || sr.Events[0].SelfReview {
+		t.Fatal("approval by the proposer was not flagged")
+	}
+	approved, _, err := s.ApprovedPolicy(ctx, self.Organization, sr.ID, self)
+	if err != nil || !approved.SelfReviewed() {
+		t.Fatal("single-operator approved policy rejected or not flagged on read")
+	}
+}
+
+func TestIndependentApprovalIsNotFlaggedSelfReview(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	p := proposal()
+	r, err := s.Submit(ctx, p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = s.ApprovedPolicy(ctx, self.Organization, sr.ID, self, false); !errors.Is(err, ErrSelfReview) {
-		t.Fatal("current no-self-review policy not enforced")
+	r, err = s.Decide(ctx, p.Organization, r.ID, r.Digest, r.Version, "approve", "Reviewed", Principal{Issuer: p.Author.Issuer, Subject: "reviewer"})
+	if err != nil || r.SelfReviewed() {
+		t.Fatalf("independent approval flagged or failed: %v", err)
 	}
 }
 
@@ -92,26 +109,23 @@ func TestReviewStoreImmutableRevisionDecisionsAndOrganization(t *testing.T) {
 	if _, err = s.Get(ctx, "other", r.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatal("cross-organization read accepted")
 	}
-	if _, err = s.Decide(ctx, "great-lakes", r.ID, r.Digest, 1, "approve", "Reviewed", p.Author, false); !errors.Is(err, ErrSelfReview) {
-		t.Fatal("default self-approval accepted")
-	}
 	for _, candidate := range []struct {
 		digest  string
 		version int
 	}{{"wrong", 1}, {r.Digest, 2}} {
 		if _, err = s.Decide(ctx, "great-lakes", r.ID, candidate.digest, candidate.version, "approve", "Reviewed",
-			Principal{Issuer: p.Author.Issuer, Subject: "reviewer"}, false); !errors.Is(err, ErrConflict) {
+			Principal{Issuer: p.Author.Issuer, Subject: "reviewer"}); !errors.Is(err, ErrConflict) {
 			t.Fatal("unbound decision accepted")
 		}
 	}
-	approved, err := s.Decide(ctx, "great-lakes", r.ID, r.Digest, 1, "approve", "Reviewed", p.Author, true)
+	approved, err := s.Decide(ctx, "great-lakes", r.ID, r.Digest, 1, "approve", "Reviewed", p.Author)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if approved.State != "approved" || approved.Proposal.After != "new" || approved.Digest != r.Digest || len(approved.Events) != 2 {
 		t.Fatal("proposal or audit changed")
 	}
-	if _, err = s.Decide(ctx, "great-lakes", r.ID, r.Digest, 2, "reject", "Changed mind", p.Author, true); !errors.Is(err, ErrConflict) {
+	if _, err = s.Decide(ctx, "great-lakes", r.ID, r.Digest, 2, "reject", "Changed mind", p.Author); !errors.Is(err, ErrConflict) {
 		t.Fatal("final decision rewritten")
 	}
 	for _, query := range []string{"UPDATE changes SET proposal='{}'", "DELETE FROM changes", "UPDATE events SET event='{}'", "DELETE FROM events"} {
@@ -133,7 +147,7 @@ func TestReviewDecisionRaceAndAuditAtomicity(t *testing.T) {
 		wg.Add(1)
 		go func(action string) {
 			defer wg.Done()
-			_, err := s.Decide(ctx, "great-lakes", r.ID, r.Digest, 1, action, "Reviewed", Principal{Issuer: "https://idp.example", Subject: "reviewer"}, false)
+			_, err := s.Decide(ctx, "great-lakes", r.ID, r.Digest, 1, action, "Reviewed", Principal{Issuer: "https://idp.example", Subject: "reviewer"})
 			results <- err
 		}(action)
 	}
@@ -161,7 +175,7 @@ func TestReviewDecisionRaceAndAuditAtomicity(t *testing.T) {
 	if _, err = s.db.Exec(`CREATE TRIGGER fail_audit BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT,'audit failed'); END;`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Decide(ctx, "great-lakes", other.ID, other.Digest, 1, "approve", "Reviewed", Principal{Issuer: "https://idp.example", Subject: "reviewer"}, false); err == nil {
+	if _, err = s.Decide(ctx, "great-lakes", other.ID, other.Digest, 1, "approve", "Reviewed", Principal{Issuer: "https://idp.example", Subject: "reviewer"}); err == nil {
 		t.Fatal("audit failure ignored")
 	}
 	current, err = s.Get(ctx, "great-lakes", other.ID)
@@ -185,10 +199,10 @@ func TestReviewStorePersistsAndCancelsOnlyAuthor(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err = s.Decide(context.Background(), "great-lakes", r.ID, r.Digest, 1, "cancel", "Withdrawn", Principal{Issuer: "https://idp.example", Subject: "other"}, false); !errors.Is(err, ErrConflict) {
+	if _, err = s.Decide(context.Background(), "great-lakes", r.ID, r.Digest, 1, "cancel", "Withdrawn", Principal{Issuer: "https://idp.example", Subject: "other"}); !errors.Is(err, ErrConflict) {
 		t.Fatal("other user cancelled")
 	}
-	result, err := s.Decide(context.Background(), "great-lakes", r.ID, r.Digest, 1, "cancel", "Withdrawn", r.Proposal.Author, false)
+	result, err := s.Decide(context.Background(), "great-lakes", r.ID, r.Digest, 1, "cancel", "Withdrawn", r.Proposal.Author)
 	if err != nil || result.State != "cancelled" || len(result.Events) != 2 {
 		t.Fatal("restart/cancellation failed")
 	}

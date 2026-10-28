@@ -169,10 +169,6 @@ func TestSubjectReviewHTTPDurableIndependentWorkflow(t *testing.T) {
 		return f.request(t, "POST", subjectReviewPrefix+record.ID+"/approve", "approve", subject, approval)
 	}
 	before := f.searches.Load()
-	subjectReviewResponse(t, f.api, approve("author"), 403)
-	if f.searches.Load() != before {
-		t.Fatal("self-review reached directory")
-	}
 	f.mode.Store(7)
 	subjectReviewResponse(t, f.api, approve("reviewer"), 503)
 	still := subjectReviewRecord(t, subjectReviewResponse(t, f.api,

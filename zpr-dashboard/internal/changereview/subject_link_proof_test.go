@@ -296,9 +296,6 @@ func testSubjectLinkVerifiedProofAndDurableReviewRetryComposition(t *testing.T, 
 		return store.ApproveSubjectLinkOnce(ctx, p.Organization, submitted.ID, submitted.Digest, "1",
 			p.RegistryRevision, "Independent review", Principal{Issuer: g.Issuer, Subject: g.Subject}, key)
 	}
-	if _, err := approve("author", "self-review"); !errors.Is(err, ErrSelfReview) {
-		t.Fatal("verified author could self-review", err)
-	}
 	if _, err := store.db.Exec(`CREATE TRIGGER fail_proof_review_event BEFORE INSERT ON subject_link_review_events
 BEGIN SELECT RAISE(ABORT,'injected review audit failure'); END;`); err != nil {
 		t.Fatal(err)

@@ -128,10 +128,6 @@ func TestSubjectLinkRegistryReviewScopeAndIndependentApproval(t *testing.T) {
 	if err != nil || calls != 1 {
 		t.Fatal(record, calls, err)
 	}
-	if _, err := store.ApproveSubjectLinkWithRegistryOnce(ctx, p.Organization, record.ID, record.Digest, "1",
-		p.RegistryRevision, "Self review", p.Author, "approve", check); !errors.Is(err, ErrSelfReview) || calls != 1 {
-		t.Fatal("self review reached provider or committed", calls, err)
-	}
 	reviewer := Principal{Issuer: p.Author.Issuer, Subject: "independent"}
 	approved, err := store.ApproveSubjectLinkWithRegistryOnce(ctx, p.Organization, record.ID, record.Digest, "1",
 		p.RegistryRevision, "Independent review", reviewer, "approve", check)

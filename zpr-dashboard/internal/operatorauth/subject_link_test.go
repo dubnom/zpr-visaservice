@@ -63,26 +63,23 @@ func TestSubjectLinkPermissionsRequireExactOrganizationGrantAndCSRF(t *testing.T
 	}
 }
 
-func TestSubjectLinkApprovalRequiresIndependentVerifiedPrincipal(t *testing.T) {
+func TestSubjectLinkApprovalRequiresVerifiedPrincipalButAllowsSingleOperator(t *testing.T) {
 	proposer := Identity{Issuer: "https://idp.example", Subject: "author", DisplayName: "Original name"}
 	for _, test := range []struct {
 		name     string
-		reviewer Identity
-		proposer Identity
-		allowed  bool
+		identity Identity
+		valid    bool
 	}{
-		{"self", proposer, proposer, false},
-		{"renamed self", Identity{Issuer: proposer.Issuer, Subject: proposer.Subject, DisplayName: "Reviewer", Email: "other@example.org"}, proposer, false},
-		{"independent subject same display", Identity{Issuer: proposer.Issuer, Subject: "reviewer", DisplayName: proposer.DisplayName}, proposer, true},
-		{"issuer qualified", Identity{Issuer: "https://other-idp.example", Subject: proposer.Subject}, proposer, true},
-		{"missing reviewer", Identity{}, proposer, false},
-		{"missing proposer", proposer, Identity{}, false},
-		{"service label is not issuer", Identity{Issuer: "vs-service", Subject: "service"}, proposer, false},
-		{"invalid subject", Identity{Issuer: proposer.Issuer, Subject: " reviewer "}, proposer, false},
+		{"proposer acting as reviewer", proposer, true},
+		{"independent subject", Identity{Issuer: proposer.Issuer, Subject: "reviewer"}, true},
+		{"issuer qualified", Identity{Issuer: "https://other-idp.example", Subject: proposer.Subject}, true},
+		{"missing identity", Identity{}, false},
+		{"service label is not issuer", Identity{Issuer: "vs-service", Subject: "service"}, false},
+		{"invalid subject", Identity{Issuer: proposer.Issuer, Subject: " reviewer "}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := RequireIndependentReviewer(test.reviewer, test.proposer); (err == nil) != test.allowed {
-				t.Fatalf("allowed=%t error=%v", test.allowed, err)
+			if ValidPrincipal(test.identity) != test.valid {
+				t.Fatalf("valid=%t", test.valid)
 			}
 		})
 	}
