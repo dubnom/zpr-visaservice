@@ -21,7 +21,7 @@ const pageHelp={
 function openPageHelp(){
  const topic=document.querySelector('[data-tab].selected').dataset.tab,help=pageHelp[topic];
  $('audit-help-title').textContent=help.title;
- $('audit-help-intro').textContent=help.intro;
+ $('audit-help-intro').textContent=help.intro+(topic==='inventory'?' Alternatively, with the local connected adapter configured by your operator, Check connection configuration then Read current assertion settings. This reads a point-in-time settings snapshot, never evaluator results; failed reads clear old evidence. Static hosting remains import-only.':'');
  $('audit-help-steps').innerHTML=help.steps.map(step=>'<li>'+escapeHTML(step)+'</li>').join('');
  $('audit-help-recovery').textContent=help.recovery;
  $('audit-help-docs').href='help.html#'+topic;
@@ -213,15 +213,22 @@ function moveSourceMatch(step){
 }
 function inventoryRows(){
  const record=importedInventory,data=record.data;
- return [['Organization ID',data.organization_id],['Organization name',data.organization_name],
-  ['Organization authority','Values asserted by imported Policy-Service response; not independently verified'],
+ const rows=[['Organization ID',data.organization_id],['Organization name',data.organization_name],
+  ['Organization authority','Values asserted by '+(record.transport?'configured':'imported')+' Policy-Service response; not independently verified'],
   ['Settings revision',String(data.settings.revision)],['Enabled (exported setting)',String(data.settings.enabled)],
   ['Interval seconds (exported setting)',String(data.settings.interval_seconds)],
   ['Source text size',new TextEncoder().encode(data.settings.source).byteLength+' UTF-8 bytes'],
   ['Source text presence',data.settings.source.length?'Text supplied; not parsed or evaluated':'Empty in export; no wider absence inferred'],
   ['File',record.file],['File size',record.size+' bytes'],['File SHA-256',record.digest],['Imported at',record.importedAt+' · browser clock'],
-  ['Source retrieval time','Not supplied; import time is not retrieval time'],
+  ['Source retrieval time',record.transport?'See Adapter retrieved at below; source publication time not supplied':'Not supplied; import time is not retrieval time'],
   ['Evidence scope','Settings document only; not an assertion evaluation or complete inventory']];
+ if(record.transport)rows.push(
+  ['Acquisition','Read from configured Policy-Service by local Audit adapter'],
+  ['Snapshot file','Browser-generated settings-only JSON; file size and SHA-256 above describe this projection, not the upstream response'],
+  ['Configured source endpoint',record.transport.source_endpoint],
+  ['Adapter retrieved at',record.transport.retrieved_at+' · adapter clock; not source publication time'],
+  ['Upstream response SHA-256',record.transport.response_sha256+' · fingerprints upstream bytes, not authenticity']);
+ return rows;
 }
 function clearInventory(){
  clearBaseline();
@@ -232,6 +239,48 @@ function clearInventory(){
  resetSourceReview();
  ['reference','retrieved','preparer','purpose','notes'].forEach(field=>$('inventory-'+field).value='');
  $('inventory-system').value='unspecified';
+}
+async function checkSource(){
+ $('source-fetch').disabled=true;
+ $('source-connection').textContent='Checking local adapter configuration…';
+ try{
+  const response=await fetch('/api/audit/source',{cache:'no-store',credentials:'omit'});
+  if(!response.ok)throw new Error();
+  const config=await response.json();
+  if(config.configured!==true){$('source-connection').textContent='No production source configured. File import remains available.';return}
+  if(config.source_system!=='policy-service'||typeof config.organization_id!=='string')throw new Error();
+  $('source-connection').textContent='Policy-Service configured for organization '+config.organization_id+'. No settings read yet.';
+  $('source-fetch').disabled=false;
+ }catch{
+  $('source-connection').textContent='Connected adapter unavailable. Static hosting supports file import only; no fixture fallback.';
+ }
+}
+async function fetchInventory(){
+ clearInventory();$('inventory-file').value='';$('inventory-error').textContent='';
+ const generation=inventoryGeneration;
+ $('inventory-status').textContent='Reading configured Policy-Service…';
+ try{
+  const response=await fetch('/api/audit/assertion-settings',{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});
+  if(!response.ok)throw new Error('Configured Policy-Service read unavailable or invalid; check adapter configuration and service readiness.');
+  const result=await response.json();
+  if(result.source_system!=='policy-service'||typeof result.source_endpoint!=='string'||
+   !/^https?:\/\//.test(result.source_endpoint)||!Number.isFinite(Date.parse(result.retrieved_at))||
+   !/^[a-f0-9]{64}$/.test(result.response_sha256))throw new Error('Invalid adapter acquisition metadata.');
+  const data=parseAssertionInventory(JSON.stringify(result.snapshot));
+  const file=new File([JSON.stringify(data,null,2)],'policy-service-settings.json',{type:'application/json'});
+  const record=await readInventoryFile(file);
+  if(generation!==inventoryGeneration)return;
+  record.transport={source_endpoint:result.source_endpoint,retrieved_at:result.retrieved_at,response_sha256:result.response_sha256};
+  importedInventory=record;
+  $('inventory-metadata').innerHTML=reportTable(['Field','Snapshot value'],inventoryRows());
+  renderSourceReview();
+  $('inventory-record').classList.remove('hidden');$('inventory-clear').disabled=false;
+  $('inventory-status').textContent='Read settings revision '+data.settings.revision+' · '+data.organization_name+' · point-in-time service snapshot; not continuously live or evaluated.';
+ }catch(error){
+  if(generation!==inventoryGeneration)return;
+  $('inventory-status').textContent='No snapshot available.';
+  $('inventory-error').textContent='Service read failed: '+error.message+' No previous evidence or sample substitute retained.';
+ }
 }
 async function importInventory(){
  clearInventory();$('inventory-error').textContent='';
@@ -268,17 +317,17 @@ function inventoryReport(){
   }
  }
  $('inventory-error').textContent='';
- const generated=new Date().toISOString(),reference='IMPORTED-'+crypto.randomUUID();
+ const generated=new Date().toISOString(),reference=(importedInventory.transport?'SERVICE-':'IMPORTED-')+crypto.randomUUID();
  const provenance=[...inventoryProvenanceRows('inventory',review),['Prepared by',review.preparer+' · not authenticated'],['Purpose',review.purpose]];
- reportHTML='<h1>Imported assertion-settings inventory</h1><div class="report-warning"><strong>IMPORTED SNAPSHOT — NOT INDEPENDENTLY VERIFIED</strong><p>No live sources queried or evaluations performed. This report contains no sample fixtures.</p></div>'+
+ reportHTML='<h1>'+(importedInventory.transport?'Service assertion-settings snapshot':'Imported assertion-settings inventory')+'</h1><div class="report-warning"><strong>'+(importedInventory.transport?'SERVICE SETTINGS SNAPSHOT — NOT EVALUATION EVIDENCE':'IMPORTED SNAPSHOT — NOT INDEPENDENTLY VERIFIED')+'</strong><p>'+(importedInventory.transport?'Read from the operator-configured Policy-Service. No evaluation or historical query performed.':'No live sources queried or evaluations performed.')+' This report contains no sample fixtures.</p></div>'+
   reportTable(['Report metadata','Value'],[['Report reference',reference],['Generated at',generated+' · browser clock']])+
-  '<h2>Imported facts and import metadata</h2>'+reportTable(['Field','Imported value'],inventoryRows())+
+  '<h2>'+(importedInventory.transport?'Service settings and adapter acquisition metadata':'Imported facts and import metadata')+'</h2>'+reportTable(['Field','Snapshot value'],inventoryRows())+
   '<h2>Operator-entered provenance · unverified</h2>'+reportTable(['Field','Operator statement'],provenance)+
   (review.notes?'<h2>Reviewer notes · unverified commentary</h2><p class="review-notes">'+escapeHTML(review.notes)+'</p>':'')+
   '<h2>Assertion source · as exported</h2><pre class="code">'+escapeHTML(importedInventory.data.settings.source||'(Exported source text is empty.)')+'</pre>'+
   (baselineInventory?'<h2>Baseline operator-entered provenance · unverified</h2>'+reportTable(['Field','Operator statement'],inventoryProvenanceRows('baseline',baselineReview))+
    '<h2>Imported baseline comparison</h2>'+baselineComparisonHTML()+'<h3>Baseline source · complete, as exported</h3><pre class="code">'+escapeHTML(baselineInventory.data.settings.source||'(Exported source text is empty.)')+'</pre>':'<p>No valid baseline loaded; this report contains only the current snapshot.</p>')+
-  '<h2>Limitations</h2><p>Organization identity is asserted by the imported response, not verified against a trusted directory. This document does not establish individual assertion roles, evaluation outcomes, completeness, historical validity or source freshness. The SHA-256, when available, fingerprints the input file only; it does not authenticate its origin. This editable report is not signed and has no chain-of-custody guarantee.</p>';
+  '<h2>Limitations</h2><p>Organization identity is asserted by the response, not verified against a trusted directory. This document does not establish individual assertion roles, evaluation outcomes, completeness, historical validity or source freshness. SHA-256 digests fingerprint the labeled bytes only; they do not authenticate origin. Service acquisition metadata, when present, trusts the local adapter and its clock. This editable report is not signed and has no chain-of-custody guarantee.</p>';
  $('report-document').innerHTML=reportHTML;reportReturnFocus='report-button';
  document.body.classList.add('reporting');$('report-preview').classList.remove('hidden');$('report-back').focus();
 }
@@ -587,6 +636,8 @@ document.addEventListener('click',e=>{
 });
 $('close-detail').onclick=()=>$('detail').close();
 $('inventory-file').onchange=importInventory;
+$('source-check').onclick=checkSource;
+$('source-fetch').onclick=fetchInventory;
 $('baseline-file').onchange=importBaseline;
 $('baseline-clear').onclick=clearBaseline;
 ['baseline-system','baseline-reference','baseline-retrieved'].forEach(id=>$(id).addEventListener(id==='baseline-system'?'change':'input',updateBaselineProvenance));

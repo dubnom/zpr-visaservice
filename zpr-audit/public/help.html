@@ -13,7 +13,7 @@
 <p>Export the JSON response from Policy-Service GET /api/assertions/settings
 using your existing authorized operator tooling. Audit accepts organization_id,
 organization_name and settings containing revision, source, enabled and
-interval_seconds. It does not request credentials or contact that service.
+interval_seconds. File import does not request credentials or contact that service.
 An authorized Control Room GET /api/assertions response is also supported.
 Service-error responses and nonempty settings_error values are rejected, even
 if other settings are present. Wait for the source to recover and export again;
@@ -30,6 +30,21 @@ even when present it does not authenticate the file's origin.</p>
 <p>Report / print produces a separate imported inventory report with provenance
 and limitations. Imported settings never populate sample access outcomes,
 assertion fixtures or report packs.</p>
+<h3>Optional connected adapter</h3>
+<p>With the separately configured local Node adapter, select Check connection
+configuration, then Read current assertion settings. Static hosting alone cannot
+read a service. The operator pins a Policy-Service endpoint and expected
+organization outside the browser; this page never accepts credentials or upstream
+URLs. See the README for setup and optional mutual TLS. The adapter is local-only,
+not an authenticated multi-user server.</p>
+<p>A successful read supplies one settings snapshot for this same review workflow,
+not a continuous live view or an evaluator result. Each attempt clears prior
+evidence and review fields; errors never substitute fixtures or cached settings.
+Reports identify adapter acquisition metadata separately from operator claims.
+The adapter retrieval timestamp is not publication time. File metadata describes
+a browser-generated settings-only JSON projection; the separately labeled
+upstream-response SHA-256 fingerprints original response bytes. Neither digest
+authenticates origin. Connected reads never query Simulator or modify services.</p>
 <p>Before reporting, enter a preparer and purpose. Optional source-system,
 reference, retrieval-time and reviewer-note fields are operator statements,
 not verified source facts. Use UTC YYYY-MM-DDTHH:mm:ssZ for retrieval time;
@@ -86,9 +101,10 @@ Clear baseline keeps the current source;
 replacing current clears baseline. An invalid baseline removes any previous
 comparison and cannot silently export it.</p>
 </section>
-<p>This workspace contains fictional fixtures only. It has no authentication,
-production connections, policy evaluator or persistent evidence store. Reloading
-resets selections and report packs. No live query or mutation is performed.</p>
+<p>The sample views below contain fictional fixtures only, isolated from settings
+imports and optional connected reads. There is no policy evaluator, authentication
+or persistent evidence store in Audit. Reloading resets selections and report
+packs. Sample views perform no live query or service mutation.</p>
 <nav aria-label="Help topics"><a href="#access">Access</a> · <a href="#policy">Policy</a> · <a href="#assertions">Assertions</a> · <a href="#history">History</a> · <a href="#reports">Reports</a></nav>
 <p>Help opens separately so your investigation stays in its original tab.
 Close this tab to return to it.</p>

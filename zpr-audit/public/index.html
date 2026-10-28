@@ -16,7 +16,14 @@
 
 <section id="inventory" class="hidden">
 <h2>Imported assertion settings</h2>
-<p>Read-only snapshot import · separate from sample workspaces · no network requests.</p>
+<p>Read-only settings snapshots · separate from sample workspaces · no evaluation performed.</p>
+<div class="panel"><h3>Configured Policy-Service · read-only</h3>
+<p>The optional local connected adapter reads only the operator-configured production Policy-Service. No credentials or endpoint URLs are accepted from this page.</p>
+<button id="source-check">Check connection configuration</button>
+<button id="source-fetch" disabled>Read current assertion settings</button>
+<p id="source-connection" role="status">Not checked. Static-only hosting supports file import below; use the connected adapter for service reads.</p>
+<small>A read replaces current evidence and review fields. Failed reads clear old evidence; there is no fixture fallback, polling or offline cache. A successful read is a point-in-time settings snapshot, not historical or evaluator evidence.</small>
+</div>
 <label>Assertion-settings JSON (maximum 256 KiB)<input id="inventory-file" type="file" accept=".json,application/json"></label>
 <p id="inventory-status" role="status">No snapshot imported.</p>
 <p id="inventory-error" role="alert"></p>
