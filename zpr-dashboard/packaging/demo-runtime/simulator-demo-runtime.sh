@@ -168,6 +168,12 @@ PY
 ) || fail "invalid Simulator package identity"
 
 if [ "$runtime_profile" = demo ]; then
+    verifier_path=$runtime_dir/verify-packaged-demo.sh
+    [ -f "$verifier_path" ] && [ ! -L "$verifier_path" ] ||
+        fail "required packaged demo verification script is missing or not a regular file"
+    activation_path=$runtime_dir/activate-packaged-demo.sh
+    [ -f "$activation_path" ] && [ ! -L "$activation_path" ] ||
+        fail "required packaged demo activation script is missing or not a regular file"
     python3 - "$manifest_path" "$organization_path" <<'PY' ||
 import json
 import sys
@@ -1225,8 +1231,13 @@ PY
                 -e SIMULATION_ACTIVE_ORGANIZATION_FILE=/var/lib/zpr-simulator/active-organization.txt \
                 -e SIMULATION_WORKSPACE_DB_DIR=/var/lib/zpr-simulator/workspace-db \
                 -e SIMULATION_PUBLISHED_DIRECTORY_DIR=/var/lib/zpr-simulator/published-directories \
-                -e ZPR_WEB_DASHBOARD_BIN=/usr/local/bin/zpr-web-dashboard \
-                "$image_reference"
+                -e ZPR_WEB_DASHBOARD_BIN=/usr/local/bin/zpr-web-dashboard
+            if [ "$runtime_profile" = demo ]; then
+                set -- "$@" \
+                    -e SIMULATION_PACKAGED_DEMO_SCRIPT=/opt/zpr-simulator/runtime/verify-packaged-demo.sh \
+                    -e SIMULATION_ORGANIZATION_RESET_SCRIPT=/opt/zpr-simulator/runtime/activate-packaged-demo.sh
+            fi
+            set -- "$@" "$image_reference"
             if [ -n "$operator_origin" ]; then
                 set -- "$@" -mode simulator -listen "0.0.0.0:$container_port"
             fi

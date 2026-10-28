@@ -251,6 +251,17 @@ production enrollment remain unqualified. The downloaded pair remains
   runtime/state directories and Compose project names. Simulator may control
   its provisioned demo scenario through the approved local Docker socket, but
   ZPR services must continue running when the Simulator UI/container stops.
+- Bundle the reviewed `verify-packaged-demo.sh` probe in the Simulator runtime
+  package and configure it only for the demo profile. The probe must verify
+  the exact installed ZPR project/image and leave the active policy unchanged;
+  never point packaged-demo verification at a host-provided script.
+- The packaged demo profile uses `activate-packaged-demo.sh` as a demo-only
+  activation/restore gate: it verifies the exact installed ZPR pair and
+  preserves identity and policy state. It rejects all other organizations.
+  The development `scripts/activate-organization.sh` depends on a source
+  checkout and `.local-runtime`, so it must not be mounted into the downloaded
+  package. Cross-organization execution remains unqualified until each
+  organization has its own package-owned activation/reset contract.
 - Preserve the current multinode demo's service process boundary for this
   viability test. Do not silently turn the Simulator into a ZPR service or
   make ZPR production services depend on Simulator APIs or files.
