@@ -697,6 +697,64 @@ environments, so each must be fixed or explicitly accepted before M5.
   - **Remaining:** merge the zpr-core branch upstream; then tick this item.
     The Simulator's workload mismatches remain the detector for a recurrence.
 
+- [ ] **DP-K03 (found 2026-10-28, owner: zpr-core adapter; Visa side
+  accepted for now):** an endpoint adapter stops getting visas about 4 hours
+  after it enrolls, because it never re-authenticates.
+  - **Seen:** on the r5 paired demo, Alice's
+    `device.zpr.authority=zpr-bootstrap` attribute (source `zpr`, 4 h
+    lifetime, `DEFAULT_AUTH_EXPIRATION`) expired at 05:46:53Z. Visa then logged
+    `trusted service not found: ID=zpr` and `attribute refresh indeterminate`
+    and denied every visa request. Alice, then web0, lost HTTP to OciWeb, so
+    the packaged demo verifier failed its first check. Nodes got
+    `must reconnect to renew authentication` at the 4 h mark and renewed.
+  - **Root causes (two):**
+    1. Visa can only refresh a claim through a trusted service with the same
+       source ID. Built-in issuers such as `zpr` have none, so
+       `refresh_expired_attributes` (`vs/src/actor_attributes.rs`) can never
+       extend them; only re-authentication can.
+    2. The endpoint adapter (`zpr-core/adapter/ph`) has no credential-expiry
+       handling: it never reconnects and re-enrolls before the claim lapses.
+  - **Workaround:** restart the adapter process (restarting the container
+    also kills docker-exec'd adapters, which must be relaunched by hand). If
+    the same address re-registers before the old session clears, the VS
+    evicts the new actor (DP-K02-like); wait about 20 s after stopping the
+    old adapter.
+  - **Decision:** fix in the adapter (reconnect and re-enroll before the
+    claim expires). Making built-in claims refreshable in Visa is a security
+    design change and is deferred.
+  - **Fix (written, not yet rolled out):** zpr-core branch
+    `dp-k03/adapter-reauth`, commit `3aa7af8` (stacked on
+    `dp-k01/link-recovery`, because an orderly re-dock depends on the DP-K02
+    fix; local only). When an adapter dock link becomes Active it arms a
+    timer (default 3 h, `adapter.reauth_interval_secs` in the adapter TOML;
+    0 disables, minimum 60). On expiry it closes the link with the normal
+    terminate/ack path and the existing restart holddown re-docks and
+    re-authenticates. The timer is cleared on any state change. `ph` unit
+    tests: 324 pass, including config validation and timer arm/clear tests;
+    clippy warnings match the baseline.
+  - **Live check (2026-10-28, r5 paired demo, no image rebuild):** the branch
+    was built in an `ubuntu:24.04` container on the workbench (matches the
+    runtime image's glibc 2.39) and copied into the alice and web0 containers
+    as `/app/bin/ph-dpk03` (the shipped `/app/bin/ph` is untouched). With
+    `reauth_interval_secs = 120` for both adapters, an 18-minute soak ran an
+    Alice→OciWeb HTTP probe every 15 s across 9-11 re-docks per adapter:
+    57 probes passed and 10 failed. Every failure fell inside a 5-6 s re-dock
+    window of Alice (new address each time) or web0 (same fixed address, no
+    DP-K02 eviction), and each recovered on its own. The soak also crossed
+    Alice's 16:04:40Z attribute-file TTL: Visa refreshed it (new expiry
+    17:04:23Z), so that source is not a second expiry problem. Both adapters
+    now run `ph-dpk03` with the default 3 h interval.
+  - **Cost:** each re-dock is a brief (about 5-6 s) outage for that endpoint
+    and gives it a new ZPR address unless one is pinned. A longer
+    `reauth_interval_secs` (up to just under the 4 h lifetime) reduces
+    churn; make-before-break re-docking is a possible follow-up.
+  - **Remaining:** a real 4 h soak with the default interval (first re-dock at
+    about 19:10Z); bake the fix into the packaged image (the demo deploy
+    script launches adapters from `/app/bin/ph` and relaunches nothing after a
+    container restart); confirm interactive (AuthCode) adapters accept
+    periodic re-auth or set the interval to 0; merge zpr-core; then tick this
+    item.
+
 ### M4 - Enforce separation in builds, configuration and lifecycle
 
 Depends on M2 and M3. This closes deployable boundaries, not just code naming.

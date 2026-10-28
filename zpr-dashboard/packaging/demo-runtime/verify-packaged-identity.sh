@@ -23,6 +23,8 @@ client="$SIMULATION_DEMO_PROJECT-alice-1"
 network="${SIMULATION_DEMO_PROJECT}_zpr-demo"
 [ "$(docker network inspect --format '{{index .Labels "com.docker.compose.project"}}' "$network")" = "$SIMULATION_DEMO_PROJECT" ] ||
     fail "substrate network ownership mismatch"
+node_ip=$(docker inspect --format "{{(index .NetworkSettings.Networks \"$network\").IPAddress}}" "$node")
+case "$node_ip" in ""|*[!0-9.]*) fail "cannot determine node1 address on $network" ;; esac
 policy_before=$(docker exec "$visa" redis-cli -e --json HGETALL policy:current)
 log_offset=$(docker exec "$visa" sh -c 'wc -c < /logs/vs.log')
 case "$log_offset" in *[!0-9]*|'') fail "invalid Visa log offset" ;; esac
@@ -53,7 +55,7 @@ candidate=$(docker create --pull never --name "$name" \
     --device /dev/net/tun --security-opt no-new-privileges:true \
     --pids-limit 32 --memory 96m --cpus 0.5 \
     --tmpfs /run/zpr:rw,noexec,nosuid,size=4m,mode=0700 \
-    --env "PUBLIC_CA=$public_ca" \
+    --env "PUBLIC_CA=$public_ca" --env "NODE_ADDR=$node_ip:5000" \
     --entrypoint /usr/bin/timeout "$SIMULATION_DEMO_IMAGE" \
     -k 2s 30s /bin/sh -ec '
         umask 077
@@ -64,7 +66,7 @@ candidate=$(docker create --pull never --name "$name" \
         exec /app/bin/ph adapter --logging all=INFO \
             --control-path /run/zpr/control.sock --capture-path /run/zpr/capture.sock \
             --ca-file /run/zpr/public-ca.crt --bootstrap-key /run/zpr/bootstrap.key \
-            --name "$1" --node-addr 172.30.0.10:5000 --tun-if tun0
+            --name "$1" --node-addr "$NODE_ADDR" --tun-if tun0
     ' identity-probe "$identity") ||
     fail "cannot create adapter; an existing same-named container is never adopted or removed"
 docker start "$candidate" >/dev/null
