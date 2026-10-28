@@ -88,3 +88,11 @@ restarted. To be root-caused; probe only after peers are up.
 - Subject-link snapshot delivery runs on Linux (bound to the data-plane network gateway, `host.docker.internal` added).
 - Probes on the fresh install: tcp/7007 and udp/7008 reply, tcp/7009 denied. Open issue (ICMP): after a client's first probe, a probe of the other kind to the same destination gets no reply. Ping first then tcp/7007 fails; tcp/udp first then ping fails; restarting client-01 clears it. Not yet root-caused (adapter DP-K03 vs stock, or Visa-side dedup).
 - Endpoints 01-03 are Simulator-launched; endpoint-01 was started by hand for probing.
+
+## ICMP/TCP stale-visa finding: root cause and fix (2026-10-28)
+
+- Symptom: after one probe type succeeded, a probe of another type to the same endpoint got no reply until client-01 restarted.
+- Cause (zpr-core adapter `ph`): when a re-docked adapter's old link was removed, the node revoked only visas with a stream on that link. Reverse-direction visas embedding the old A2A DH key survived, were matched for new flows, and the far adapter derived a stale shared secret (`dropping packet because MICV Failure` in the client log).
+- Fix: zpr-core `dp-k03/adapter-reauth` commit `5530859` adds `VisaTable::revoke_for_a2a_key`, called from `Assembly::drop_peer`, with a unit test.
+- Evidence on a fresh install (`a6bdd8e6170fc9046e3162c7`, rebuilt image): two rounds of ping, tcp/7007, udp/7008, ping, tcp/7009 gave replies for the allowed ones and no reply for tcp/7009 every time.
+- Not yet done: a soak with repeated client restarts, and the 4 h DP-K03 run.
