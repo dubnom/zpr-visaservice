@@ -42,6 +42,11 @@ stop() {
 	sleep 1
 	ip netns delete zpr-vs 2>/dev/null || true
 	ip netns delete zpr-dns 2>/dev/null || true
+	# Linux bind mounts keep root ownership; the launcher rejects state it does not own.
+	owner=$(stat -c %u:%g "$state" 2>/dev/null || true)
+	if [ -n "$owner" ]; then
+		chown -R "$owner" "$state/valkey-state" "$plane" 2>/dev/null || true
+	fi
 }
 trap 'stop; exit 0' INT TERM
 trap stop EXIT
@@ -199,9 +204,14 @@ EOF
 	chmod 0750 "$dns_zone"
 	chown bind:bind "$dns_zone/db.svc.zpr"
 	chmod 0640 "$dns_zone/db.svc.zpr"
-	named-checkconf "$state/dp-dns-named.conf"
+	# named drops to the bind user, which cannot read a 0600 host-owned state
+	# directory on a Linux bind mount; stage the config like the publisher key.
+	cp "$state/dp-dns-named.conf" "$run/named.conf"
+	chown bind:bind "$run/named.conf"
+	chmod 0640 "$run/named.conf"
+	named-checkconf "$run/named.conf"
 	named-checkzone svc.zpr "$dns_zone/db.svc.zpr" >/dev/null
-	spawn protected-dns ip netns exec zpr-dns /usr/sbin/named -g -u bind -c "$state/dp-dns-named.conf"
+	spawn protected-dns ip netns exec zpr-dns /usr/sbin/named -g -u bind -c "$run/named.conf"
 	log "started protected DNS adapter and authoritative BIND"
 fi
 

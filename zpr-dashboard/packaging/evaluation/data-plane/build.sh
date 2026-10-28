@@ -27,11 +27,20 @@ for source in "$workspace/zpr-common" "$core" "$workspace/zpr-compiler"; do
 		exit 1
 	}
 done
+# Build for the host's own architecture unless ZPR_DATA_PLANE_PLATFORM overrides it.
+if [ -z "${ZPR_DATA_PLANE_PLATFORM:-}" ]; then
+	case $(uname -m) in
+	arm64|aarch64) ZPR_DATA_PLANE_PLATFORM=linux/arm64 ;;
+	x86_64|amd64) ZPR_DATA_PLANE_PLATFORM=linux/amd64 ;;
+	*) echo "unsupported host architecture $(uname -m); set ZPR_DATA_PLANE_PLATFORM" >&2; exit 1 ;;
+	esac
+fi
+platform=$ZPR_DATA_PLANE_PLATFORM
 build=$dashboard/.evaluation-build/data-plane
 mkdir -p "$build/target" "$build/cargo-home" "$build/image"
 builder=zpr-evaluation-data-plane-builder:local
-docker build --platform linux/arm64 -q -t "$builder" -f "$here/Dockerfile.build" "$here" >/dev/null
-docker run --rm --platform linux/arm64 \
+docker build --platform "$platform" -q -t "$builder" -f "$here/Dockerfile.build" "$here" >/dev/null
+docker run --rm --platform "$platform" \
 	-e CARGO_HOME=/cargo-home -e CARGO_TARGET_DIR=/target \
 	-v "$workspace/zpr-common:/src/zpr-common:ro" \
 	-v "$core:/src/zpr-core:ro" \
@@ -48,5 +57,5 @@ for binary in ph ph-cli vs vs-admin; do
 done
 cp "$build/target/compiler/release/zplc" "$build/image/zplc"
 cp "$here/Dockerfile" "$here/data-plane.sh" "$here/endpoint.sh" "$here/node.sh" "$here/probe.sh" "$build/image/"
-docker build --platform linux/arm64 -q -t "$tag" "$build/image" >/dev/null
+docker build --platform "$platform" -q -t "$tag" "$build/image" >/dev/null
 echo "built $tag"
