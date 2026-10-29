@@ -77,6 +77,11 @@ plan approval once, and executes a fresh bounded probe round. It checks denied
 listeners locally and requires matching fresh Visa denials, not just missing
 replies. Results belong to the scenario run; cached background probes cannot
 pass it. This opt-in disables background traffic probes to isolate run evidence.
+With three endpoints, each run performs fifteen peer-access checks: allowed
+ICMP, TCP/7007 and UDP/7008, and denied TCP/7009 and UDP/7010. The fixed ICMP
+flow to the Visa Service is deliberately outside this scenario: its reusable
+negative visa does not provide a fresh decision on every run. The ordinary
+background workload view retains that separate observation when enabled.
 It authorizes no provisioning, machine lifecycle, arbitrary targets or commands.
 The existing OciWeb package gate remains mandatory for legacy machine scenarios.
 This is one endpoint-policy scenario, not full user enrollment, subject-link

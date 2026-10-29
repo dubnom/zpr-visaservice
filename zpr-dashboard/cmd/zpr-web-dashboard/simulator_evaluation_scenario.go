@@ -16,7 +16,7 @@ import (
 	evaluationruntime "neboagency.com/zpr-dashborad/internal/simulator/evaluation"
 )
 
-const evaluationScenarioAction = "verify_evaluation_endpoints"
+const evaluationScenarioAction = "verify_evaluation_peer_access"
 
 func validateEvaluationScenario(scenario simulatorScenario, organization simulatorOrganization) error {
 	if organization.EvaluationRuntime == nil || validateSimulatorOrganization(organization) != nil ||
@@ -62,6 +62,18 @@ func evaluationScenarioPlane(ctx context.Context, organization simulatorOrganiza
 	if plane == nil || plane.handoff.InstallID != contract.InstallID || plane.image != contract.ImageID ||
 		len(plane.handoff.Endpoints) != contract.EndpointCount || len(plane.handoff.Listeners) != contract.ListenerCount {
 		return nil, errors.New("evaluation image or install identity differs from approved contract")
+	}
+	expectedListeners := []simulatorDataPlaneListener{
+		{Protocol: "tcp", Port: 7007, InPolicy: true}, {Protocol: "udp", Port: 7008, InPolicy: true},
+		{Protocol: "tcp", Port: 7009}, {Protocol: "udp", Port: 7010},
+	}
+	if len(plane.handoff.Listeners) != len(expectedListeners) {
+		return nil, errors.New("peer-access scenario requires all four declared allow/deny listeners")
+	}
+	for index, listener := range plane.handoff.Listeners {
+		if listener != expectedListeners[index] {
+			return nil, errors.New("peer-access scenario listener policy differs from its fixed contract")
+		}
 	}
 	transport, err := servicehttp.MutualTLSClientTransport(install.ClientCertFile, install.ClientKeyFile, install.ServiceCAFile, "")
 	if err != nil {
@@ -117,7 +129,7 @@ func executeEvaluationScenario(ctx context.Context, manifest simulatorManifest) 
 	}
 	started := time.Now().UTC()
 	workloads := &simulatorDataPlaneWorkloads{
-		plane: plane, probes: simulatorDataPlaneProbes(plane.handoff.Endpoints, plane.handoff.Listeners),
+		plane: plane, probes: evaluationScenarioProbes(plane),
 		results: map[string]simulatorDataPlaneProbeResult{},
 	}
 	// This is a new round owned by this run, never the cached background status.
@@ -181,4 +193,16 @@ func executeEvaluationScenario(ctx context.Context, manifest simulatorManifest) 
 	data, err := json.Marshal(map[string]any{"evaluation_only": true, "started_at": started,
 		"policy_digest": organization.EvaluationRuntime.PolicyDigest, "fresh_visa_denials_verified": true, "probes": results})
 	return string(data), err
+}
+
+func evaluationScenarioProbes(plane *simulatorDataPlaneEndpoints) []simulatorDataPlaneProbe {
+	var probes []simulatorDataPlaneProbe
+	for _, probe := range simulatorDataPlaneProbes(plane.handoff.Endpoints, plane.handoff.Listeners) {
+		// The fixed VS ICMP flow can reuse a negative visa across runs and
+		// therefore cannot supply a fresh decision for each approved scenario.
+		if probe.Target != "vs.zpr" {
+			probes = append(probes, probe)
+		}
+	}
+	return probes
 }

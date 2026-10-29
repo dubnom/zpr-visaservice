@@ -263,9 +263,9 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 		}
 		if err := write(filepath.Join("scenarios", "evaluation-endpoint-access.json"), map[string]any{
 			"id": "evaluation-endpoint-access", "organization_id": organization, "name": "Verify endpoint access policy",
-			"description": "Fresh bounded endpoint probes with healthy denied listeners and matching live Visa denials. No machine provisioning or policy changes.",
+			"description": "Fresh bounded peer-access probes with healthy denied listeners and matching live TCP/UDP Visa denials. No VS reachability claim, machine provisioning or policy changes.",
 			"topology":    map[string]any{"nodes": topologyNodes, "links": []any{}},
-			"steps":       []map[string]any{{"action": "verify_evaluation_endpoints", "timeout_seconds": 120}},
+			"steps":       []map[string]any{{"action": "verify_evaluation_peer_access", "timeout_seconds": 120}},
 		}); err != nil {
 			return nil, "", err
 		}

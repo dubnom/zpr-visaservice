@@ -10,7 +10,7 @@ test("bounded evaluation computes budget scope server-side and permits its machi
   const scenario = {
     id: "evaluation-endpoint-access", organization_id: organization.id, name: "Verify endpoint access policy",
     description: "Bounded evaluation.", current_revision: 1, published_revision: 1,
-    steps: [{ action: "verify_evaluation_endpoints", timeout_seconds: 120 }],
+    steps: [{ action: "verify_evaluation_peer_access", timeout_seconds: 120 }],
   };
   const scopeDigest = `sha256:${"b".repeat(64)}`;
   const planDigest = `sha256:${"c".repeat(64)}`;
@@ -34,7 +34,7 @@ test("bounded evaluation computes budget scope server-side and permits its machi
       return route.fulfill(budgetApproved ? { json: {
         status: "plan-only", organization_id: organization.id, scenario_id: scenario.id,
         manifest_name: "Evaluation endpoints", machine_ids: [], topology: { nodes: [] }, workloads: [],
-        budget_inputs: [{ phase: "step", step: 1, action: "verify_evaluation_endpoints", fanout_count: 3, service_count: 4 }],
+        budget_inputs: [{ phase: "step", step: 1, action: "verify_evaluation_peer_access", fanout_count: 3, service_count: 4 }],
         budget_status: "approved", topology_status: "resolved", policy_status: "resolved",
         northstar_assets_status: "not-required", package_contract_status: "evaluation-endpoints-v1",
         blockers: [], plan_digest: planDigest, authorization_scope_digest: scopeDigest,

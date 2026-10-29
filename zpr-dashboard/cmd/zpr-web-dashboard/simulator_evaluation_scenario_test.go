@@ -70,14 +70,16 @@ func evaluationScenarioFixture(t *testing.T) (simulatorRuntimePlanInput, *simula
 	}
 	contract := &evaluationruntime.Contract{Version: 1, InstallID: id, ImageID: "sha256:" + strings.Repeat("b", 64),
 		HandoffDigest: evaluationruntime.Digest([]byte(`{"test":"immutable handoff"}`)), PolicyDigest: policy,
-		EndpointCount: 2, ListenerCount: 2}
+		EndpointCount: 2, ListenerCount: 4}
 	input.Organization.EvaluationRuntime = contract
 	plane := &simulatorDataPlaneEndpoints{image: contract.ImageID,
 		handoff: simulatorDataPlaneHandoff{InstallID: id, Network: "test-network", NodeContainer: "test-node",
 			Endpoints: []simulatorDataPlaneEndpoint{
 				{Name: "endpoint-01", ZPRAddress: "fd00::1"},
 				{Name: "endpoint-02", ZPRAddress: "fd00::2"},
-			}, Listeners: []simulatorDataPlaneListener{{Protocol: "tcp", Port: 7007, InPolicy: true}, {Protocol: "tcp", Port: 7009}}},
+			}, Listeners: []simulatorDataPlaneListener{
+				{Protocol: "tcp", Port: 7007, InPolicy: true}, {Protocol: "udp", Port: 7008, InPolicy: true},
+				{Protocol: "tcp", Port: 7009}, {Protocol: "udp", Port: 7010}}},
 		status: map[string]simulatorDataPlaneEndpointStatus{},
 	}
 	plane.docker = func(ctx context.Context, args ...string) (string, error) {
@@ -101,14 +103,17 @@ func evaluationScenarioFixture(t *testing.T) (simulatorRuntimePlanInput, *simula
 				}
 				return "3 packets transmitted, 3 received", nil
 			}
-			if args[len(args)-1] == "7009" && strings.HasSuffix(args[1], "01") && args[len(args)-2] == "fd00::2" ||
-				args[len(args)-1] == "7009" && strings.HasSuffix(args[1], "02") && args[len(args)-2] == "fd00::1" {
+			deniedPort := args[len(args)-1] == "7009" || args[len(args)-1] == "7010"
+			if deniedPort && (strings.HasSuffix(args[1], "01") && args[len(args)-2] == "fd00::2" ||
+				strings.HasSuffix(args[1], "02") && args[len(args)-2] == "fd00::1") {
 				return "probe no-reply", nil
 			}
 			return "probe reply", nil
 		case "logs":
 			return "source_addr: fd00::1, dest_addr: fd00::2, l4_protocol: 6, dest_port: 7009 no matching policy\n" +
 				"source_addr: fd00::2, dest_addr: fd00::1, l4_protocol: 6, dest_port: 7009 no matching policy\n" +
+				"source_addr: fd00::1, dest_addr: fd00::2, l4_protocol: 17, dest_port: 7010 no matching policy\n" +
+				"source_addr: fd00::2, dest_addr: fd00::1, l4_protocol: 17, dest_port: 7010 no matching policy\n" +
 				"source_addr: fd00::1, dest_addr: fd5a:5052::1, l4_protocol: 58 no matching policy\n" +
 				"source_addr: fd00::2, dest_addr: fd5a:5052::1, l4_protocol: 58 no matching policy", nil
 		}
@@ -136,7 +141,12 @@ func evaluationScenarioFixture(t *testing.T) (simulatorRuntimePlanInput, *simula
 }
 
 func TestEvaluationScenarioContractAndFreshExecution(t *testing.T) {
-	input, _ := evaluationScenarioFixture(t)
+	input, plane := evaluationScenarioFixture(t)
+	for _, probe := range evaluationScenarioProbes(plane) {
+		if probe.Target == "vs.zpr" {
+			t.Fatal("cached fixed Visa ICMP denial must not be used as fresh scenario evidence")
+		}
+	}
 	if err := validateEvaluationScenario(input.Scenario, input.Organization); err != nil {
 		t.Fatal(err)
 	}
@@ -144,9 +154,11 @@ func TestEvaluationScenarioContractAndFreshExecution(t *testing.T) {
 	if plan.Status != simulatorRuntimePlanOnly || plan.PackageContractStatus != "evaluation-endpoints-v1" {
 		t.Fatalf("plan blocked: %+v", plan)
 	}
-	output, err := executeEvaluationScenario(context.Background(), input.Manifest)
-	if err != nil || !strings.Contains(output, `"fresh_visa_denials_verified":true`) {
-		t.Fatal(output, err)
+	for repeat := 0; repeat < 2; repeat++ {
+		output, err := executeEvaluationScenario(context.Background(), input.Manifest)
+		if err != nil || !strings.Contains(output, `"fresh_visa_denials_verified":true`) {
+			t.Fatal(output, err)
+		}
 	}
 	input.Budget = nil
 	if buildSimulatorRuntimePlan(input).Status != simulatorRuntimePlanBlocked {
