@@ -3,24 +3,25 @@
   "name": "stable",
   "lifecycle": "persistent",
   "runtime": {
-    "engine": "colima",
-    "profile": "zpr-original-20261016",
-    "docker_context": "colima-zpr-original-20261016",
-    "source_checkout": "../../zpr-visaservice",
-    "state_path": "../../.local-runtime"
+    "engine": "docker",
+    "host": "workbench.local",
+    "browser_ip": "10.0.1.160",
+    "release": "scenario-20261029-r3",
+    "source_revision": "f5341d34b1b3cefe5dafa23adf41570213209ddc",
+    "install_id": "37829cf59eeca963149c4302",
+    "state_path": "/home/dubnom/zpr-demo-refresh-20261029-r1/state-scenario-r1",
+    "simulator_state_path": "/home/dubnom/zpr-demo-refresh-20261029-r1/simulator-state-scenario-r3",
+    "launcher": "sh workbench.sh stable production|simulator"
   },
   "port_bindings": [
-    { "service": "control-room", "host_ip": "127.0.0.1", "host_port": 28787, "container_port": 28787 },
-    { "service": "simulator", "host_ip": "127.0.0.1", "host_port": 28788, "container_port": 28788 },
-    { "service": "policy-service", "host_ip": "127.0.0.1", "host_port": 28789, "container_port": 8789 },
-    { "service": "control-service", "host_ip": "127.0.0.1", "host_port": 28790, "container_port": 8790 },
-    { "service": "dns-records-relay", "host_ip": "127.0.0.1", "host_port": 28055, "container_port": 8055 },
-    { "service": "admin-relay", "host_ip": "127.0.0.1", "host_port": 28184, "container_port": 8184 },
-    { "service": "visa-service-admin", "host_ip": "127.0.0.1", "host_port": 28186, "container_port": 8183 },
-    { "service": "directory-manager", "host_ip": "127.0.0.1", "host_port": 28793, "container_port": 8080 },
-    { "service": "ldap-ui-relay", "host_ip": "127.0.0.1", "host_port": 28797, "container_port": 8797 },
-    { "service": "observability-ui-relay", "host_ip": "127.0.0.1", "host_port": 28798, "container_port": 8798 },
-    { "service": "local-operator-idp", "host_ip": "127.0.0.1", "host_port": 25556, "container_port": 5556 },
-    { "service": "machine-control", "host_ip": "172.31.0.1", "host_port": 28791, "container_port": 8791 }
+    { "service": "control-room", "host_port": 38787, "bind": ["loopback", "10.0.1.160"] },
+    { "service": "simulator", "host_ip": "10.0.1.160", "host_port": 38788 },
+    { "service": "control-service", "host_ip": "127.0.0.1", "host_port": 38790 },
+    { "service": "snapshot-delivery", "bind": ["loopback", "install-docker-network-gateway"], "host_port": 38793 },
+    { "service": "ldap", "host_ip": "127.0.0.1", "host_port": 31636, "container_port": 1636 },
+    { "service": "logging", "host_ip": "127.0.0.1", "host_port": 35080, "container_port": 5080 },
+    { "service": "operator-oidc", "host_port": 35556, "bind": ["loopback", "10.0.1.160"], "container_port": 5556 },
+    { "service": "visa-service-admin", "host_ip": "127.0.0.1", "host_port": 38182, "container_port": 8182 },
+    { "service": "dns-transfer", "host_ip": "127.0.0.1", "host_port": 35353, "container_port": 5353 }
   ]
 }

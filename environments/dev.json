@@ -4,19 +4,25 @@
   "lifecycle": "persistent",
   "runtime": {
     "engine": "docker",
-    "docker_context": "desktop-linux",
-    "install_id": "e18d7c386deecf8c06fc5ee4",
+    "host": "workbench.local",
+    "browser_ip": "10.0.1.160",
+    "release": "dev-20261029-r1",
+    "source_revision": "55dfbf1ab7e6975f214a74f49580d4998b33f920",
+    "install_id": "91cb52f480a28c9fc6b7d00d",
     "source_checkout": ".",
-    "state_path": "zpr-dashboard/.zpr-evaluation-acceptance"
+    "state_path": "/home/dubnom/zpr-demo-refresh-20261029-r1/state-dev-20261029-r1",
+    "simulator_state_path": "/home/dubnom/zpr-demo-refresh-20261029-r1/simulator-state-dev-20261029-r1",
+    "launcher": "sh workbench.sh dev production|simulator"
   },
   "port_bindings": [
-    { "service": "control-room", "host_port": 58787, "bind": ["loopback", "selected-private-ipv4"] },
-    { "service": "control-service", "host_ip": "127.0.0.1", "host_port": 58790 },
-    { "service": "snapshot-delivery", "host_ip": "127.0.0.1", "host_port": 58793 },
-    { "service": "simulator", "host_ip": "selected-private-ipv4", "host_port": 38888 },
-    { "service": "ldap", "host_ip": "127.0.0.1", "host_port": 51636, "container_port": 1636 },
-    { "service": "logging", "host_ip": "127.0.0.1", "host_port": 55080, "container_port": 5080 },
-    { "service": "operator-oidc", "host_port": 55556, "bind": ["loopback", "selected-private-ipv4"], "container_port": 5556 },
-    { "service": "visa-service-admin", "host_ip": "127.0.0.1", "host_port": 58182, "container_port": 8182 }
+    { "service": "control-room", "host_port": 18787, "bind": ["loopback", "10.0.1.160"] },
+    { "service": "control-service", "host_ip": "127.0.0.1", "host_port": 18790 },
+    { "service": "snapshot-delivery", "bind": ["loopback", "install-docker-network-gateway"], "host_port": 18793 },
+    { "service": "simulator", "host_ip": "10.0.1.160", "host_port": 18788 },
+    { "service": "ldap", "host_ip": "127.0.0.1", "host_port": 11636, "container_port": 1636 },
+    { "service": "logging", "host_ip": "127.0.0.1", "host_port": 15080, "container_port": 5080 },
+    { "service": "operator-oidc", "host_port": 15556, "bind": ["loopback", "10.0.1.160"], "container_port": 5556 },
+    { "service": "visa-service-admin", "host_ip": "127.0.0.1", "host_port": 18182, "container_port": 8182 },
+    { "service": "dns-transfer", "host_ip": "127.0.0.1", "host_port": 15353, "container_port": 5353 }
   ]
 }

@@ -1,85 +1,94 @@
-# Local environments
+# Workbench environments
 
-There are two persistent local environments:
+The two active environments run independently on `dubnom@workbench.local`
+(`10.0.1.160`). Updated 2026-10-29.
 
-- **stable** is the latest full operator/Simulator stack, running in the
-  `zpr-original-20261016` Colima profile.
-- **dev** is the protected-DNS evaluation acceptance stack in Docker Desktop.
+| Environment | Control Room | Simulator | Package source |
+|---|---|---|---|
+| Dev | <https://10.0.1.160:18787/> | <https://10.0.1.160:18788/scenarios.html#simulate> | `55dfbf1`, current-main build `dev-20261029-r1` |
+| Stable | <https://10.0.1.160:38787/> | <https://10.0.1.160:38788/scenarios.html#simulate> | `f5341d3`, tested package `scenario-20261029-r3` |
 
-The JSON files in this directory are non-secret inventories of fixed host-port
-assignments and state locations. They do not launch, stop, or configure
-services. Keep each environment's host ports unchanged; if a port must change,
-update its inventory and the owning launcher/configuration together.
+Stable means the retained, tested **engineering demo baseline**, not a
+production-qualified release. Both provide independent production-tagged
+Control Room/Control-Service, Visa Service, protected DNS, LDAP, OIDC, logging
+and a separately supervised Simulator. Policy-Service is not configured.
+Each has one bounded endpoint-policy scenario, not full onboarding or the
+complete scenario catalog.
 
-Open [the environment dashboard](index.html) for service links and documented
-login identities.
+Dev's build metadata records `source_dirty=true`: concurrent documentation
+edits were present while packaging the pinned `55dfbf1` runtime. Both pairs
+passed real sign-in and approved fifteen-probe scenario execution on 2026-10-29.
+A clean-source dev rebuild is still pending command-execution approval; do not
+describe this dev artifact as a clean-source release.
 
-## Stable
+[dev.json](dev.json) and [stable.json](stable.json) record the exact non-secret
+deployment identity, state paths and ports. [The dashboard](index.html) provides
+browser links; it is static inventory, not a live health monitor.
 
-The stable stack uses the `colima-zpr-original-20261016` Docker context and the
-shared runtime state at `../../.local-runtime` relative to the repository root.
-Its source checkout is `../../zpr-visaservice`. The `stable.json` inventory
-records loopback port mappings, including the Control Room, Simulator,
-Policy-Service, Control-Service, operator login, and support relays.
+## Lifecycle
 
-Authenticated readiness checks on 2026-10-27 returned HTTP 200 from Policy-
-Service (`28789/api/policy/context`) and Control-Service (`28790/api/snapshot`).
-The unauthenticated Control Room and Simulator endpoints responded with HTTP
-403, so these checks confirm the listeners are reachable but do not replace an
-operator login or full acceptance run.
+The verified package directories remain under
+`/home/dubnom/zpr-demo-refresh-20261029-r1`. Stable retains its existing state,
+password, CA and ports unchanged. Dev uses new state because browser/Simulator
+settings are frozen at installation; the old dev state is retained.
 
-## Dev
+Copies of the inventories and [workbench.sh](workbench.sh) are installed in
+`/home/dubnom/zpr-environments`. On workbench, launch each role in a separately
+supervised foreground terminal/process:
 
-The dev acceptance stack uses the default `desktop-linux` Docker context, the
-install registered as `e18d7c386deecf8c06fc5ee4`, and state at
-`zpr-dashboard/.zpr-evaluation-acceptance` relative to the repository root.
-Its fixed host-port assignments are in `dev.json`. The Control Room and OIDC
-ports also bind the selected private host address; directory, logging,
-Control-Service, and Visa-Service admin ports remain loopback-only.
+```sh
+sh "$HOME/zpr-environments/workbench.sh" dev production
+# After production reports ready, in another terminal:
+sh "$HOME/zpr-environments/workbench.sh" dev simulator
+```
 
-Use the [evaluation runbook](../zpr-dashboard/packaging/evaluation/README.md)
-for the evaluation launcher's prerequisites and behavior. The inventory is
-not a replacement launcher and must not be used to infer production support.
+Replace `dev` with `stable` for the stable pair. Never start a second copy of an
+already-running role. Ctrl-C its owning foreground supervisor to stop a role.
+Stop Simulator before stopping production. Production does not launch or
+require Simulator; stopping Simulator leaves production services operational.
+These are supervised processes, not boot-enabled system services; host reboot
+requires explicit restart. No reboot/clean-host qualification is claimed.
 
-## Temporary environments
+## Sign-in and secrets
 
-Create a temporary environment only for a specific test that cannot safely use
-`dev`. Give it a purpose-specific `tmp-<purpose>` name, its own state directory,
-and host ports that do not overlap either persistent inventory. Record which
-launcher owns its processes and containers before starting it.
+Both use `admin@evaluation.invalid`, but have separate credentials and trust:
 
-After the test, stop the environment with its owning launcher, verify that its
-owned processes and containers are stopped, and remove only that temporary
-environment's state directory. Do not remove shared runtime state, either
-persistent environment, or unrelated containers as part of temporary cleanup.
-Do not add another persistent environment without replacing one of these two.
+- Dev state: `~/zpr-demo-refresh-20261029-r1/state-dev-20261029-r1`.
+- Stable state: `~/zpr-demo-refresh-20261029-r1/state-scenario-r1`.
 
-## Retired runtime state
+Read `operator-admin.secret` privately on workbench for the operator password.
+The logger uses its own `logging-admin.secret`, not the operator password.
+Copy/trust only the relevant public `ca.pem` in the browser computer; never
+copy CA keys or whole state directories. The refreshed dev CA/password differ
+from the retired dev installation. Stable's are unchanged.
 
-The extra `zpr-fallback-20261016` Colima profile is stopped. Its VM disk and
-container state are retained; the profile was not deleted. The older duplicate
-Docker Desktop service containers that published ports `8789`, `8790`, `8800`,
-and `5556` are also stopped, not removed. Their container state and shared
-runtime files remain available for deliberate recovery. They are not part of
-the `stable` or `dev` inventories.
+OpenObserve is host-loopback only: dev port `15080`, stable port `35080`.
+Use an SSH tunnel to the chosen port and the matching CA for browser access.
+LDAPS and production mTLS APIs are likewise not public browser endpoints.
+No LDAP administration GUI is included in these pairs.
 
-The stable Colima stack does not currently run a logger. Use the dev
-environment's OpenObserve when logging is needed; do not rely on the retired
-Docker Desktop listener on port `8800`.
+For the scenario: select the evaluation organization and **Verify endpoint
+access policy**, preview, approve the fifteen-minute budget if needed, review
+and approve the exact plan, then run. Each run verifies fifteen fresh allowed
+and denied peer flows across three real endpoints, with fresh transport-policy
+denial evidence. It does not claim Visa-Service ICMP reachability.
 
-## Password retrieval
+## Promotion
 
-The dashboard links here rather than to secret files. Use the protected local
-workflow for the relevant environment:
+Develop and validate changes on dev first. Promotion means selecting the exact
+tested matching package pair and recording its source/checksums, not silently
+rebinding stable to mutable `main` or copying dev identity/state over stable.
+Frozen configuration changes require an explicit new-installation decision.
+Update inventories, launch paths and acceptance evidence together.
 
-- Stable operator: follow [Local development operator login](../zpr-dashboard/README.md#local-development-operator-login).
-  The password is stored in the protected
-  `../../.local-runtime/operator-login/operator-password` file.
-- Dev operator and logger: follow the
-  [evaluation identity and password instructions](../zpr-dashboard/packaging/evaluation/README.md#identity-health-and-lifecycle).
-  The operator and logger passwords are separate protected files in
-  `../zpr-dashboard/.zpr-evaluation-acceptance/`; do not share or print them.
+## Retired deployments
 
-Never copy passwords into this repository, the dashboard, browser URLs, shell
-history, or logs. The dev evaluation has no named LDAP users; do not treat its
-directory reader account as an interactive user.
+The previous source-built workbench dev (`~/zpr-dev/state-dev`), older packaged
+Room on port `28787`, and r5 preview on port `49388` are stopped. Their state,
+package/source directories and retained containers are not deleted. Earlier
+Mac/Colima inventories are historical and are no longer the active dev/stable
+contract; this workbench consolidation does not manipulate Mac runtimes.
+
+Create temporary environments only for bounded tests with distinct ports and
+explicit ownership. Stop them after testing; do not delete retained state,
+shared volumes, package directories or unrelated containers as cleanup.

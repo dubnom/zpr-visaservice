@@ -224,50 +224,47 @@
     <h1>ZPR environments</h1>
     <p class="intro">
       Quick links and sign-in identities for the two persistent stacks.
-      These services are local to the development workstation; some links
-      require its current private network address and trusted development CA.
+      Both run on workbench (10.0.1.160). Browser links require private-network
+      access and each environment's trusted CA. This is not a live health monitor.
     </p>
 
     <div class="environments">
       <article aria-labelledby="stable-title">
         <header class="card-header">
           <h2 id="stable-title">Stable</h2>
-          <p>Full operator and Simulator stack · Colima zpr-original</p>
+          <p>Tested engineering baseline · scenario-20261029-r3</p>
           <span class="badge">Persistent</span>
         </header>
         <section class="section" aria-labelledby="stable-services">
           <h3 id="stable-services">Services</h3>
           <div class="links">
-            <a class="service-link" href="https://localhost:28787/" target="_blank" rel="noreferrer">
-              <strong>Control Room</strong><span>https://localhost:28787</span>
+            <a class="service-link" href="https://10.0.1.160:38787/" target="_blank" rel="noreferrer">
+              <strong>Control Room</strong><span>https://10.0.1.160:38787</span>
             </a>
-            <a class="service-link" href="https://localhost:28788/" target="_blank" rel="noreferrer">
-              <strong>Simulator</strong><span>https://localhost:28788</span>
+            <a class="service-link" href="https://10.0.1.160:38788/scenarios.html#simulate" target="_blank" rel="noreferrer">
+              <strong>Simulator</strong><span>https://10.0.1.160:38788</span>
             </a>
             <div class="service-link" aria-disabled="true">
-              <strong>Logger</strong><span>Not deployed in stable</span>
+              <strong>Logger</strong><span>Workbench loopback :35080; SSH tunnel required</span>
             </div>
-            <a class="service-link" href="http://localhost:28793/" target="_blank" rel="noreferrer">
-              <strong>LDAP directory manager</strong><span>http://localhost:28793</span>
-            </a>
-            <a class="service-link" href="http://192.168.194.24:49282/" target="_blank" rel="noreferrer">
-              <strong>Minimal package · Audit</strong><span>http://192.168.194.24:49282</span>
-            </a>
+            <div class="service-link" aria-disabled="true">
+              <strong>LDAP</strong><span>Workbench loopback LDAPS :31636; no GUI</span>
+            </div>
           </div>
-          <p class="note">For logging, use the dev environment's OpenObserve endpoint.</p>
+          <p class="note">Stable owns its independent logging, identity and state.</p>
         </section>
         <section class="section" aria-labelledby="stable-identities">
           <h3 id="stable-identities">Identities</h3>
           <dl>
             <div class="identity">
               <dt>Operator / Control Room</dt>
-              <dd>dubnom</dd>
-              <a class="password-link" href="README.md#password-retrieval">Retrieve password</a>
+              <dd>admin@evaluation.invalid</dd>
+              <a class="password-link" href="README.md#sign-in-and-secrets">Retrieve password</a>
             </div>
             <div class="identity">
               <dt>LDAP / directory</dt>
-              <dd>Directory-manager UI</dd>
-              <a class="password-link" href="README.md#password-retrieval">Credential guidance</a>
+              <dd>No LDAP administration GUI</dd>
+              <a class="password-link" href="README.md#sign-in-and-secrets">Credential guidance</a>
             </div>
           </dl>
           <p class="note">Do not reuse the operator password for directory or logger access.</p>
@@ -277,32 +274,28 @@
       <article aria-labelledby="dev-title">
         <header class="card-header">
           <h2 id="dev-title">Dev</h2>
-          <p>Protected-DNS evaluation acceptance · Docker Desktop</p>
+          <p>Current-main engineering build · dev-20261029-r1</p>
           <span class="badge">Persistent</span>
         </header>
         <section class="section" aria-labelledby="dev-services">
           <h3 id="dev-services">Services</h3>
           <div class="links">
-            <a class="service-link" href="https://localhost:58787/" target="_blank" rel="noreferrer">
-              <strong>Control Room</strong><span>https://localhost:58787</span>
+            <a class="service-link" href="https://10.0.1.160:18787/" target="_blank" rel="noreferrer">
+              <strong>Control Room</strong><span>https://10.0.1.160:18787</span>
             </a>
-            <a class="service-link" href="http://192.168.194.24:38888/" target="_blank" rel="noreferrer">
-              <strong>Simulator</strong><span>http://192.168.194.24:38888</span>
+            <a class="service-link" href="https://10.0.1.160:18788/scenarios.html#simulate" target="_blank" rel="noreferrer">
+              <strong>Simulator</strong><span>https://10.0.1.160:18788</span>
             </a>
-            <a class="service-link" href="https://localhost:55080/web/" target="_blank" rel="noreferrer">
-              <strong>Logger · OpenObserve</strong><span>https://localhost:55080/web/</span>
-            </a>
-            <a class="service-link" href="ldaps://localhost:51636">
-              <strong>LDAP · LDAPS endpoint</strong><span>ldaps://localhost:51636</span>
-            </a>
-            <a class="service-link" href="http://192.168.194.24:49282/" target="_blank" rel="noreferrer">
-              <strong>Minimal package · Audit</strong><span>http://192.168.194.24:49282</span>
-            </a>
+            <div class="service-link" aria-disabled="true">
+              <strong>Logger · OpenObserve</strong><span>Workbench loopback :15080; SSH tunnel required</span>
+            </div>
+            <div class="service-link" aria-disabled="true">
+              <strong>LDAP · LDAPS endpoint</strong><span>Workbench loopback :11636; no GUI</span>
+            </div>
           </div>
           <p class="note">
             LDAP is a secure directory protocol endpoint, not a browser UI.
-            Audit is included in the minimal ZPR package and uses the
-            workstation's current private IPv4 address for this local preview.
+            No separate Audit application endpoint is claimed by this pair.
           </p>
         </section>
         <section class="section" aria-labelledby="dev-identities">
@@ -311,17 +304,17 @@
             <div class="identity">
               <dt>Operator / Control Room</dt>
               <dd>admin@evaluation.invalid</dd>
-              <a class="password-link" href="../zpr-dashboard/packaging/evaluation/README.md#identity-health-and-lifecycle">Retrieve password</a>
+              <a class="password-link" href="README.md#sign-in-and-secrets">Retrieve password</a>
             </div>
             <div class="identity">
               <dt>Logger / OpenObserve</dt>
               <dd>admin@evaluation.invalid</dd>
-              <a class="password-link" href="../zpr-dashboard/packaging/evaluation/README.md#identity-health-and-lifecycle">Retrieve password</a>
+              <a class="password-link" href="README.md#sign-in-and-secrets">Retrieve password</a>
             </div>
             <div class="identity">
               <dt>LDAP</dt>
               <dd>No named-user accounts provisioned</dd>
-              <a class="password-link" href="../zpr-dashboard/packaging/evaluation/README.md#identity-health-and-lifecycle">Credential guidance</a>
+              <a class="password-link" href="README.md#sign-in-and-secrets">Credential guidance</a>
             </div>
           </dl>
           <p class="note">The logger uses a different password from the operator account.</p>

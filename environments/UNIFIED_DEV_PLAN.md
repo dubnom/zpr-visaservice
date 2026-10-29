@@ -1,5 +1,10 @@
 # Unified dev environment plan (workbench)
 
+Current deployment inventory: [Workbench environments](README.md). As of
+2026-10-29, dev and stable both run on workbench with separate paired Simulator
+instances; old workbench stacks are stopped with state retained. The plan and
+dated results below preserve the original rollout history, not current URLs.
+
 Decision (2026-10-28, operator): there are two environments, **dev** and
 **stable**, both eventually on `dubnom@workbench.local` (Ubuntu 24.04 x86-64,
 Docker 29, Compose v5). Dev comes first; stable is promoted from dev when dev
