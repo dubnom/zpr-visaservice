@@ -9,7 +9,7 @@ import "embed"
 //go:embed static/assertions.css static/assertions.js static/assistant-core.js static/budget-authority.html
 //go:embed static/budget-authority.js static/change-review.css static/change-review.html static/change-review.js
 //go:embed static/code-editor.css static/code-editor.js static/colored-log.js static/config-editor.js
-//go:embed static/config-form.js static/control-room-typography.css static/diagnostics.css static/diagnostics.js
+//go:embed static/config-form.js static/control-room-shell.js static/control-room-typography.css static/diagnostics.css static/diagnostics.js
 //go:embed static/editor-assistant.css static/editor-assistant.js static/editor-page.js static/editor-search.js
 //go:embed static/gateways.css static/gateways.js static/geography-land.svg static/geography.css
 //go:embed static/geography.js static/help.css static/index.html static/log-format.js

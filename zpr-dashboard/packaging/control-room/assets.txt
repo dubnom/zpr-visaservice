@@ -15,6 +15,7 @@ code-editor.js
 colored-log.js
 config-editor.js
 config-form.js
+control-room-shell.js
 control-room-typography.css
 diagnostics.css
 diagnostics.js

@@ -64,17 +64,10 @@ test("review queue shows immutable saved diff, records exact CSRF-bound approval
   await expect(page.getByRole("button", { name: "Approve revision", exact: true })).toBeDisabled();
 });
 
-test("self-approval is disabled unless single-operator mode is explicitly enabled", async ({ page }) => {
+test("author may approve their own request and the page flags it", async ({ page }) => {
   await setup(page, { subject: "author" });
-  await expect(page.getByRole("button", { name: "Approve revision", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Withdraw my request", exact: true })).toBeEnabled();
-  await expect(page.locator("#decision-note")).toContainText("requires a different operator");
-});
-
-test("explicit single-operator mode enables author approval", async ({ page }) => {
-  await setup(page, { subject: "author", self: true });
   await expect(page.getByRole("button", { name: "Approve revision", exact: true })).toBeEnabled();
-  await expect(page.locator("#capabilities")).toContainText("explicitly enabled");
+  await expect(page.locator("#capabilities")).toContainText("one operator may do both");
 });
 
 test("failed mutation is not retried and reconciliation restores available controls", async ({ page }) => {

@@ -8122,6 +8122,24 @@ test("retained adapters animate when topology bounds move", async ({ page, appUR
   expect(Math.hypot(linkMotion.from.x1 - linkMotion.to.x1, linkMotion.from.y1 - linkMotion.to.y1)).toBeGreaterThan(1);
 });
 
+test("Map draws services above adapters", async ({ page, appURL, api }) => {
+  api.snapshot.actors = [
+    { cn: "node-0", node: true, zpr_addr: "fd00::1", node_details: { adapters: ["adapter-0", "gateway-0"], in_sync: true } },
+    { cn: "adapter-0", node: false, zpr_addr: "fd00::2" },
+    { cn: "gateway-0", node: false, zpr_addr: "fd00::3" },
+  ];
+  api.snapshot.services = [{ service_name: "Public gateway", service_kind: "Gateway", actor_cn: "gateway-0", external_network_connection: "public-internet" }];
+  await page.goto(appURL + "/#map");
+  await expect(page.locator('.graph-vertex[data-inspect-actor="adapter-0"]')).toBeVisible();
+  const order = await page.evaluate(() => {
+    const world = [...document.querySelector("#graph-world").children];
+    const index = (selector) => world.findIndex((element) => element.matches(selector) || element.querySelector(selector));
+    return { adapter: index('.graph-vertex.adapter'), service: index(".graph-service-badge"), numbers: index("#graph-number-layer") };
+  });
+  expect(order.adapter).toBeGreaterThanOrEqual(0);
+  expect(order.service).toBeGreaterThan(order.adapter);
+});
+
 test("Fit centers the actual topology bounds", async ({ page, appURL, api }) => {
   api.snapshot.actors = [{ cn: "adapter", node: false, zpr_addr: "fd00::1" }];
   await page.goto(appURL + "/#map");

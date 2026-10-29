@@ -19,6 +19,7 @@ static/code-editor.js
 static/colored-log.js
 static/config-editor.js
 static/config-form.js
+static/control-room-shell.js
 static/control-room-typography.css
 static/diagnostics.css
 static/diagnostics.js
