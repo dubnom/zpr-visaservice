@@ -6,6 +6,12 @@ Control Room, Control-Service, Simulator, OpenObserve and authentication
 services. Package inclusion does not add live policy evaluation, historical
 queries or a dependency on those services.
 
+The integration boundary regression blocks every non-Audit browser request while
+importing synthetic current/baseline exports, comparing settings, downloading a
+report and rendering it for print. It also checks that runtime observations are
+excluded. This is automated boundary evidence, not a successful production export
+or operator acceptance.
+
 The local development UI is served from `public/`; see [Run](#run). Imported
 assertion settings remain operator-supplied data and are not submitted to a
 service by Audit.
