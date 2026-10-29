@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	auditcontract "neboagency.com/zpr-dashborad/internal/audit"
 	"neboagency.com/zpr-dashborad/internal/changereview"
 	"neboagency.com/zpr-dashborad/internal/controlroom"
 	serviceapi "neboagency.com/zpr-dashborad/internal/controlservice/httpapi"
@@ -554,5 +555,45 @@ func TestSubjectReviewExplicitStartupConfiguration(t *testing.T) {
 	}
 	if _, _, err := configuredSubjectLinkReviews(); err == nil {
 		t.Fatal("unprotected provider config enabled review service")
+	}
+}
+
+type recordingAuditRepository struct{ events []auditcontract.Event }
+
+func (r *recordingAuditRepository) Append(_ context.Context, event auditcontract.Event) (auditcontract.Event, error) {
+	r.events = append(r.events, event)
+	return event, nil
+}
+
+func (r *recordingAuditRepository) List(context.Context, auditcontract.Query) (auditcontract.Page, error) {
+	return auditcontract.Page{}, nil
+}
+
+func TestSubjectReviewApprovalIsAuditedAndSelfApprovalIsFlagged(t *testing.T) {
+	for _, tc := range []struct{ approver, outcome string }{
+		{"author", "approved-single-operator"},
+		{"reviewer", "approved"},
+	} {
+		f := subjectReviewHTTP(t)
+		audit := &recordingAuditRepository{}
+		f.api.audit = audit
+		record := subjectReviewRecord(t, subjectReviewResponse(t, f.api,
+			f.request(t, "POST", subjectReviewPrefix+"proposals", "submit", "author", subjectReviewJSON(t, f.input)), 200))
+		if len(audit.events) != 0 {
+			t.Fatal("proposal must not be recorded as an approval", audit.events)
+		}
+		approval := subjectReviewJSON(t, subjectReviewApproval{"production", record.Digest, "1", f.input.RegistryRevision, "Review"})
+		subjectReviewResponse(t, f.api, f.request(t, "POST", subjectReviewPrefix+record.ID+"/approve", "approve", tc.approver, approval), 200)
+		if len(audit.events) != 1 {
+			t.Fatal("approval was not audited once", audit.events)
+		}
+		event := audit.events[0]
+		if event.Outcome != tc.outcome || event.ActorSubject != tc.approver || event.OrganizationID != "production" ||
+			event.Action != "subject-link.approve" || event.Target != "subject-link-review/"+record.ID {
+			t.Fatal("unexpected approval audit event", event)
+		}
+		if err := auditcontract.ValidateEvent(event); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

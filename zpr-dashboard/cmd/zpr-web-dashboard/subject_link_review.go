@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	auditcontract "neboagency.com/zpr-dashborad/internal/audit"
 	"neboagency.com/zpr-dashborad/internal/changereview"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
@@ -153,6 +156,33 @@ type subjectReviewAPI struct {
 	verifier  *operatordelegation.Verifier
 	providers *subjectLinkProviders
 	signing   *subjectSnapshotSigning
+	// audit records approvals; nil in installs without an audit database.
+	audit auditcontract.Repository
+}
+
+// recordApproval persists the approval after it has committed, so a failure
+// here is logged rather than reverting the review decision.
+func (api *subjectReviewAPI) recordApproval(ctx context.Context, organization string, principal changereview.Principal, record changereview.SubjectLinkReview) {
+	if api.audit == nil {
+		return
+	}
+	outcome := "approved"
+	if record.SelfReviewed() {
+		outcome = "approved-single-operator"
+	}
+	var correlation [16]byte
+	if _, err := rand.Read(correlation[:]); err != nil {
+		log.Printf("Subject-link approval audit event could not be prepared: %T", err)
+		return
+	}
+	if _, err := api.audit.Append(ctx, auditcontract.Event{
+		OrganizationID: organization, OccurredAt: time.Now().UTC(),
+		ActorIssuer: principal.Issuer, ActorSubject: principal.Subject,
+		Action: "subject-link.approve", Target: "subject-link-review/" + record.ID,
+		Outcome: outcome, Source: "control-service", CorrelationID: hex.EncodeToString(correlation[:]),
+	}); err != nil {
+		log.Printf("Subject-link approval audit event could not be recorded: %T", err)
+	}
 }
 
 // Resolve outside the Store transaction, but defer errors to its callback:
@@ -237,8 +267,11 @@ func (api *subjectReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		subjectReviewError(w, err)
 		return
 	}
-	if request.permission == "subject-link.approve" && record.SelfReviewed() {
-		log.Printf("AUDIT WARNING: subject-link review %s approved by its proposer (single-operator review, less secure than independent review)", record.ID)
+	if request.permission == "subject-link.approve" {
+		if record.SelfReviewed() {
+			log.Printf("AUDIT WARNING: subject-link review %s approved by its proposer (single-operator review, less secure than independent review)", record.ID)
+		}
+		api.recordApproval(r.Context(), request.organization, principal, record)
 	}
 	writeJSON(w, http.StatusOK, record)
 }

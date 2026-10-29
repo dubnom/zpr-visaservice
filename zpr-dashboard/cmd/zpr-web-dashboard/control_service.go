@@ -143,6 +143,9 @@ func runControlService() error {
 			log.Printf("Close audit event store failed: %T", err)
 		}
 	}()
+	if reviews, ok := subjectReviews.(*subjectReviewAPI); ok && reviews != nil {
+		reviews.audit = auditRepository
+	}
 	enrollmentAPI, closeEnrollment, err := configuredEnrollmentHandler(auditRepository)
 	if err != nil {
 		return err
