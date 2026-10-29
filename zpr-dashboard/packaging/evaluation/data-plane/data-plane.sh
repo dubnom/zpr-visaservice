@@ -198,6 +198,9 @@ EOF
 		--node-addr "$node_substrate:5000" \
 		--zpr-addr "$dns_zpr"
 	cp "$state/dp-dns-publisher.key" "$run/zpr-vs-publisher.key"
+	cp "$state/dp-dns-viewer.key" "$run/zpr-dns-viewer.key"
+	chown bind:bind "$run/zpr-dns-viewer.key"
+	chmod 0640 "$run/zpr-dns-viewer.key"
 	chown bind:bind "$run/zpr-vs-publisher.key"
 	chmod 0640 "$run/zpr-vs-publisher.key"
 	chown bind:bind "$dns_zone"
@@ -212,6 +215,8 @@ EOF
 	named-checkconf "$run/named.conf"
 	named-checkzone svc.zpr "$dns_zone/db.svc.zpr" >/dev/null
 	spawn protected-dns ip netns exec zpr-dns /usr/sbin/named -g -u bind -c "$run/named.conf"
+	# Read-only AXFR for Control-Service (TSIG viewer key), not reachable over ZPR.
+	spawn dns-transfer-relay socat TCP-LISTEN:5353,fork,reuseaddr TCP:10.0.0.4:53
 	log "started protected DNS adapter and authoritative BIND"
 fi
 

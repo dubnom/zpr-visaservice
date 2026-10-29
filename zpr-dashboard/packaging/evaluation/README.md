@@ -236,7 +236,10 @@ to change. It creates a distinct `zpr-dns` adapter identity and per-install
 bootstrap/TSIG keys, adds the TCP/53 service and authenticated-device policy to
 the initial data-plane policy, configures Visa Service RFC 2136 updates, and
 runs authoritative-only BIND on `fd5a:5052::53`. BIND is not published on a
-host or underlay port; recursion and zone transfers are disabled. Startup does
+host or underlay port; recursion is disabled and zone transfers are refused
+except to a read-only TSIG viewer key (`dp-dns-viewer.key`) over a loopback-only
+relay (`-dns-transfer-port`, default 15353) that feeds the Control Room DNS
+records page. Startup does
 not report ready until Visa lists the DNS adapter and direct TCP queries from
 the Visa Service's isolated ZPR namespace return both the DNS service address
 and Visa Service's dynamically published adapter record over ZPR. This

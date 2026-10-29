@@ -40,6 +40,10 @@ const evaluationDataPlaneImage = "zpr-evaluation-data-plane:local"
 // published only to host loopback at the configured -vs-admin-port.
 const evaluationDataPlaneAdminPort = 8182
 
+// evaluationDataPlaneDNSTransferPort is the container-side relay of the
+// read-only zone transfer; published to host loopback only.
+const evaluationDataPlaneDNSTransferPort = 5353
+
 var evaluationDataPlaneFiles = []string{
 	"dp-policy.zpl", "dp-policy.zplc", "dp-policy-signing.key", "dp-ca.crt",
 	"dp-node.crt", "dp-node.key", "dp-node-auth.key", "dp-node-auth.pub",
@@ -48,13 +52,15 @@ var evaluationDataPlaneFiles = []string{
 
 var evaluationProtectedDNSFiles = []string{
 	"dp-dns.crt", "dp-dns.key", "dp-dns-auth.key", "dp-dns-auth.pub",
-	"dp-dns-publisher.key", "dp-dns-named.conf",
+	"dp-dns-publisher.key", "dp-dns-viewer.key", "dp-dns-named.conf",
 }
 
 const (
-	evaluationProtectedDNSAddress     = "fd5a:5052::53"
-	evaluationProtectedDNSVisaAddress = "fd5a:5052::1"
-	evaluationProtectedDNSBootstrap   = "\"vs.zpr\" = \"dp-vs-auth.pub\"\n"
+	evaluationProtectedDNSAddress = "fd5a:5052::53"
+	// Substrate address of BIND's namespace; only the TSIG viewer may transfer.
+	evaluationProtectedDNSTransferAddress = "10.0.0.4"
+	evaluationProtectedDNSVisaAddress     = "fd5a:5052::1"
+	evaluationProtectedDNSBootstrap       = "\"vs.zpr\" = \"dp-vs-auth.pub\"\n"
 )
 
 // Per-install policy: the node, the VS adapter and optional evaluation
@@ -284,6 +290,7 @@ func renderEvaluationProtectedDNSConfig() []byte {
 	return fmt.Appendf(nil, `acl zpr_clients { fd5a:5052::/32; };
 
 include "/run/zpr/zpr-vs-publisher.key";
+include "/run/zpr/zpr-dns-viewer.key";
 
 options {
     directory "/var/cache/bind";
@@ -293,7 +300,7 @@ options {
     allow-query-cache { none; };
     allow-query { zpr_clients; };
     allow-transfer { none; };
-    listen-on port 53 { none; };
+    listen-on port 53 { %s; };
     listen-on-v6 port 53 { %s; };
 };
 
@@ -302,10 +309,11 @@ controls { };
 zone "svc.zpr" {
     type primary;
     file "/var/lib/bind/db.svc.zpr";
-    allow-transfer { none; };
+    allow-query { zpr_clients; key zpr-dns-viewer; };
+    allow-transfer { key zpr-dns-viewer; };
     update-policy { grant zpr-vs-publisher zonesub A AAAA; };
 };
-`, evaluationProtectedDNSAddress)
+`, evaluationProtectedDNSTransferAddress, evaluationProtectedDNSAddress)
 }
 
 // generateEvaluationDataPlane renders unique per-install ZPR identities: an
@@ -411,6 +419,11 @@ func generateEvaluationDataPlane(files map[string][]byte, state string, inventor
 			return errors.New("cannot generate protected DNS publisher key")
 		}
 		files["dp-dns-publisher.key"] = fmt.Appendf(nil, "key \"zpr-vs-publisher\" {\n    algorithm hmac-sha256;\n    secret \"%s\";\n};\n", base64.StdEncoding.EncodeToString(secret))
+		viewer := make([]byte, 32)
+		if _, err := rand.Read(viewer); err != nil {
+			return errors.New("cannot generate protected DNS viewer key")
+		}
+		files["dp-dns-viewer.key"] = fmt.Appendf(nil, "key \"zpr-dns-viewer\" {\n    algorithm hmac-sha256;\n    secret \"%s\";\n};\n", base64.StdEncoding.EncodeToString(viewer))
 		files["dp-dns-named.conf"] = renderEvaluationProtectedDNSConfig()
 	}
 	if len(nodes) > 1 {
@@ -585,6 +598,9 @@ func evaluationDataPlaneArguments(state string, inventory evaluationInventory, i
 		"--label", "org.zpr.evaluation-install=" + inventory.InstallID,
 		"-p", fmt.Sprintf("127.0.0.1:%d:%d", inventory.Config.VSAdminPort, evaluationDataPlaneAdminPort),
 		"-e", "ZPR_DP_STATE=" + state}
+	if inventory.Config.ProtectedDNS && inventory.Config.DNSTransferPort != 0 {
+		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", inventory.Config.DNSTransferPort, evaluationDataPlaneDNSTransferPort))
+	}
 	if dock := evaluationDataPlaneTopology(inventory)[0]; dock.Substrate != "" {
 		args = append(args, "--ip", dock.Substrate, "-e", "ZPR_DP_NODE_SUBSTRATE="+dock.Substrate)
 	}

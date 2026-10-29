@@ -51,6 +51,11 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 				"ZPR_ADMIN_CA_FILE="+file("ca.pem"),
 				"ZPR_ADMIN_KEY_FILE="+file("vs-admin-api.key"))
 		}
+		if config.ProtectedDNS && config.DNSTransferPort != 0 {
+			env = append(env,
+				"ZPR_DNS_TRANSFER_ADDR="+fmt.Sprintf("127.0.0.1:%d", config.DNSTransferPort),
+				"ZPR_DNS_TRANSFER_TSIG_KEY_FILE="+file("dp-dns-viewer.key"))
+		}
 		if config.subjectLinks() {
 			env = append(env, evaluationSubjectEnvironment(state, config, false)...)
 		}
