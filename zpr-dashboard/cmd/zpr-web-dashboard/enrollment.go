@@ -9,11 +9,12 @@ import (
 	"os"
 	"strings"
 
+	"neboagency.com/zpr-dashborad/internal/audit"
 	"neboagency.com/zpr-dashborad/internal/enrollment"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
 
-func configuredEnrollmentHandler() (http.Handler, func() error, error) {
+func configuredEnrollmentHandler(auditRepositories ...audit.Repository) (http.Handler, func() error, error) {
 	if handler, closeProxy, configured, err := configuredEnrollmentServiceProxy(); configured {
 		return handler, closeProxy, err
 	}
@@ -56,7 +57,7 @@ func configuredEnrollmentHandler() (http.Handler, func() error, error) {
 		_ = store.Close()
 		return nil, nil, err
 	}
-	operator, err := configuredOperatorEnrollment(store, config)
+	operator, err := configuredOperatorEnrollment(store, config, auditRepositories...)
 	if err != nil {
 		_ = store.Close()
 		return nil, nil, err

@@ -94,6 +94,7 @@ func RenderControlRoomRuntime(config Config) (ControlRoomRuntime, error) {
 				"ZPR_CONTROL_SERVICE_KEY_FILE":       authority.ServiceKeyFile,
 				"ZPR_CONTROL_SERVICE_CLIENT_CA_FILE": authority.ServiceClientCAFile,
 				"ZPR_BUDGET_AUTHORITY_DB_PATH":       authority.DatabaseFile,
+				"ZPR_AUDIT_DB_PATH":                  path.Join(path.Dir(authority.DatabaseFile), "audit.db"),
 				"ZPR_OPERATOR_DELEGATION_TRUST_FILE": authority.DelegationTrustFile,
 			},
 			FileMounts: []RuntimeFileMount{

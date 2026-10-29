@@ -38,6 +38,11 @@ func TestControlRoomBoundaryProcessStartup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	auditDirectory := filepath.Join(root, "audit")
+	if err := os.Mkdir(auditDirectory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	auditDatabase := filepath.Join(auditDirectory, "audit.db")
 	ca, caKey, err := createTestPolicyCA()
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +116,8 @@ func TestControlRoomBoundaryProcessStartup(t *testing.T) {
 	}
 	serviceAddress, roomAddress := address(), address()
 	start("control-service", serviceAddress, "ZPR_CONTROL_SERVICE_LISTEN="+serviceAddress,
-		"ZPR_CONTROL_SERVICE_CERT_FILE="+serverPath, "ZPR_CONTROL_SERVICE_KEY_FILE="+serverKeyPath, "ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="+caPath)
+		"ZPR_CONTROL_SERVICE_CERT_FILE="+serverPath, "ZPR_CONTROL_SERVICE_KEY_FILE="+serverKeyPath,
+		"ZPR_CONTROL_SERVICE_CLIENT_CA_FILE="+caPath, "ZPR_AUDIT_DB_PATH="+auditDatabase)
 	start("control-room", roomAddress, "ZPR_CONTROL_SERVICE_URL=https://"+serviceAddress, "ZPR_CONTROL_SERVICE_TLS_SERVER_NAME=localhost",
 		"ZPR_CONTROL_SERVICE_CA_FILE="+caPath, "ZPR_CONTROL_CLIENT_CERT_FILE="+clientPath, "ZPR_CONTROL_CLIENT_KEY_FILE="+clientKeyPath)
 	roots := x509.NewCertPool()

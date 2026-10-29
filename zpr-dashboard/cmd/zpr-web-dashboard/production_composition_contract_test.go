@@ -79,7 +79,7 @@ func TestProductionCompositionRouteRegistrations(t *testing.T) {
 			"GET /bind9.xsl":                                    "handlers.DNSStylesheet",
 			"/api/policy":                                       "handlers.Policy",
 			"/api/policy/":                                      "handlers.Policy",
-		}, []string{"handlers.Assertions.Register(mux)", "handlers.TrustedChanges.Register(mux)"}},
+		}, []string{"handlers.Assertions.Register(mux)", "handlers.TrustedChanges.Register(mux)", "(Audit{Events: auditEvents}).Register(mux)"}},
 		{"policy_service.go", "policyServiceMux", map[string]string{
 			"policyApplyProducerRoute":                          "handler",
 			"policyApplyCandidateRoute":                         "handler",
@@ -121,6 +121,9 @@ func TestProductionCompositionRouteRegistrations(t *testing.T) {
 		{"../../internal/controlservice/httpapi/routes.go", "TrustedChanges.Register", map[string]string{
 			"GET /api/trusted-sources/change-feeds":                  "handlers.List",
 			"GET /api/trusted-sources/change-feeds/{source}/changes": "handlers.Read",
+		}, nil},
+		{"../../internal/controlservice/httpapi/routes.go", "Audit.Register", map[string]string{
+			"/api/operator-enrollment/v1/audit/events": "readOnlyGet(handlers.Events)",
 		}, nil},
 		{"enrollment.go", "configuredEnrollmentHandler", map[string]string{
 			"enrollment.APIPrefix":      "handler",
@@ -174,6 +177,11 @@ func TestProductionCompositionRouteRegistrations(t *testing.T) {
 func TestProductionCompositionStartupFailFastWithoutSimulator(t *testing.T) {
 	unavailableSimulatorForProductionContract(t)
 	directory := t.TempDir()
+	auditDirectory := filepath.Join(directory, "audit")
+	if err := os.Mkdir(auditDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZPR_AUDIT_DB_PATH", filepath.Join(auditDirectory, "audit.db"))
 	ca, _, err := createTestPolicyCA()
 	if err != nil {
 		t.Fatal(err)

@@ -43,6 +43,97 @@ func TestSubjectLinkPermissionsDoNotExpandEnrollmentDelegationRoutes(t *testing.
 	}
 }
 
+func TestAuditReadDelegationBindsOrganizationPermissionAndReplay(t *testing.T) {
+	signer, baseVerifier, request, _, identity, now := delegationFixture(t)
+	config := baseVerifier.config
+	config.Grants[0].Permissions = []string{"audit.read"}
+	verifier, err := NewVerifier(config, &replayMemory{keys: map[string]bool{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity.Organizations = []string{"company"}
+	identity.Permissions = []string{"audit.read"}
+	request.Method = http.MethodGet
+	request.URL.Path = Prefix + "audit/events"
+	request.URL.RawQuery = "action=policy.read&limit=25&organization_id=company"
+
+	proof, err := signer.SignAuditRead(request, identity, "company", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set(Header, proof)
+	grant, err := verifier.VerifyAuditRead(request, nil, now)
+	if err != nil || grant.Issuer != identity.Issuer || grant.Subject != identity.Subject ||
+		!slices.Contains(grant.Organizations, "company") || !slices.Contains(grant.Permissions, "audit.read") {
+		t.Fatalf("audit read grant=%+v err=%v", grant, err)
+	}
+	if _, err := verifier.VerifyAuditRead(request, nil, now); err == nil {
+		t.Fatal("audit read delegation was replayed")
+	}
+}
+
+func TestAuditReadDelegationRejectsScopeAndRouteChanges(t *testing.T) {
+	for name, mutate := range map[string]func(*http.Request){
+		"wrong route": func(r *http.Request) {
+			r.URL.Path = Prefix + "budget-authority/current"
+		},
+		"wrong organization": func(r *http.Request) {
+			r.URL.RawQuery = "organization_id=other"
+		},
+		"duplicate query": func(r *http.Request) {
+			r.URL.RawQuery = "organization_id=company&organization_id=other"
+		},
+		"unknown query": func(r *http.Request) {
+			r.URL.RawQuery = "organization_id=company&admin=true"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			signer, verifier, request, _, identity, now := delegationFixture(t)
+			config := verifier.config
+			config.Grants[0].Permissions = []string{"audit.read"}
+			newVerifier, err := NewVerifier(config, &replayMemory{keys: map[string]bool{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			verifier = newVerifier
+			identity.Organizations = []string{"company"}
+			identity.Permissions = []string{"audit.read"}
+			request.Method = http.MethodGet
+			request.URL.Path = Prefix + "audit/events"
+			request.URL.RawQuery = "organization_id=company"
+			proof, err := signer.SignAuditRead(request, identity, "company", now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set(Header, proof)
+			mutate(request)
+			if _, err := verifier.VerifyAuditRead(request, nil, now); err == nil {
+				t.Fatal("altered audit read request was accepted")
+			}
+		})
+	}
+	signer, _, request, _, identity, now := delegationFixture(t)
+	request.Method = http.MethodGet
+	request.URL.Path = Prefix + "audit/events"
+	request.URL.RawQuery = "organization_id=company"
+	for _, test := range []struct {
+		name          string
+		organizations []string
+		permissions   []string
+	}{
+		{name: "organization mismatch", organizations: []string{"other"}, permissions: []string{"audit.read"}},
+		{name: "permission missing", organizations: []string{"company"}, permissions: []string{"policy.read"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			identity.Organizations = test.organizations
+			identity.Permissions = test.permissions
+			if _, err := signer.SignAuditRead(request, identity, "company", now); err == nil {
+				t.Fatal("unauthorized identity was signed")
+			}
+		})
+	}
+}
+
 func reviewProofFixture(t *testing.T) (*Signer, *Verifier, *http.Request, []byte, operatorauth.Identity, time.Time) {
 	t.Helper()
 	t.Setenv("ZPR_SIMULATOR_URL", "http://127.0.0.1:0")

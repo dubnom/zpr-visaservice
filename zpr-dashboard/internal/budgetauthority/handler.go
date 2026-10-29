@@ -2,6 +2,8 @@ package budgetauthority
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	auditcontract "neboagency.com/zpr-dashborad/internal/audit"
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
@@ -57,9 +60,10 @@ type DelegationVerifier interface {
 
 // Handler exposes current evidence and delegated operator mutations.
 type Handler struct {
-	store    *Store
-	verifier DelegationVerifier
-	now      func() time.Time
+	store           *Store
+	verifier        DelegationVerifier
+	now             func() time.Time
+	auditRepository auditcontract.Repository
 }
 
 // NewHandler creates an authority handler that denies unavailable operations.
@@ -68,6 +72,13 @@ func NewHandler(store *Store, verifier DelegationVerifier, now func() time.Time)
 		now = time.Now
 	}
 	return &Handler{store: store, verifier: verifier, now: now}
+}
+
+// NewAuditedHandler creates an authority handler that records delegated mutations.
+func NewAuditedHandler(store *Store, verifier DelegationVerifier, now func() time.Time, repository auditcontract.Repository) *Handler {
+	handler := NewHandler(store, verifier, now)
+	handler.auditRepository = repository
+	return handler
 }
 
 // Scope converts a wire request into a validated authority scope.
@@ -218,6 +229,12 @@ func (h *Handler) approve(w http.ResponseWriter, r *http.Request, body []byte) {
 		http.Error(w, "budget approval permission denied", http.StatusForbidden)
 		return
 	}
+	if err := h.recordOperatorRequest(r, grant, scope.OrganizationID,
+		"budget.approval.create", operatordelegation.Prefix+"budget-authority/approvals", now); err != nil {
+		log.Printf("Budget approval audit event could not be recorded: %T", err)
+		http.Error(w, "budget authority audit history is unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	evidence, err := h.store.Approve(r.Context(), scope, request.Decision,
 		Actor{Issuer: grant.Issuer, Subject: grant.Subject}, request.ExpiresAt, now)
 	if err != nil {
@@ -252,6 +269,13 @@ func (h *Handler) revoke(w http.ResponseWriter, r *http.Request, body []byte) {
 		http.Error(w, "budget approval permission denied", http.StatusForbidden)
 		return
 	}
+	target := operatordelegation.Prefix + "budget-authority/approvals/{approval_id}/revoke"
+	if err := h.recordOperatorRequest(r, grant, request.OrganizationID,
+		"budget.approval.revoke", target, now); err != nil {
+		log.Printf("Budget revocation audit event could not be recorded: %T", err)
+		http.Error(w, "budget authority audit history is unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	evidence, err := h.store.Revoke(r.Context(), parts[0], request.OrganizationID,
 		Actor{Issuer: grant.Issuer, Subject: grant.Subject}, now)
 	if err != nil {
@@ -259,6 +283,33 @@ func (h *Handler) revoke(w http.ResponseWriter, r *http.Request, body []byte) {
 		return
 	}
 	writeEvidence(w, http.StatusOK, evidence)
+}
+
+func (h *Handler) recordOperatorRequest(
+	r *http.Request,
+	grant operatorauth.Grant,
+	organizationID, action, target string,
+	now time.Time,
+) error {
+	if h.auditRepository == nil {
+		return nil
+	}
+	var correlation [16]byte
+	if _, err := rand.Read(correlation[:]); err != nil {
+		return err
+	}
+	_, err := h.auditRepository.Append(r.Context(), auditcontract.Event{
+		OrganizationID: organizationID,
+		OccurredAt:     now.UTC(),
+		ActorIssuer:    grant.Issuer,
+		ActorSubject:   grant.Subject,
+		Action:         action,
+		Target:         target,
+		Outcome:        "requested",
+		Source:         "control-service",
+		CorrelationID:  hex.EncodeToString(correlation[:]),
+	})
+	return err
 }
 
 // authorizedBudgetApprover checks the signed permission and organization binding.

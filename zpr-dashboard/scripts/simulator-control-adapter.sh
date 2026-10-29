@@ -166,6 +166,7 @@ simulator_start_control_service() {
         -e ANTHROPIC_API_KEY \
         -e ZPR_CONTROL_SERVICE_LISTEN=0.0.0.0:8790 \
         -e ZPR_GATEWAY_ORGANIZATION_ID="$control_gateway_organization" \
+        -e ZPR_AUDIT_DB_PATH="$STATE_DIR/audit/audit.db" \
         -e ZPR_GATEWAY_CONFIG_STORE_DIR="${ZPR_GATEWAY_CONFIG_STORE_DIR:-$STATE_DIR/gateway-configs}" \
         -e ZPR_ANTHROPIC_API_KEY_FILE="${ZPR_ANTHROPIC_API_KEY_FILE:-$STATE_DIR/assistant/api-key}" \
         -e ZPR_CONTROL_SERVICE_CERT_FILE="$SERVICE_CERTS/control-service.crt" \

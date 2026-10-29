@@ -27,6 +27,7 @@ func TestControlHTTPCommandHandlerBindings(t *testing.T) {
 		{"control_service.go", "runControlService", "httpapi.Handlers", map[string]string{
 			"Enrollment": "enrollmentAPI", "Gateways": "gatewayAPI",
 			"SubjectLinkReviews":      "subjectReviews",
+			"Audit":                   "httpapi.Audit{Events: auditEvents}",
 			"BudgetAuthorityCurrent":  "http.HandlerFunc(budgetAuthorityAPI.Current)",
 			"BudgetAuthorityOperator": "http.HandlerFunc(budgetAuthorityAPI.Operator)",
 			"Assertions":              "assertions.handlers()", "TrustedChanges": "trustedChanges.handlers()",
@@ -106,6 +107,7 @@ func TestControlHTTPRealDomainHandlersWithoutSimulator(t *testing.T) {
 		{"GET", "/api/policy", "Policy not configured", 503},
 		{"GET", "/api/enrollment/catalog", "Not configured", 503},
 		{"GET", "/api/operator-enrollment/catalog", "Not configured", 503},
+		{"GET", "/api/operator-enrollment/v1/audit/events", "audit history is unavailable", 503},
 	} {
 		t.Run(test.path, func(t *testing.T) {
 			request := httptest.NewRequest(test.method, test.path, nil)

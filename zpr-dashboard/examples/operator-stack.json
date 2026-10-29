@@ -17,7 +17,9 @@
         "ZPR_POLICY_SERVICE_URL": "https://policy.company.example:8789",
         "ZPR_POLICY_SERVICE_CA_FILE": "/etc/zpr/operator/policy-service-ca",
         "ZPR_POLICY_CLIENT_CERT_FILE": "/etc/zpr/operator/policy-client-cert",
-        "ZPR_POLICY_CLIENT_KEY_FILE": "/etc/zpr/operator/policy-client-key"
+        "ZPR_POLICY_CLIENT_KEY_FILE": "/etc/zpr/operator/policy-client-key",
+        "ZPR_AUDIT_DB_PATH": "/var/lib/zpr/audit/audit.db",
+        "ZPR_OPERATOR_DELEGATION_TRUST_FILE": "/etc/zpr/operator/operator-delegation-trust"
       },
       "mounts": [
         {
@@ -59,6 +61,16 @@
           "source": "/etc/zpr/operator/policy-client-key",
           "target": "/etc/zpr/operator/policy-client-key",
           "read_only": true
+        },
+        {
+          "source": "/etc/zpr/operator/operator-delegation-trust",
+          "target": "/etc/zpr/operator/operator-delegation-trust",
+          "read_only": true
+        },
+        {
+          "source": "/var/lib/zpr/audit",
+          "target": "/var/lib/zpr/audit",
+          "read_only": false
         }
       ],
       "publish": [

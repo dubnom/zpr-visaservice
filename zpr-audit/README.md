@@ -1,9 +1,12 @@
 # ZPR Audit
 
-Standalone Audit application with sample workspaces and a separate read-only
-assertion-settings import, independent of Control Room,
-Control-Service, Simulator, OpenObserve and authentication services.
-No real policy evaluation or historical query is implemented.
+Standalone, history-first Audit application with sample workspaces, a separate
+read-only assertion-settings import, and an authenticated query of stored audit
+events. Use day/week/month windows for short-term history review; Control Room
+and Security remain the live operational interfaces. The stored-event query is
+not available from the standalone unauthenticated preview. Audit remains
+independent of Simulator and OpenObserve. No real policy evaluation or broad
+historical event coverage is implemented.
 
 ## Maturity integration gate
 
@@ -36,6 +39,74 @@ Once that candidate is identified:
 Successful real-data validation, final-contract compatibility and operator
 acceptance remain open gates. Synthetic automated tests are not production
 evidence. Do not resume broad UI feature batches in place of these checks.
+
+## Backend building blocks
+
+The dashboard repository now has reusable audit backend primitives:
+
+- `internal/audit` defines a minimal event contract and organization-scoped
+  query/page interface without arbitrary event payloads.
+- `internal/audit/sqlite` provides private-file SQLite persistence, append-only
+  triggers and bounded, cursor-based reads.
+- `internal/audit/httpapi` provides a read-only HTTP adapter. Its required
+  `ScopeResolver` must obtain the authorized organization from trusted server
+  authentication context; caller-supplied organization query parameters are
+  rejected.
+
+The read-only endpoint is now mounted in Control-Service and exposed through
+Control Room at `GET /api/audit/events`. Control Room requires the distinct
+`audit.read` permission and signs a short-lived request-bound delegation;
+Control-Service verifies its operator, organization, permission, mTLS peer and
+one-use nonce before querying. Add `audit.read` only to explicitly approved
+operator grants and the Control-Service delegation trust grants. Configure `ZPR_AUDIT_DB_PATH` to a private absolute path on Control-Service; it
+is a required minimum ZPR setting and Control-Service startup now fails if the
+store cannot be opened. If delegation trust is missing or invalid, the history
+endpoint returns unavailable rather than an empty success, but event producers
+can still write to the required store.
+The query supports optional RFC 3339 `from`/`until` bounds, exact `source`,
+`action` and `outcome` filters, an opaque `cursor`, and `limit` from 1 to 100
+(default 50).
+
+The History view keeps fictional sample data separate from live results. Its
+**Load live audit feed** control requests the authenticated same-origin
+`/api/audit/events` endpoint; the standalone development server has no
+authentication and will not provide that endpoint. Unauthorized and unavailable
+responses are shown explicitly. An empty page is not evidence that no activity
+occurred. History windows default to the last 7 days and offer the last 24 hours,
+last 30 days, or a custom range. Bounds are local-time inputs converted to RFC
+3339 instants; `from` is inclusive and `until` exclusive. Exact action, source
+and outcome matches are optional. Changing filters starts a new query;
+pagination continues with the exact query used for its first page. This is a
+short-term lookback, not a live operational dashboard or comprehensive
+historical archive.
+
+The endpoint reads events explicitly appended to the new store. Producers now
+record authorized Audit-history reads as `audit.history.read`, and the embedded
+Control-Service enrollment handler records verified named-user requests for
+device-enrollment invitation create, cancel, approve, reject, and preflight
+recording, plus invitation list/detail and preflight reads. Catalog requests
+are not attributed to an organization because they may cover multiple
+organizations. This producer does not cover enrollment operations served by an
+externally configured enrollment-service proxy. Enrollment records use outcomes
+of `requested` and are appended before the handler runs; they indicate an
+authorized request was issued, not that business validation or the operation
+succeeded.
+An append failure blocks the enrollment mutation. Control-Service startup now
+requires the audit repository, so the embedded producer cannot silently run
+without its event store.
+The authoritative Control-Service budget-authority handler also records
+delegated approval requests as `budget.approval.create` and revocation requests
+as `budget.approval.revoke`. These events are organization-scoped, attribute the
+verified operator, and use the same `requested` semantics. They are appended
+before the mutation; if event creation or persistence fails, the approval or
+revocation is blocked.
+No existing Control Room audit tables have been migrated or bridged, and no
+underlying policy, visa, identity or service operations are produced. The
+external enrollment-service proxy remains uncovered. There are also no
+retention/backup operations or centralized historical imports. SQLite
+immutability triggers prevent ordinary row updates/deletes; they do not protect
+against a database administrator or replace backups and operational controls.
+Do not describe this as a complete or tamper-proof audit service.
 
 ## Importing real assertion settings
 
@@ -373,6 +444,9 @@ report packs remain temporary and are not encoded in the URL.
 ## Test
 
 ```sh
+cd ../zpr-dashboard
+go test ./internal/audit/...
+cd ../zpr-audit
 npm ci
 npx playwright install chromium
 npm test

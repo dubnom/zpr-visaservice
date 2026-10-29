@@ -33,6 +33,25 @@ func (handlers TrustedChanges) Register(mux *http.ServeMux) {
 	mux.Handle("GET /api/trusted-sources/change-feeds/{source}/changes", handlers.Read)
 }
 
+type Audit struct {
+	Events http.Handler
+}
+
+func (handlers Audit) Register(mux *http.ServeMux) {
+	mux.Handle("/api/operator-enrollment/v1/audit/events", readOnlyGet(handlers.Events))
+}
+
+func readOnlyGet(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 type Handlers struct {
 	Enrollment, Gateways, Snapshot, Diagnostics, ActorVisas           http.Handler
 	AdapterLogs, DNSRecords, DNSStats, DNSStylesheet                  http.Handler
@@ -41,6 +60,7 @@ type Handlers struct {
 	SubjectLinkReviews                                                http.Handler
 	Assertions                                                        Assertions
 	TrustedChanges                                                    TrustedChanges
+	Audit                                                             Audit
 	TrustedSourceControl                                              http.Handler
 }
 
@@ -72,6 +92,14 @@ func NewMux(handlers Handlers) *http.ServeMux {
 	mux.Handle("/api/operator-enrollment/v1/budget-authority/", budgetOperator)
 	handlers.Assertions.Register(mux)
 	handlers.TrustedChanges.Register(mux)
+	auditEvents := handlers.Audit.Events
+	if auditEvents == nil {
+		auditEvents = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "audit history is unavailable", http.StatusServiceUnavailable)
+		})
+	}
+	(Audit{Events: auditEvents}).Register(mux)
 	if handlers.TrustedSourceControl != nil {
 		mux.Handle("GET /api/trusted-sources/runtime", handlers.TrustedSourceControl)
 		mux.Handle("GET /api/trusted-sources/runtime/{source}/control", handlers.TrustedSourceControl)

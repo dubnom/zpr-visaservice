@@ -112,6 +112,7 @@ func TestRenderBudgetAuthorityForIndependentOperatorServices(t *testing.T) {
 		"ZPR_CONTROL_SERVICE_KEY_FILE":       config.BudgetAuthority.ServiceKeyFile,
 		"ZPR_CONTROL_SERVICE_CLIENT_CA_FILE": config.BudgetAuthority.ServiceClientCAFile,
 		"ZPR_BUDGET_AUTHORITY_DB_PATH":       config.BudgetAuthority.DatabaseFile,
+		"ZPR_AUDIT_DB_PATH":                  "/var/lib/zpr/control-service/audit.db",
 		"ZPR_OPERATOR_DELEGATION_TRUST_FILE": config.BudgetAuthority.DelegationTrustFile,
 	}
 	if !reflect.DeepEqual(runtime.ControlService.Environment, wantServiceEnvironment) {

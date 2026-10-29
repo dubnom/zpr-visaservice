@@ -15,7 +15,8 @@ REQUIRED = {
         "ZPR_CONTROL_SERVICE_CLIENT_CA_FILE", "ZPR_ADMIN_URL",
         "ZPR_ADMIN_CA_FILE", "ZPR_ADMIN_KEY_FILE", "ZPR_POLICY_SERVICE_URL",
         "ZPR_POLICY_SERVICE_CA_FILE", "ZPR_POLICY_CLIENT_CERT_FILE",
-        "ZPR_POLICY_CLIENT_KEY_FILE",
+        "ZPR_POLICY_CLIENT_KEY_FILE", "ZPR_AUDIT_DB_PATH",
+        "ZPR_OPERATOR_DELEGATION_TRUST_FILE",
     ),
     "control-room": (
         "ZPR_CONTROL_SERVICE_URL", "ZPR_CONTROL_SERVICE_CA_FILE",
@@ -99,6 +100,16 @@ def load_config(filename):
                 # Store/database files may be created inside a named writable directory.
                 require(local.exists() or (not mount["read_only"] and local.parent.is_dir()),
                         f"{mode}: configured path for {key} does not exist")
+        if mode == "control-service":
+            audit_path = Path(env["ZPR_AUDIT_DB_PATH"])
+            require(audit_path.is_absolute() and ".." not in audit_path.parts and audit_path.name not in ("", ".", ".."),
+                    "control-service: ZPR_AUDIT_DB_PATH must be a normalized absolute file path")
+            state_mount = next((mount for mount in mounts if Path(mount["target"]) == audit_path.parent
+                                and not mount["read_only"]), None)
+            require(state_mount is not None, "control-service: audit database parent must be an explicit writable mount")
+            state_source = Path(state_mount["source"])
+            require(state_source.is_dir() and state_source.stat().st_mode & 0o077 == 0,
+                    "control-service: audit database directory must be private")
         require(isinstance(service["publish"], list) and service["publish"]
                 and all(text(p) and re.fullmatch(r"127\.0\.0\.1:[0-9]+:[0-9]+", p) for p in service["publish"]),
                 f"{mode}: publish must explicitly bind host loopback ports")

@@ -8,14 +8,14 @@ function showGroup(name){
  dialog('Group · '+name,'<p><span class="pill">Northstar Labs · '+(userGroup?'Company directory · user group':'Device registry · machine group')+'</span></p><p class="muted">Fictional membership snapshot · 26 Oct 2026, 10:30. Direct and source-reported nested members are included.</p><h3>'+ (userGroup?'Users in this group':'Machines in this group')+' <span class="count">'+members.length+' known sample members</span></h3><table><thead><tr><th>Identity</th><th>Membership path</th></tr></thead><tbody>'+members.map(([identity,m])=>'<tr><td><button class="link" data-member="'+escapeHTML(identity)+'">'+escapeHTML(identity)+'</button><small>'+escapeHTML(m.id)+'</small></td><td>'+escapeHTML(m.groups.find(g=>g[0]===name)[1])+'</td></tr>').join('')+'</tbody></table><div class="note">Partial sample inventory. Identities whose membership is unavailable cannot be included or excluded conclusively.</div><h3>Potentially available services</h3><p class="muted">Group-related policy candidates, not a completed per-member access analysis. Service availability varies by member and selected context.</p><table><thead><tr><th>Service</th><th>Group contribution / remaining constraints</th></tr></thead><tbody>'+candidates.map(c=>'<tr><td><button class="link" data-group-service="'+escapeHTML(c[0])+'" data-group-scope="'+escapeHTML(name)+'">'+escapeHTML(c[0])+'</button></td><td><strong>'+escapeHTML(c[1])+'</strong><small>'+escapeHTML(c[2])+'</small></td></tr>').join('')+'</tbody></table><div class="note">Illustrative policy references only; no group-wide permission is inferred. Historical membership, nested-group resolution and live policy evaluation are Not Implemented.</div><button data-ni="Evaluate all authorized group members against candidate services">Analyze group access · Not Implemented</button>');
 }
 function showMembership(name){const m=memberships[name];if(!m)return;dialog('Group membership · '+name,'<p><strong>'+escapeHTML(m.id)+'</strong><br>Authority: '+escapeHTML(m.source)+' · Northstar Labs</p><p><span class="pill">Sample snapshot · 26 Oct 2026, 10:30</span></p>'+(m.unavailable?'<p class="status unknown">Membership unavailable</p><p>Missing evidence is not proof of non-membership.</p>':m.groups.length?'<table><thead><tr><th>Group</th><th>Membership path</th></tr></thead><tbody>'+m.groups.map(g=>'<tr><td>'+escapeHTML(g[0])+'</td><td>'+escapeHTML(g[1])+'</td></tr>').join('')+'</tbody></table>':'<p>No group memberships recorded in this fictional snapshot.</p>')+'<div class="note">Nested membership illustrates a source-reported path, not a new traversal rule. Real source identity, group IDs, validity and policy interpretation must be retained. A user’s groups do not become their machine’s groups. Membership alone does not grant access.</div><button data-ni="Retrieve authoritative membership history">Membership history · Not Implemented</button>')}
-let direction='service',currentRows=[];
+let direction='service',currentRows=[],liveHistoryCursor='',liveHistoryQuery='';
 let reportHTML='',reportReturnFocus='report-button';
 const pageHelp={
  inventory:{title:'Imported assertion settings',intro:'Import an authorized Policy-Service or Control Room assertion-settings response. This is unverified imported evidence, not a live connection.',steps:['Export GET /api/assertions/settings from Policy-Service or GET /api/assertions from Control Room using authorized production tooling.','Choose the JSON file; review the imported organization, revision and source separately from operator-entered provenance. Optionally import a same-organization baseline.','Review comparison status, revision distance and source byte/line measures. Settings equality excludes revision, file formatting and discarded runtime fields; it proves no semantic equivalence or activation. Open Baseline source provenance to record that file’s source system, reference and retrieval time independently.','Filter differing positions by type or literal text on either side. Navigate differences or jump to a matching position and add a paired snapshot reference to notes. Added/removed describe positions, not semantic edits.','Enter a preparer and purpose, optionally add provenance/notes, then use Report / print. Reports include all differences and complete sources regardless of filters or pages.'],recovery:'Service errors and failed settings loads are rejected. Reset comparison filters if a position is hidden. Baseline replacement resets comparison controls and baseline provenance; existing notes remain self-attributed to the files they cite. Current-snapshot replacement clears all review fields. Each retrieval time must be valid UTC and no later than its own snapshot’s import time. Invalid baseline provenance blocks reporting until corrected or cleared. SHA-256 requires HTTPS or localhost. Do not enter credentials; source files and reports can contain sensitive policy text.'},
  access:{title:'Access explorer',intro:'Review fictional potential access and membership. Permission is not connectivity, a live session or an installed visa.',steps:['Choose a service or identity and the request context and policy revision.','Filter and sort candidates, then inspect an explanation or membership details.','Use Report / print to capture all filtered matches, including those on other pages.'],recovery:'Reset filters if no candidates match. Unavailable evidence is not denial; membership alone is not a grant. Live evaluation is Not Implemented.'},
  policy:{title:'Policy changes',intro:'Compare the fixed r41 → r42 example with membership and source inputs held constant. This is not executable policy analysis.',steps:['Choose r41 before and r42 after to view the supported sample comparison.','Review the selected request impacts and partial activation evidence.','Explore the affected service or prepare a current-view report.'],recovery:'Other revision pairs have no comparison. Publication is not activation everywhere; no historical attributes were replayed.'},
  assertions:{title:'Assertion review',intro:'Browse sample definitions, roles, revisions and dependencies. These are not evaluator results.',steps:['Search assertions or filter by enforcing or diagnostic role.','Select a record and review its outcomes, dependencies and evidence gaps.','Add the selected assertion to a pack, or report all filtered assertions using Report / print.'],recovery:'Reset filters if no records match. A diagnostic observation is not an enforcing decision; satisfaction of one assertion does not prove permission.'},
- history:{title:'Entity history',intro:'Review illustrative observations, evidence gaps and derived facts. Links are not resolved from authoritative sources.',steps:['Choose an entity type and enter a reference.','Show sample history and inspect the timeline and coverage.','Prepare a report with the requested dates using Report / print.'],recovery:'No matching record does not prove absence. Missing acknowledgments do not prove failure. Time ranges do not query or filter the fixtures.'},
+ history:{title:'Entity history',intro:'Review the clearly labeled sample timeline or query the separate production audit feed through authenticated Control Room.',steps:['Choose an entity type and enter a reference to inspect the sample timeline.','Use Load live audit feed to request stored audit events; this requires a signed-in Control Room session with audit.read.','Prepare a report with the requested dates using Report / print.'],recovery:'The live query reads only events currently available in the configured store; coverage is limited and an empty page does not prove that no activity occurred. Time ranges only label the sample timeline and do not filter it.'},
  reports:{title:'Report packs',intro:'Assemble tailored reports from fictional snapshots. Reporting dates are metadata only, not historical filtering.',steps:['Choose a template and scope, preview it, then add it to the pack.','Review or reorder reports and enter shared title, preparer and dates.','Preview the pack, download HTML or use Print / Save PDF.'],recovery:'Complete required fields and ensure the start date is not after the end date. Duplicate template/scope pairs are skipped. Exports are editable and not certified evidence; notes are unverified commentary.'}
 };
 function openPageHelp(){
@@ -557,6 +557,97 @@ function renderHistory(){
  $('history-events').innerHTML=events.map(e=>'<div class="event '+(e[3]?'gap':'')+'"><time>26 Oct · '+e[0]+'</time><strong>'+e[1]+'</strong><p>'+e[2]+'</p><button class="link" data-ni="Retrieve authoritative event evidence">Inspect evidence · Not Implemented</button></div>').join('');
  $('history-context').innerHTML='<p><strong>Selection:</strong> '+escapeHTML(kind)+' / '+escapeHTML(ref)+'</p><p>Policy: <button class="link" id="context-policy">r42 · Corporate service access</button></p><p>Service: Finance Reports<br>Scenario identity: Alice Chen<br>Machine: finance-laptop-17</p><div class="note">Illustrative links, not resolved from the selected entity. Time filter: '+escapeHTML($('history-window').value)+'.</div>';
 }
+function renderLiveHistoryEvents(events,append){
+ const html=events.map(event=>{
+  const timestamp=escapeHTML(event.occurred_at);
+  const actor=escapeHTML(event.actor_issuer+' / '+event.actor_subject);
+  return '<div class="event"><time datetime="'+timestamp+'">'+timestamp+'</time><strong>'+escapeHTML(event.action)+' · '+escapeHTML(event.outcome)+'</strong><p>Actor: '+actor+'<br>Target: '+escapeHTML(event.target)+'<br>Source: '+escapeHTML(event.source)+' · Event: '+escapeHTML(event.id)+'</p></div>';
+ }).join('');
+ $('live-history-events').insertAdjacentHTML(append?'beforeend':'afterbegin',html);
+}
+function setLiveHistoryWindow(windowName){
+ const until=new Date();
+ const from=new Date(until);
+ if(windowName==='day')from.setTime(until.getTime()-24*60*60*1000);
+ else if(windowName==='week')from.setTime(until.getTime()-7*24*60*60*1000);
+ else if(windowName==='month')from.setTime(until.getTime()-30*24*60*60*1000);
+ else return;
+ const localValue=date=>{
+  const pad=value=>String(value).padStart(2,'0');
+  return date.getFullYear()+'-'+pad(date.getMonth()+1)+'-'+pad(date.getDate())+'T'+pad(date.getHours())+':'+pad(date.getMinutes());
+ };
+ $('live-history-from').value=localValue(from);
+ $('live-history-until').value=localValue(until);
+}
+async function loadLiveHistory(append=false){
+ const button=$('load-live-history'),status=$('live-history-status'),more=$('live-history-more');
+ button.disabled=true;more.disabled=true;
+ let params;
+ if(append&&liveHistoryCursor){
+  params=new URLSearchParams(liveHistoryQuery);
+  params.set('cursor',liveHistoryCursor);
+ }else{
+  liveHistoryCursor='';
+  more.classList.add('hidden');
+  params=new URLSearchParams({limit:'50'});
+  for(const [key,id] of [['action','live-history-action'],['source','live-history-source'],['outcome','live-history-outcome']]){
+   const value=$(id).value.trim();
+   if(value)params.set(key,value);
+  }
+  for(const [key,id] of [['from','live-history-from'],['until','live-history-until']]){
+   const value=$(id).value;
+   if(value){
+    const instant=new Date(value);
+    if(Number.isNaN(instant.getTime())){
+     status.textContent='Enter valid time bounds.';
+     button.disabled=false;more.disabled=false;return;
+    }
+    params.set(key,instant.toISOString());
+   }
+  }
+  if(params.has('from')&&params.has('until')&&Date.parse(params.get('from'))>=Date.parse(params.get('until'))){
+   status.textContent='The from time must be earlier than the until time.';
+   button.disabled=false;more.disabled=false;return;
+  }
+  liveHistoryQuery=params.toString();
+  liveHistoryCursor='';
+ }
+ status.textContent=append?'Loading the next page…':'Loading authenticated audit events…';
+ try{
+  const response=await fetch('/api/audit/events?'+params.toString(),{
+   method:'GET',credentials:'same-origin',cache:'no-store',
+   headers:{Accept:'application/json'},signal:AbortSignal.timeout(10000)
+  });
+  if(!response.ok){
+   liveHistoryCursor='';
+   more.classList.add('hidden');
+   $('live-history-events').replaceChildren();
+   status.textContent=response.status===401||response.status===403?'Access denied. Sign in through Control Room and confirm the audit.read permission.':response.status===503?'Audit history is unavailable or not configured. No results were returned.':'Audit history request failed (HTTP '+response.status+').';
+   return;
+  }
+  const page=await response.json();
+  if(!page||!Array.isArray(page.events)||(page.next_cursor!==undefined&&typeof page.next_cursor!=='string')||
+   !page.events.every(event=>event&&['id','occurred_at','actor_issuer','actor_subject','action','target','outcome','source'].every(key=>typeof event[key]==='string'))){
+   throw new Error('The audit service returned an invalid response.');
+  }
+  if(!append)$('live-history-events').replaceChildren();
+  renderLiveHistoryEvents(page.events,append);
+  liveHistoryCursor=page.next_cursor||'';
+  more.classList.toggle('hidden',!liveHistoryCursor);
+  status.textContent=page.events.length
+   ?'Loaded '+page.events.length+' event'+(page.events.length===1?'':'s')+'. The feed reflects records currently available; it may not be complete.'
+   :'No events returned by the configured audit store. This does not prove that no activity occurred.';
+ }catch(error){
+  liveHistoryCursor='';
+  more.classList.add('hidden');
+  $('live-history-events').replaceChildren();
+  status.textContent=error.name==='TimeoutError'||error.name==='AbortError'
+   ?'Audit history request timed out. Try again.'
+   :'Could not load audit history. Check the Control Room connection and try again.';
+ }finally{
+  button.disabled=false;more.disabled=false;
+ }
+}
 document.addEventListener('click',e=>{
  const contentsLink=e.target.closest('#report-document a[href^="#pack-"]');
  if(contentsLink){e.preventDefault();$(contentsLink.getAttribute('href').slice(1)).scrollIntoView();return}
@@ -690,7 +781,11 @@ $('report-download').onclick=()=>{
 $('show-access').onclick=renderAccess;
 ['target','cohort','access-revision','outcome','group-filter'].forEach(id=>$(id).onchange=renderAccess);
 $('show-history').onclick=renderHistory;
+ $('load-live-history').onclick=()=>loadLiveHistory(false);
+ $('live-history-more').onclick=()=>loadLiveHistory(true);
 ['history-kind','history-window'].forEach(id=>$(id).onchange=renderHistory);
+$('live-history-window').onchange=()=>setLiveHistoryWindow($('live-history-window').value);
+['live-history-from','live-history-until'].forEach(id=>$(id).onchange=()=>{$('live-history-window').value='custom'});
 $('context-button').onclick=()=>dialog('Sample analysis context','<p>'+escapeHTML(accessContext())+'</p><p>Organization: Northstar Labs · evaluator not connected. Sample identity links only.</p><p>Changing real context, selecting historical attributes and obtaining fresh source evidence are <strong>Not Implemented</strong>.</p>');
 ['before','after'].forEach(id=>$(id).onchange=renderPolicy);
 $('compare').onclick=()=>{renderPolicy();if(supportedPolicyComparison())dialog('Sample comparison loaded','<p>The displayed r41 → r42 fixture illustrates a source change, partial activation and potential-access differences. No policy analysis ran.</p>');else notImplemented('Compare arbitrary policy revisions')};
@@ -698,5 +793,6 @@ $('impact-access').onclick=()=>{setDirection('service');$('target').value='Finan
 $('policy-history').onclick=()=>showHistory('Policy','corporate-access:r42');
 $('history-access').onclick=()=>{setDirection('service');tab('access')};
 setDirection('service');renderHistory();renderAssertions();renderPolicy();
+setLiveHistoryWindow('week');
 tab(location.hash.slice(1));
 addEventListener('hashchange',()=>tab(location.hash.slice(1)));

@@ -49,7 +49,7 @@ func (authorizer *budgetAuthorityTestAuthorizer) Authorize(
 func TestConfiguredBudgetAuthorityDisabledWithoutExplicitDatabasePath(t *testing.T) {
 	t.Setenv("ZPR_BUDGET_AUTHORITY_DB_PATH", "")
 	t.Setenv("ZPR_OPERATOR_DELEGATION_TRUST_FILE", "")
-	handler, closeStore := configuredBudgetAuthority()
+	handler, closeStore := configuredBudgetAuthority(nil)
 	defer func() {
 		if err := closeStore(); err != nil {
 			t.Fatal(err)

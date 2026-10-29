@@ -36,6 +36,7 @@ func ValidPermission(permission string) bool {
 		"monitor.read", "logs.read", "policy.read", "policy.analyze", "policy.edit", "policy.apply",
 		"trusted-source.read", "trusted-source.control",
 		"gateway.read", "gateway.analyze", "gateway.edit",
+		"audit.read",
 		"change.read", "change.submit", "change.review",
 		"simulator.read", "simulator.control",
 		"organization.read", "organization.create", "organization.analyze", "organization.edit", "organization.activate", "organization.restore", "organization.archive",

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"neboagency.com/zpr-dashborad/internal/audit"
 	"neboagency.com/zpr-dashborad/internal/budgetauthority"
 	"neboagency.com/zpr-dashborad/internal/controlroom"
 	"neboagency.com/zpr-dashborad/internal/enrollment"
@@ -80,9 +81,9 @@ func configuredOperatorSigner(security *controlRoomSecurity) (*operatordelegatio
 }
 
 // configuredBudgetAuthority opens only the explicitly configured persistent authority store.
-func configuredBudgetAuthority() (*budgetauthority.Handler, func() error) {
+func configuredBudgetAuthority(auditRepository audit.Repository) (*budgetauthority.Handler, func() error) {
 	unavailable := func() (*budgetauthority.Handler, func() error) {
-		return budgetauthority.NewHandler(nil, nil, time.Now), func() error { return nil }
+		return budgetauthority.NewAuditedHandler(nil, nil, time.Now, auditRepository), func() error { return nil }
 	}
 	databasePath := strings.TrimSpace(os.Getenv("ZPR_BUDGET_AUTHORITY_DB_PATH"))
 	if databasePath == "" {
@@ -97,27 +98,27 @@ func configuredBudgetAuthority() (*budgetauthority.Handler, func() error) {
 	trustPath := strings.TrimSpace(os.Getenv("ZPR_OPERATOR_DELEGATION_TRUST_FILE"))
 	if trustPath == "" {
 		log.Print("Budget authority mutations are disabled: operator delegation trust is not configured")
-		return budgetauthority.NewHandler(store, nil, time.Now), store.Close
+		return budgetauthority.NewAuditedHandler(store, nil, time.Now, auditRepository), store.Close
 	}
 	data, err := readOperatorFile(trustPath, 65536, false)
 	if err != nil {
 		log.Printf("Budget authority mutations are disabled: delegation trust is unavailable (%T)", err)
-		return budgetauthority.NewHandler(store, nil, time.Now), store.Close
+		return budgetauthority.NewAuditedHandler(store, nil, time.Now, auditRepository), store.Close
 	}
 	var trust operatordelegation.Config
 	if err := decodeOperatorConfig(data, &trust); err != nil {
 		log.Printf("Budget authority mutations are disabled: delegation trust is invalid (%T)", err)
-		return budgetauthority.NewHandler(store, nil, time.Now), store.Close
+		return budgetauthority.NewAuditedHandler(store, nil, time.Now, auditRepository), store.Close
 	}
 	verifier, err := operatordelegation.NewVerifier(trust, store)
 	if err != nil {
 		log.Printf("Budget authority mutations are disabled: delegation verifier is unavailable (%T)", err)
-		return budgetauthority.NewHandler(store, nil, time.Now), store.Close
+		return budgetauthority.NewAuditedHandler(store, nil, time.Now, auditRepository), store.Close
 	}
-	return budgetauthority.NewHandler(store, verifier, time.Now), store.Close
+	return budgetauthority.NewAuditedHandler(store, verifier, time.Now, auditRepository), store.Close
 }
 
-func configuredOperatorEnrollment(store *enrollment.Store, config enrollment.Config) (http.Handler, error) {
+func configuredOperatorEnrollment(store *enrollment.Store, config enrollment.Config, auditRepositories ...audit.Repository) (http.Handler, error) {
 	path := strings.TrimSpace(os.Getenv("ZPR_OPERATOR_DELEGATION_TRUST_FILE"))
 	if path == "" {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +134,7 @@ func configuredOperatorEnrollment(store *enrollment.Store, config enrollment.Con
 	if err := decodeOperatorConfig(data, &trust); err != nil {
 		return nil, err
 	}
-	return enrollment.NewOperatorAdminHandler(store, config, trust)
+	return enrollment.NewOperatorAdminHandler(store, config, trust, auditRepositories...)
 }
 
 func operatorEnrollmentProxy(auth *operatorauth.Auth, signer *operatordelegation.Signer, proxy http.Handler) http.Handler {

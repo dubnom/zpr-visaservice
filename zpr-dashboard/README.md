@@ -577,6 +577,14 @@ Control-Service requires its listener and server/client-CA TLS files, explicit
 Admin URL/CA/key, Policy-Service URL/mTLS files and organization scope. Control
 Room requires its explicit listener, service URL/mTLS files, organization,
 HTTPS origin/server TLS, OIDC configuration/secret and delegation signer/key.
+Every minimum Control-Service deployment also requires `ZPR_AUDIT_DB_PATH`,
+`ZPR_OPERATOR_DELEGATION_TRUST_FILE`, and a private writable audit-state
+directory mounted at the database file's parent path. The stack checker refuses
+missing audit settings, a read-only or unmounted database directory, and
+directories with group/other permissions. Control-Service startup fails if the
+audit database cannot be opened; history reads remain unavailable when trust is
+missing or invalid, while the repository remains available for local event
+producers.
 Configure any custom OIDC CA, enrollment/trust, source/feed, log, diagnostics,
 provider-manager, budget or store inputs through additional explicit environment
 values **and named mounts**. Configuration and secret mounts should be read-only;

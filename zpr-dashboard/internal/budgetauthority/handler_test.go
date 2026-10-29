@@ -2,6 +2,7 @@ package budgetauthority
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -10,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -19,9 +21,27 @@ import (
 	"testing"
 	"time"
 
+	auditcontract "neboagency.com/zpr-dashborad/internal/audit"
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
+
+type budgetAuthorityAuditRepository struct {
+	events    []auditcontract.Event
+	appendErr error
+}
+
+func (repository *budgetAuthorityAuditRepository) Append(_ context.Context, event auditcontract.Event) (auditcontract.Event, error) {
+	if repository.appendErr != nil {
+		return auditcontract.Event{}, repository.appendErr
+	}
+	repository.events = append(repository.events, event)
+	return event, nil
+}
+
+func (*budgetAuthorityAuditRepository) List(context.Context, auditcontract.Query) (auditcontract.Page, error) {
+	return auditcontract.Page{}, nil
+}
 
 type handlerFixture struct {
 	handler  *Handler
@@ -132,6 +152,8 @@ func (fixture handlerFixture) currentRequest(t *testing.T, scope ScopeRequest) *
 
 func TestHandlerApprovalResolveAndRevoke(t *testing.T) {
 	fixture := newHandlerFixture(t, []string{"org-a"}, []string{"budget.approve"})
+	auditRepository := &budgetAuthorityAuditRepository{}
+	fixture.handler.auditRepository = auditRepository
 	scopeRequest := ScopeRequest{
 		OrganizationID: "org-a", ScenarioID: "scenario-a", PlanDigest: "sha256:plan-a",
 	}
@@ -165,6 +187,19 @@ func TestHandlerApprovalResolveAndRevoke(t *testing.T) {
 		approved.ApprovedBy != `oidc:["https://idp.example","operator-1"]` ||
 		approved.Version != "1" || approved.Revoked {
 		t.Fatalf("approval response = %+v", approved)
+	}
+	if len(auditRepository.events) != 1 {
+		t.Fatalf("approval audit events = %+v", auditRepository.events)
+	}
+	approvalEvent := auditRepository.events[0]
+	if approvalEvent.OrganizationID != scope.OrganizationID ||
+		approvalEvent.ActorIssuer != fixture.identity.Issuer ||
+		approvalEvent.ActorSubject != fixture.identity.Subject ||
+		approvalEvent.Action != "budget.approval.create" ||
+		approvalEvent.Target != operatordelegation.Prefix+"budget-authority/approvals" ||
+		approvalEvent.Outcome != "requested" || approvalEvent.Source != "control-service" ||
+		approvalEvent.CorrelationID == "" || approvalEvent.OccurredAt.IsZero() {
+		t.Fatalf("approval audit event = %+v", approvalEvent)
 	}
 	var responseFields map[string]json.RawMessage
 	if err := json.Unmarshal(approvalResponse.Body.Bytes(), &responseFields); err != nil {
@@ -221,6 +256,19 @@ func TestHandlerApprovalResolveAndRevoke(t *testing.T) {
 	if !revoked.Revoked || revoked.ApprovalID != approved.ApprovalID {
 		t.Fatalf("revocation response = %+v", revoked)
 	}
+	if len(auditRepository.events) != 2 {
+		t.Fatalf("revocation audit events = %+v", auditRepository.events)
+	}
+	revocationEvent := auditRepository.events[1]
+	if revocationEvent.OrganizationID != scope.OrganizationID ||
+		revocationEvent.ActorIssuer != fixture.identity.Issuer ||
+		revocationEvent.ActorSubject != fixture.identity.Subject ||
+		revocationEvent.Action != "budget.approval.revoke" ||
+		revocationEvent.Target != operatordelegation.Prefix+"budget-authority/approvals/{approval_id}/revoke" ||
+		revocationEvent.Outcome != "requested" || revocationEvent.Source != "control-service" ||
+		revocationEvent.CorrelationID == "" || revocationEvent.CorrelationID == approvalEvent.CorrelationID {
+		t.Fatalf("revocation audit event = %+v", revocationEvent)
+	}
 	currentResponse = httptest.NewRecorder()
 	fixture.handler.Current(currentResponse, fixture.currentRequest(t, scopeRequest))
 	if currentResponse.Code != http.StatusOK {
@@ -234,6 +282,79 @@ func TestHandlerApprovalResolveAndRevoke(t *testing.T) {
 	}
 	if _, err := current.ToEvidence(scope, time.Now()); err == nil {
 		t.Fatal("ValidateCurrent accepted revoked evidence")
+	}
+}
+
+func TestHandlerAuditFailurePreventsBudgetApproval(t *testing.T) {
+	fixture := newHandlerFixture(t, []string{"org-a"}, []string{"budget.approve"})
+	fixture.handler.auditRepository = &budgetAuthorityAuditRepository{appendErr: errors.New("audit unavailable")}
+	scope := ScopeRequest{OrganizationID: "org-a", ScenarioID: "scenario-a", PlanDigest: "sha256:plan-a"}
+	body, err := json.Marshal(approvalRequest{
+		Scope: scope, Decision: DecisionApproved, ExpiresAt: fixture.now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	fixture.handler.Operator(response, fixture.delegatedRequest(
+		t, operatordelegation.Prefix+"budget-authority/approvals", body,
+	))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("audit failure status=%d body=%s", response.Code, response.Body)
+	}
+	current := httptest.NewRecorder()
+	fixture.handler.Current(current, fixture.currentRequest(t, scope))
+	if current.Code != http.StatusNotFound {
+		t.Fatalf("approval persisted despite audit failure: status=%d body=%s", current.Code, current.Body)
+	}
+}
+
+func TestHandlerAuditFailurePreventsBudgetRevocation(t *testing.T) {
+	fixture := newHandlerFixture(t, []string{"org-a"}, []string{"budget.approve"})
+	repository := &budgetAuthorityAuditRepository{}
+	fixture.handler.auditRepository = repository
+	scope := ScopeRequest{OrganizationID: "org-a", ScenarioID: "scenario-a", PlanDigest: "sha256:plan-a"}
+	body, err := json.Marshal(approvalRequest{
+		Scope: scope, Decision: DecisionApproved, ExpiresAt: fixture.now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approvalResponse := httptest.NewRecorder()
+	fixture.handler.Operator(approvalResponse, fixture.delegatedRequest(
+		t, operatordelegation.Prefix+"budget-authority/approvals", body,
+	))
+	if approvalResponse.Code != http.StatusCreated {
+		t.Fatalf("approval status=%d body=%s", approvalResponse.Code, approvalResponse.Body)
+	}
+	var approval EvidenceResponse
+	if err := json.Unmarshal(approvalResponse.Body.Bytes(), &approval); err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.handler.auditRepository = &budgetAuthorityAuditRepository{appendErr: errors.New("audit unavailable")}
+	revokeBody, err := json.Marshal(revokeRequest{OrganizationID: scope.OrganizationID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	revokeResponse := httptest.NewRecorder()
+	fixture.handler.Operator(revokeResponse, fixture.delegatedRequest(
+		t, operatordelegation.Prefix+"budget-authority/approvals/"+approval.ApprovalID+"/revoke", revokeBody,
+	))
+	if revokeResponse.Code != http.StatusServiceUnavailable {
+		t.Fatalf("audit failure status=%d body=%s", revokeResponse.Code, revokeResponse.Body)
+	}
+	current := httptest.NewRecorder()
+	fixture.handler.Current(current, fixture.currentRequest(t, scope))
+	if current.Code != http.StatusOK {
+		t.Fatalf("current approval status=%d body=%s", current.Code, current.Body)
+	}
+	var evidence EvidenceResponse
+	if err := json.Unmarshal(current.Body.Bytes(), &evidence); err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Revoked {
+		t.Fatal("approval was revoked despite audit failure")
 	}
 }
 

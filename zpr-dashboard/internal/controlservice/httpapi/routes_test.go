@@ -28,6 +28,7 @@ func testHandlers(handler func(string) http.Handler) Handlers {
 			Status: handler("assertions"), Save: handler("save"), Evaluate: handler("evaluate"),
 		},
 		TrustedChanges: TrustedChanges{List: handler("feeds"), Read: handler("changes")},
+		Audit:          Audit{Events: handler("audit-events")},
 	}
 }
 
@@ -85,6 +86,7 @@ func TestMuxProductionRoutesWithoutSimulator(t *testing.T) {
 		{"POST", "/api/assertions/evaluate", "evaluate", "", ""},
 		{"GET", "/api/trusted-sources/change-feeds", "feeds", "", ""},
 		{"GET", "/api/trusted-sources/change-feeds/ldap/changes", "changes", "", "ldap"},
+		{"GET", "/api/operator-enrollment/v1/audit/events", "audit-events", "", ""},
 	} {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
 			before := calls
@@ -115,6 +117,7 @@ func TestMuxMethodAndCanonicalRouting(t *testing.T) {
 		{"GET", "/api/assertions/evaluate", 405, "POST", ""},
 		{"POST", "/api/assertions", 405, "GET, HEAD, PUT", ""},
 		{"DELETE", "/api/trusted-sources/change-feeds/ldap/changes", 405, "GET, HEAD", ""},
+		{"POST", "/api/operator-enrollment/v1/audit/events", 405, "GET", ""},
 		{"GET", "/api/actors/a/b/visas", 404, "", ""},
 		{"GET", "/api/simulator", 404, "", ""},
 		{"GET", "/api/assertions/unknown", 404, "", ""},

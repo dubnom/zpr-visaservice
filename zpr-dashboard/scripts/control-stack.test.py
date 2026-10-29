@@ -22,12 +22,17 @@ class OperatorStackTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root)
         self.secret = self.root / "operator-config"
         self.secret.write_text("operator-owned fixture")
+        self.audit_state = self.root / "audit-state"
+        self.audit_state.mkdir(mode=0o700)
+        self.audit_state.chmod(0o700)
         self.config = {"version": 1, "deployment": "company", "services": {}}
         for mode, keys in stack.REQUIRED.items():
             env = {}
             for key in keys:
                 if key.endswith("_FILE"):
                     env[key] = "/operator/config"
+                elif key == "ZPR_AUDIT_DB_PATH":
+                    env[key] = "/var/lib/zpr/audit/audit.db"
                 elif key.endswith(("_URL", "_ORIGIN")):
                     env[key] = "https://company.example:8790"
                 elif key.endswith("_LISTEN"):
@@ -39,6 +44,9 @@ class OperatorStackTests(unittest.TestCase):
                 "env": env, "mounts": [{"source": str(self.secret), "target": "/operator/config", "read_only": True}],
                 "publish": ["127.0.0.1:8790:8790"],
             }
+        self.config["services"]["control-service"]["mounts"].append({
+            "source": str(self.audit_state), "target": "/var/lib/zpr/audit", "read_only": False,
+        })
         self.config["services"]["control-room"]["listen"] = "0.0.0.0:8787"
         self.filename = self.root / "stack.json"
 
@@ -82,8 +90,11 @@ class OperatorStackTests(unittest.TestCase):
         for launch in launches:
             forwarded = [launch[i + 1] for i, arg in enumerate(launch) if arg == "--env"]
             self.assertFalse(any("SIMULAT" in value or "untrusted.example" in value or "wrong" in value for value in forwarded))
-            self.assertEqual([launch[i + 1] for i, arg in enumerate(launch) if arg == "--mount"],
-                             [f"type=bind,source={self.secret},target=/operator/config,readonly"])
+            mounts = [launch[i + 1] for i, arg in enumerate(launch) if arg == "--mount"]
+            expected_mounts = [f"type=bind,source={self.secret},target=/operator/config,readonly"]
+            if "company-control-service" in launch:
+                expected_mounts.append(f"type=bind,source={self.audit_state},target=/var/lib/zpr/audit")
+            self.assertEqual(mounts, expected_mounts)
             self.assertNotIn("/var/run/docker.sock", " ".join(launch))
             self.assertNotIn("build", launch)
 
@@ -100,6 +111,8 @@ class OperatorStackTests(unittest.TestCase):
         change(lambda c: c["services"]["control-service"]["env"].update(ZPR_ADMIN_URL="http://company.example"))
         change(lambda c: c["services"]["control-service"]["env"].update(ZPR_DNS_TRANSFER_ADDR="dns.company:53"))
         change(lambda c: c["services"]["control-service"].update(mounts=[]))
+        change(lambda c: c["services"]["control-service"]["mounts"][1].update(read_only=True))
+        change(lambda c: c["services"]["control-service"]["env"].update(ZPR_AUDIT_DB_PATH="relative/audit.db"))
         change(lambda c: c["services"]["control-service"]["mounts"][0].update(source=str(self.root / "missing")))
         change(lambda c: c["services"]["control-service"]["mounts"][0].update(source="/"))
         change(lambda c: c["services"]["control-service"].update(publish=["0.0.0.0:8790:8790"]))

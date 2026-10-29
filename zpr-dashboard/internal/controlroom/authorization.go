@@ -126,6 +126,9 @@ func APIPermission(method, path string) (string, bool) {
 			return "monitor.read", true
 		}
 	}
+	if path == "/api/audit/events" && method == http.MethodGet {
+		return "audit.read", true
+	}
 	if path == "/api/policy" || strings.HasPrefix(path, "/api/policy/") ||
 		path == "/api/assertions" || strings.HasPrefix(path, "/api/assertions/") {
 		switch method {

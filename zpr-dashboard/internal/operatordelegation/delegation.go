@@ -622,6 +622,62 @@ func (v *Verifier) Verify(r *http.Request, body []byte, now time.Time) (operator
 	return v.verify(r, body, now, reviewProofScope{})
 }
 
+const auditReadPurpose = "audit-read-v1"
+
+func auditReadScope(r *http.Request, body []byte, organization string) (reviewProofScope, error) {
+	denied := errors.New("invalid audit read proof request")
+	if r.Method != http.MethodGet || len(body) != 0 || !text(organization) ||
+		organization == "*" || r.URL.RawPath != "" ||
+		r.URL.ForceQuery || len(r.URL.RequestURI()) > 2048 ||
+		r.URL.Path != Prefix+"audit/events" || path.Clean(r.URL.Path) != r.URL.Path {
+		return reviewProofScope{}, denied
+	}
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return reviewProofScope{}, denied
+	}
+	for key, entries := range values {
+		if len(entries) != 1 {
+			return reviewProofScope{}, denied
+		}
+		switch key {
+		case "organization_id", "from", "until", "source", "action", "outcome", "cursor", "limit":
+		default:
+			return reviewProofScope{}, denied
+		}
+	}
+	if values.Get("organization_id") != organization || values.Encode() != r.URL.RawQuery {
+		return reviewProofScope{}, denied
+	}
+	return reviewProofScope{
+		purpose: auditReadPurpose, organization: organization, permission: "audit.read",
+	}, nil
+}
+
+// SignAuditRead binds a named operator's read permission and organization to
+// the exact read-only audit request sent over the authenticated service link.
+func (s *Signer) SignAuditRead(r *http.Request, id operatorauth.Identity, organization string, now time.Time) (string, error) {
+	scope, err := auditReadScope(r, nil, organization)
+	if err != nil || !https(id.Issuer, false) || !text(id.Subject) ||
+		len(AuditIdentity(id.Issuer, id.Subject)) > 256 ||
+		(!slices.Contains(id.Organizations, organization) && !slices.Contains(id.Organizations, "*")) ||
+		!slices.Contains(id.Permissions, scope.permission) {
+		return "", errors.New("invalid named operator audit read")
+	}
+	return s.signSubjectLinkRequest(r, nil, id, now, scope)
+}
+
+// VerifyAuditRead verifies the request binding, mTLS peer, grant and replay
+// protection before returning the trusted operator grant.
+func (v *Verifier) VerifyAuditRead(r *http.Request, body []byte, now time.Time) (operatorauth.Grant, error) {
+	organization := r.URL.Query().Get("organization_id")
+	scope, err := auditReadScope(r, body, organization)
+	if err != nil {
+		return operatorauth.Grant{}, err
+	}
+	return v.verify(r, body, now, scope)
+}
+
 func (v *Verifier) verify(r *http.Request, body []byte, now time.Time, scope reviewProofScope) (operatorauth.Grant, error) {
 	denied := errors.New("operator delegation unavailable or denied")
 	values := r.Header.Values(Header)

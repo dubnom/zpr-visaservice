@@ -56,6 +56,7 @@ func runControlRoom(listen string) error {
 	controlRoomMux.Handle(subjectReviewPrefix, subjectLinkReviewProxy(security.auth, signer, proxy))
 	controlRoomMux.Handle(subjectRegistryPrefix, subjectLinkReviewProxy(security.auth, signer, proxy))
 	controlRoomMux.Handle(subjectPublicationPrefix, subjectLinkReviewProxy(security.auth, signer, proxy))
+	controlRoomMux.Handle(auditEventsRoute, auditEventsProxy(security.auth, signer, os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"), proxy))
 	controlRoomMux.Handle("/api/budget-authority/", budgetAuthorityOperatorProxy(security.auth, signer, proxy))
 	controlRoomMux.Handle("/", mux)
 	server := &http.Server{
@@ -133,7 +134,16 @@ func runControlService() error {
 			log.Printf("Close subject-link review store failed: %T", err)
 		}
 	}()
-	enrollmentAPI, closeEnrollment, err := configuredEnrollmentHandler()
+	auditEvents, auditRepository, closeAuditEvents, err := configuredAuditEvents()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := closeAuditEvents(); err != nil {
+			log.Printf("Close audit event store failed: %T", err)
+		}
+	}()
+	enrollmentAPI, closeEnrollment, err := configuredEnrollmentHandler(auditRepository)
 	if err != nil {
 		return err
 	}
@@ -142,7 +152,7 @@ func runControlService() error {
 			log.Printf("Close enrollment registry failed: %T", err)
 		}
 	}()
-	budgetAuthorityAPI, closeBudgetAuthority := configuredBudgetAuthority()
+	budgetAuthorityAPI, closeBudgetAuthority := configuredBudgetAuthority(auditRepository)
 	defer func() {
 		if err := closeBudgetAuthority(); err != nil {
 			log.Printf("Close budget authority store failed: %T", err)
@@ -201,6 +211,7 @@ func runControlService() error {
 	mux := httpapi.NewMux(httpapi.Handlers{
 		Enrollment: enrollmentAPI, Gateways: gatewayAPI,
 		SubjectLinkReviews:      subjectReviews,
+		Audit:                   httpapi.Audit{Events: auditEvents},
 		BudgetAuthorityCurrent:  http.HandlerFunc(budgetAuthorityAPI.Current),
 		BudgetAuthorityOperator: http.HandlerFunc(budgetAuthorityAPI.Operator),
 		Assertions:              assertions.handlers(), TrustedChanges: trustedChanges.handlers(),

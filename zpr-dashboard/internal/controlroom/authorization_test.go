@@ -17,6 +17,8 @@ func TestControlRoomAPIPermissionMap(t *testing.T) {
 		want                     bool
 	}{
 		{http.MethodGet, "/api/snapshot", "monitor.read", true},
+		{http.MethodGet, "/api/audit/events", "audit.read", true},
+		{http.MethodHead, "/api/audit/events", "", false},
 		{http.MethodGet, "/api/actors/device-1/visas", "monitor.read", true},
 		{http.MethodGet, "/api/dns/stats/json/v1/server", "monitor.read", true},
 		{http.MethodGet, "/api/trusted-sources/change-feeds", "policy.read", true},

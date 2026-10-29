@@ -627,3 +627,120 @@ test('view navigation survives refresh and rejects unknown views', async ({ page
   await expect(page.locator('#access')).toBeVisible();
   await expect(page).toHaveURL(/#access$/);
 });
+
+test('live audit feed renders escaped events from the authenticated endpoint', async ({page}) => {
+  let requestedURL;
+  await page.route('**/api/audit/events?*', async route => {
+    requestedURL=route.request().url();
+    await route.fulfill({json:{events:[{
+      id:'event-1"><img src=x onerror=alert(1)>',
+      occurred_at:'2026-10-28T12:00:00Z',
+      actor_issuer:'https://idp.example',
+      actor_subject:'operator <img src=x>',
+      action:'audit.history.read',
+      target:'/api/audit/events',
+      outcome:'requested',
+      source:'control-room'
+    }]}})
+  });
+  await page.goto('/#history');
+  await page.locator('#load-live-history').click();
+  await expect(page.locator('#live-history-status')).toContainText('Loaded 1 event.');
+  await expect(page.locator('#live-history-events')).toContainText('audit.history.read');
+  await expect(page.locator('#live-history-events')).toContainText('operator <img src=x>');
+  await expect(page.locator('#live-history-events img')).toHaveCount(0);
+  expect(new URL(requestedURL).searchParams.get('limit')).toBe('50');
+});
+
+test('audit history defaults to a seven-day lookback and offers day, week, month, and custom windows', async ({page}) => {
+  let requestURL;
+  await page.route('**/api/audit/events?*', async route => {
+    requestURL=new URL(route.request().url());
+    await route.fulfill({json:{events:[]}});
+  });
+  await page.goto('/#history');
+  await expect(page.locator('#live-history-window')).toHaveValue('week');
+  const defaultRange=await page.evaluate(()=>[
+    new Date(document.querySelector('#live-history-from').value).getTime(),
+    new Date(document.querySelector('#live-history-until').value).getTime()
+  ]);
+  expect(defaultRange[1]-defaultRange[0]).toBe(7*24*60*60*1000);
+  await page.locator('#load-live-history').click();
+  await expect.poll(()=>requestURL?.searchParams.get('from')).toBeTruthy();
+  expect(requestURL.searchParams.get('until')).toBeTruthy();
+
+  for(const [windowName,duration] of [['day',24],['week',168],['month',720]]){
+    await page.locator('#live-history-window').selectOption(windowName);
+    const range=await page.evaluate(()=>[
+      new Date(document.querySelector('#live-history-from').value).getTime(),
+      new Date(document.querySelector('#live-history-until').value).getTime()
+    ]);
+    expect(range[1]-range[0]).toBe(duration*60*60*1000);
+  }
+  await page.locator('#live-history-from').fill('2026-10-01T10:00');
+  await page.locator('#live-history-from').dispatchEvent('change');
+  await expect(page.locator('#live-history-window')).toHaveValue('custom');
+});
+
+test('live audit feed distinguishes an empty store from authorization and service errors', async ({page}) => {
+  let status=200;
+  await page.route('**/api/audit/events?*', route => {
+    if(status===200)return route.fulfill({json:{events:[]}});
+    return route.fulfill({status,json:{error:'unavailable'}});
+  });
+  await page.goto('/#history');
+  await page.locator('#load-live-history').click();
+  await expect(page.locator('#live-history-status')).toContainText('does not prove that no activity occurred');
+  status=403;
+  await page.locator('#load-live-history').click();
+  await expect(page.locator('#live-history-status')).toContainText('audit.read permission');
+  status=503;
+  await page.locator('#load-live-history').click();
+  await expect(page.locator('#live-history-status')).toContainText('unavailable or not configured');
+  await expect(page.locator('#live-history-events')).toBeEmpty();
+});
+
+test('live audit filters are exact and pagination retains the original query', async ({page}) => {
+  const requests=[];
+  await page.route('**/api/audit/events?*', async route => {
+    requests.push(new URL(route.request().url()));
+    await route.fulfill({json:{events:[],next_cursor:requests.length===1?'next-page':''}});
+  });
+  await page.goto('/#history');
+  await page.locator('#live-history-action').fill('policy.read');
+  await page.locator('#live-history-source').fill('control-room');
+  await page.locator('#live-history-outcome').fill('success');
+  await page.locator('#live-history-from').fill('2026-10-28T08:00');
+  await page.locator('#live-history-until').fill('2026-10-28T09:00');
+  const expectedTimes=await page.evaluate(()=>[
+    new Date(document.querySelector('#live-history-from').value).toISOString(),
+    new Date(document.querySelector('#live-history-until').value).toISOString()
+  ]);
+  await page.locator('#load-live-history').click();
+  await expect(page.locator('#live-history-more')).toBeVisible();
+  await page.locator('#live-history-more').click();
+  expect(requests).toHaveLength(2);
+  for(const request of requests){
+    expect(request.searchParams.get('action')).toBe('policy.read');
+    expect(request.searchParams.get('source')).toBe('control-room');
+    expect(request.searchParams.get('outcome')).toBe('success');
+    expect(request.searchParams.get('from')).toBe(expectedTimes[0]);
+    expect(request.searchParams.get('until')).toBe(expectedTimes[1]);
+  }
+  expect(requests[0].searchParams.has('cursor')).toBe(false);
+  expect(requests[1].searchParams.get('cursor')).toBe('next-page');
+});
+
+test('live audit query rejects reversed time bounds without calling the endpoint', async ({page}) => {
+  let requests=0;
+  await page.route('**/api/audit/events?*', route => {
+    requests++;
+    return route.fulfill({json:{events:[]}});
+  });
+  await page.goto('/#history');
+  await page.locator('#live-history-from').fill('2026-10-28T09:00');
+  await page.locator('#live-history-until').fill('2026-10-28T08:00');
+  await page.locator('#load-live-history').click();
+  await expect(page.locator('#live-history-status')).toHaveText('The from time must be earlier than the until time.');
+  expect(requests).toBe(0);
+});

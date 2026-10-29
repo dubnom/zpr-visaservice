@@ -9,16 +9,73 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	auditcontract "neboagency.com/zpr-dashborad/internal/audit"
+	auditdb "neboagency.com/zpr-dashborad/internal/audit/sqlite"
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
+
+type failingEnrollmentAuditRepository struct{}
+
+func (failingEnrollmentAuditRepository) Append(context.Context, auditcontract.Event) (auditcontract.Event, error) {
+	return auditcontract.Event{}, errors.New("audit store unavailable")
+}
+
+func (failingEnrollmentAuditRepository) List(context.Context, auditcontract.Query) (auditcontract.Page, error) {
+	return auditcontract.Page{}, errors.New("audit store unavailable")
+}
+
+func TestOperatorReadEventsRequireExactAuthorizedOrganizationAndRoute(t *testing.T) {
+	grant := operatorauth.Grant{
+		Issuer: "https://id.example", Subject: "admin",
+		Organizations: []string{"company"}, Permissions: []string{"read"},
+	}
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name         string
+		path         string
+		wantAction   string
+		wantTarget   string
+		wantRecorded bool
+	}{
+		{"list", "invitations?organization=company&limit=10", "enrollment.invitations.read", "/api/enrollment/v1/invitations", true},
+		{"detail", "invitations/secret-id?organization=company", "enrollment.invitation.read", "/api/enrollment/v1/invitations/{id}", true},
+		{"preflight", "preflight?organization=company", "enrollment.preflight.read", "/api/enrollment/v1/preflight", true},
+		{"cross organization", "invitations?organization=other", "", "", false},
+		{"unscoped catalog", "catalog", "", "", false},
+		{"unknown filter", "invitations?organization=company&debug=true", "", "", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, operatordelegation.Prefix+test.path, nil)
+			event, recorded, err := operatorMutationEvent(request, nil, grant, []string{"company"}, now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if recorded != test.wantRecorded {
+				t.Fatalf("recorded=%t event=%+v", recorded, event)
+			}
+			if !recorded {
+				return
+			}
+			if event.OrganizationID != "company" || event.ActorIssuer != grant.Issuer ||
+				event.ActorSubject != grant.Subject || event.Action != test.wantAction ||
+				event.Target != test.wantTarget || event.Outcome != "requested" ||
+				event.Source != "control-room" || event.CorrelationID == "" ||
+				!event.OccurredAt.Equal(now) {
+				t.Fatalf("unexpected read audit event: %+v", event)
+			}
+		})
+	}
+}
 
 func TestOperatorEnrollmentAuditsIndependentUserAndDurableReplay(t *testing.T) {
 	t.Setenv("ZPR_SIMULATOR_URL", "http://127.0.0.1:1")
@@ -44,7 +101,20 @@ func TestOperatorEnrollmentAuditsIndependentUserAndDurableReplay(t *testing.T) {
 	config := apiConfig()
 	config.GUIInvitationCreation = true
 	config.ApprovalLifetimeSeconds = 3600
-	handler, err := NewOperatorAdminHandler(store, config, trust)
+	auditDirectory := filepath.Join(t.TempDir(), "audit-store")
+	if err := os.Mkdir(auditDirectory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	auditStore, err := auditdb.Open(filepath.Join(auditDirectory, "audit.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := auditStore.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	handler, err := NewOperatorAdminHandler(store, config, trust, auditStore)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,6 +153,15 @@ func TestOperatorEnrollmentAuditsIndependentUserAndDurableReplay(t *testing.T) {
 	if created.Invitation.CreatedBy != principal {
 		t.Fatalf("wrong audit identity: %s", created.Invitation.CreatedBy)
 	}
+	page, err := auditStore.List(context.Background(), auditcontract.Query{OrganizationID: "company", Limit: 10})
+	if err != nil || len(page.Events) != 1 {
+		t.Fatalf("create audit events=%+v err=%v", page.Events, err)
+	}
+	if event := page.Events[0]; event.ActorIssuer != id.Issuer || event.ActorSubject != id.Subject ||
+		event.Action != "enrollment.invitation.create" || event.Target != "/api/enrollment/v1/invitations" ||
+		event.Outcome != "requested" || event.CorrelationID == "" {
+		t.Fatalf("unexpected create audit event: %+v", event)
+	}
 	var auditPrincipal string
 	if err := store.db.QueryRow(`SELECT principal FROM audit WHERE action='created'`).Scan(&auditPrincipal); err != nil || auditPrincipal != principal {
 		t.Fatalf("audit=%q err=%v", auditPrincipal, err)
@@ -97,15 +176,29 @@ func TestOperatorEnrollmentAuditsIndependentUserAndDurableReplay(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"decision_by":"oidc:`) {
 		t.Fatalf("review=%d %s", w.Code, w.Body.String())
 	}
+	page, err = auditStore.List(context.Background(), auditcontract.Query{OrganizationID: "company", Limit: 10})
+	if err != nil || len(page.Events) != 2 || page.Events[1].Action != "enrollment.invitation.approve" ||
+		page.Events[1].Target != "/api/enrollment/v1/invitations/{id}/approve" {
+		t.Fatalf("approval audit events=%+v err=%v", page.Events, err)
+	}
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, request("GET", "invitations?organization=company", nil))
 	if w.Code != 200 || strings.Contains(w.Body.String(), created.Code) {
 		t.Fatalf("list=%d %s", w.Code, w.Body.String())
 	}
+	page, err = auditStore.List(context.Background(), auditcontract.Query{OrganizationID: "company", Limit: 10})
+	if err != nil || len(page.Events) != 3 || page.Events[2].Action != "enrollment.invitations.read" ||
+		page.Events[2].Target != "/api/enrollment/v1/invitations" {
+		t.Fatalf("list audit events=%+v err=%v", page.Events, err)
+	}
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, request("GET", "invitations?organization=other-company", nil))
 	if w.Code != 403 {
 		t.Fatalf("cross-org=%d", w.Code)
+	}
+	page, err = auditStore.List(context.Background(), auditcontract.Query{OrganizationID: "company", Limit: 10})
+	if err != nil || len(page.Events) != 3 {
+		t.Fatalf("denied cross-organization read emitted audit event: %+v err=%v", page.Events, err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
@@ -125,6 +218,10 @@ func TestOperatorEnrollmentAuditsIndependentUserAndDurableReplay(t *testing.T) {
 	if w.Code != 403 {
 		t.Fatalf("replay after reopen=%d %s", w.Code, w.Body.String())
 	}
+	page, err = auditStore.List(context.Background(), auditcontract.Query{OrganizationID: "company", Limit: 10})
+	if err != nil || len(page.Events) != 3 {
+		t.Fatalf("replayed request emitted an audit event: %+v err=%v", page.Events, err)
+	}
 	// The direct certificate route must never accept a delegated user header.
 	direct, err := NewAdminHandler(store, config)
 	if err != nil {
@@ -136,6 +233,55 @@ func TestOperatorEnrollmentAuditsIndependentUserAndDurableReplay(t *testing.T) {
 	direct.ServeHTTP(w, r)
 	if w.Code != 403 {
 		t.Fatalf("direct route delegation bypass=%d", w.Code)
+	}
+}
+
+func TestOperatorMutationFailsClosedWhenAuditAppendFails(t *testing.T) {
+	store := testStore(t)
+	public, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := operatorauth.Identity{Issuer: "https://id.example", Subject: "admin"}
+	trust := operatordelegation.Config{
+		Version: 1, Audience: "https://control.example",
+		Keys: []operatordelegation.TrustedKey{{
+			KeyID: "room", PublicKey: base64.RawURLEncoding.EncodeToString(public),
+			CertificateSHA256: digest("room-cert"),
+		}},
+		Grants: []operatorauth.Grant{{
+			Issuer: id.Issuer, Subject: id.Subject,
+			Organizations: []string{"company"}, Permissions: []string{"create"},
+		}},
+	}
+	config := apiConfig()
+	config.GUIInvitationCreation = true
+	handler, err := NewOperatorAdminHandler(store, config, trust, failingEnrollmentAuditRepository{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := operatordelegation.NewSigner(
+		operatordelegation.SignerConfig{Version: 1, Audience: trust.Audience, KeyID: "room"}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := assetJSON(t, testAsset())
+	request := httptest.NewRequest(http.MethodPost, "https://control.example"+operatordelegation.Prefix+"invitations", bytes.NewReader(body))
+	leaf := &x509.Certificate{Raw: []byte("room-cert")}
+	request.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}, VerifiedChains: [][]*x509.Certificate{{leaf}}}
+	token, err := signer.Sign(request, body, id, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set(operatordelegation.Header, token)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("audit append failure status=%d body=%s", response.Code, response.Body)
+	}
+	items, err := store.List(context.Background(), "company", "", 10, time.Now())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("invitation mutation proceeded without audit event: items=%+v err=%v", items, err)
 	}
 }
 
