@@ -3,10 +3,14 @@
 Status: **In progress (M1 inventory; M2 host preflight, configuration and
 bundle-manifest validation, Control Room input renderer, and approved runtime
 contract)**, created 2026-10-15, updated 2026-10-17 and clarified 2026-10-23.
-The Wave 2 evaluation-only starter is a design target; installation
-implementation remains open. This document defines implementation milestones
-and the recurring process for real system releases. It does not certify the
-current system, authorize deployment, or claim an installer exists.
+**Summary reconciled 2026-10-29:** evaluation bootstrap and source-independent
+engineering-package tooling now exist; complete production-appliance
+installation and release qualification remain open. This document owns production
+milestones/gates, not every implementation-status detail. See the
+[documentation authority guide](../DOCUMENTATION_GUIDE.md) and
+[current evaluation runbook](zpr-dashboard/packaging/evaluation/README.md).
+The older milestone evidence below retains its original scope. This document
+does not certify the current system or authorize deployment.
 
 ## Current execution priority: demo, not production
 
@@ -24,7 +28,9 @@ On 2026-10-17 the user clarified that the immediate objective is working ZPR
 and Simulator demo packages. Demo-only shortcuts are acceptable if their limits
 and required production fixes are recorded. The selected target is a pair of
 version-matched archives adapted from the existing `zpr-demo/multinode-demo`,
-tested on an isolated disposable Ubuntu 24.04 x86-64 host. The user explicitly
+tested on an isolated disposable Ubuntu 26.04.1 LTS x86-64 host under the
+specific current demo contract (superseding the older 24.04 demo summary).
+The user explicitly
 allows the existing TUN/`NET_ADMIN`/privileged-container path and Simulator's
 root-equivalent Docker-socket access only on that isolated demo host. The
 first Gateway claim is limited to explicitly proxy-configured demo clients.
@@ -50,9 +56,11 @@ approved Ubuntu 24.04 LTS on x86-64, a dedicated server/VM, a signed container
 appliance using Docker Engine/Compose v2, and remote Control Room HTTPS on a
 company hostname. The user also approved the company's existing OIDC provider
 and company-supplied TLS certificate/key files with company-managed renewal.
-Remote access uses direct TLS on a selected private management IP, reachable only
-through the corporate network/VPN; reverse proxy and public-Internet deployment
-are outside the initial topology.
+The earlier direct-private-HTTPS-only topology is superseded by the 2026-10-29
+[OPA-1 operator access direction](OPERATOR_ACCESS_PLAN.md): protected loopback
+setup/recovery, permanently configured policy-controlled ZPR access, and an
+independently switchable operator browser gateway. Public-Internet exposure is
+not authorized by that change; gateway placement and implementation remain open.
 One endpoint platform must be certified; existing Mac pilot
 priority is unchanged. Capacity, availability and general-availability claims
 are not approved by those choices. Multi-site deployment,

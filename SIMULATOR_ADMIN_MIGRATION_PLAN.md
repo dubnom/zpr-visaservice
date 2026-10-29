@@ -1,5 +1,13 @@
 # Simulator Administrator Workflow Migration
 
+**Document role (reconciled 2026-10-29):** this is the bounded execution and
+dependency plan for migrating administrator automation to production contracts.
+The [ordinary-client plan](SIMULATOR_AS_ZPR_CLIENT_PLAN.md) owns the functional
+role/boundary; the [demo contract](zpr-dashboard/packaging/system/DEMO-PACKAGE-CONTRACT.md)
+owns limited-package acceptance, and the [release plan](System%20release%20plan.md)
+owns production gates. The dated workstream records below do not establish
+current deployment status or a second source of administrative authority.
+
 Date: 2026-10-16<br>
 Prior milestone status: Stopped at a verified bounded helper/recovery
 milestone. Both workers completed and released their source reservations. The

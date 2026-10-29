@@ -7,6 +7,14 @@ unchanged: save an immutable source revision, then submit its ID/revision here.
 Sidebar/editor integration is deliberately isolated from the concurrent shared
 frontend refactor.
 
+**Status reconciliation, 2026-10-29:** review is still distinct from deployment.
+There is now an explicitly configured, policy-only guarded apply path through
+Policy-Service to Visa Service, with durable operation reconciliation and
+authoritative readback. Gateway activation, general ZPR Config apply and rollback
+remain unavailable in this review path. See
+[policy apply configuration and evidence](README.md#guarded-policy-composition-contract-verified-disabled-by-default).
+The original review-only milestone is not the current blanket capability limit.
+
 ## What works
 
 - Named-user, organization-scoped submission of current saved Policy or Gateway
@@ -33,8 +41,9 @@ frontend refactor.
   source details. Failed reads retain last-good data with a stale warning.
 
 The **before** revision is the preceding *saved draft*, not a verified live
-runtime configuration. No active runtime revision is available from the existing
-contracts. Policy validation is compiler validation; Gateway validation binds
+runtime configuration. Optional policy apply obtains separate authoritative VS
+digest/version readback; it does not change the meaning of this draft diff.
+Policy validation is compiler validation; Gateway validation binds
 the revision to the installed-instance contract. Neither is proof of live
 application or an external-network policy.
 
@@ -159,8 +168,9 @@ no hot reload.
 The stack launcher passes the configuration and narrow persistent database
 directory mounts only when `ZPR_CHANGE_REVIEW_CONFIG_FILE` is explicitly set.
 Normal manual container deployments must supply these same mounts/environment.
-Enabling the source requires a separate deployment approval. This feature has
-not been deployed, committed or pushed.
+Enabling the source requires a separate deployment approval. This paragraph
+describes explicit enablement, not current publication or deployment state;
+verify the selected source/configuration and running target.
 
 ## API
 
@@ -168,14 +178,14 @@ All routes use `/api/change-review/` in Control Room:
 
 | Method | Route | Contract |
 | --- | --- | --- |
-| GET | `capabilities?organization=...` | Application disabled |
+| GET | `capabilities?organization=...` | Reports self-review policy and whether policy application is configured |
 | GET | `requests?organization=...&offset=0` | Up to 50 records, `next_offset` or -1 |
 | GET | `requests/{id}?organization=...` | Exact immutable proposal and audit |
 | POST | `requests` | Organization, kind, target, saved revision, reason |
 | POST | `requests/{id}/approve` | Organization, digest, expected_version, reason |
 | POST | `requests/{id}/reject` | Same decision contract |
 | POST | `requests/{id}/cancel` | Same contract, author only |
-| POST | `requests/{id}/apply` | Always rejects: application contract unavailable |
+| POST | `requests/{id}/apply` | Policy only, when explicitly configured: exact reviewed digest/version, `policy.apply` and guarded application contract; otherwise rejects |
 
 Proposal source size is bounded to 256 KiB combined before/after; reasons to
 1,024 bytes. API input is strict bounded JSON. This queue has a dedicated private
@@ -185,20 +195,19 @@ Simulator configuration/APIs/sessions/workloads are never consulted.
 
 ## Intentionally not implemented
 
-- Live application, verification, rollback execution, deployment scheduling,
-  expiry/escalation, or multi-service orchestration.
-- Production revision/CAS APIs needed to apply an approved policy or Gateway
-  revision against an unchanged live baseline. The eventual domain service must
-  enforce the exact approved digest, fresh authorization, live revision and
-  idempotent operation ID; GUI approval alone cannot confer that authority.
+- Generic multi-domain live application, rollback execution, deployment
+  scheduling, expiry/escalation, or multi-service orchestration.
+- Gateway and general ZPR Config runtime revision/CAS application contracts.
+  The policy-specific path now implements exact candidate/current-state binding,
+  explicit authority and durable operation identity behind protected configuration;
+  that does not establish production installation qualification.
 - Gateway draft activation, TLS inspection, path/method enforcement inside
   opaque CONNECT tunnels, or changes to the live gateway candidate.
 - Enrollment approval replacement, directory/organization/Simulator execution,
   or mandatory review gates on existing editor save/stage routes.
-- A claimed `applied`, `verified`, `failed` or `outcome unknown` runtime state
-  without an actual production execution contract. Those states belong to the
-  next application phase; the GUI's network-uncertainty message is not a
-  fabricated persisted runtime result.
+- Fabricated runtime states for domains without an execution contract. Policy
+  operation status/readback has its own durable evidence; review decision state
+  and a browser network error must not be substituted for it.
 
 ## Validation
 

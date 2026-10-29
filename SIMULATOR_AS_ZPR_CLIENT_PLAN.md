@@ -1,5 +1,13 @@
 # Simulator as an Ordinary ZPR Client
 
+**Document role (reconciled 2026-10-29):** functional relationship and boundaries,
+with dated implementation records below. The
+[administrator migration plan](SIMULATOR_ADMIN_MIGRATION_PLAN.md) owns its
+specific execution/dependency work; the
+[evaluation runbook](zpr-dashboard/packaging/evaluation/README.md) owns current
+bootstrap/package usage. Do not use an older proposed milestone here to negate
+newer narrowly scoped source evidence or to claim full acceptance.
+
 Date: 2026-10-23
 
 Status: proposed functional/demo delivery plan. Packet B completed the B01

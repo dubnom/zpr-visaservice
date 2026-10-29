@@ -6,6 +6,17 @@ fresh test run, host inspection or authorization to publish/deploy.
 Reported acceptance below is evidence recorded in the linked runbooks, not
 acceptance rerun for this assessment. No running services were inspected.
 
+**Historical-baseline notice, 2026-10-29:** the inventory below is retained as
+October 25 evidence, not current source capability. The
+[evaluation runbook](zpr-dashboard/packaging/evaluation/README.md) now documents
+source-independent Linux/amd64 engineering archives; descriptions here of a
+source-built-only evaluation do not negate that newer work. That packaging
+does not establish complete demo or production qualification. The release-plan
+demo host summary has been corrected to the specific 26.04.1 demo contract;
+production remains 24.04. The [documentation guide](../DOCUMENTATION_GUIDE.md)
+records remaining reconciliation limits. Later OPA-1/CFG-1 addenda are requirements,
+not new acceptance results for this historical baseline.
+
 ## Executive result
 
 There are useful engineering artifacts, but they do not yet constitute a

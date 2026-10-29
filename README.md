@@ -2,6 +2,11 @@
 
 ZPR visa service implementation (under active development).
 
+For planning-document authority and maintenance, start with the
+[documentation guide](../DOCUMENTATION_GUIDE.md) and
+[cross-track portfolio](../ZPR_PORTFOLIO.md). Their summaries distinguish shared,
+demo, production and deferred-design scope; linked evidence remains dated.
+
 The [ZPR Audit application](zpr-audit/README.md) is included in the minimal ZPR
 package. It provides sample access exploration, illustrative policy history
 and tailored reports, plus a separate read-only import of operator-supplied

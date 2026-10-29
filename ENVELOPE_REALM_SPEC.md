@@ -358,7 +358,11 @@ not an all-or-nothing transaction across services.
 
 ### 8.5 Current domain gaps and implementation gates
 
-Targeted inspection of the current audit-app worktree found:
+Historical inspection for the 2026-10-29 Workflows proposal used the former
+audit-app worktree (since consolidated into main). The table records that
+inspection, not a fresh main capability audit. Newer narrow Approvals UI work
+must be reconciled against these broader requirements before treating any gap
+as closed:
 
 | Domain | Existing behavior | Gap before uniform inbox actions |
 |---|---|---|
