@@ -31,17 +31,18 @@ const evaluationDexImage = "ghcr.io/dexidp/dex@sha256:5d0656fce7d453c0e3b2706abf
 const evaluationLogImage = "public.ecr.aws/zinclabs/openobserve@sha256:d4a878fac1f6c56003764f7f2a1625668917388f167e222c8c810de3f54c56ba"
 
 type evaluationConfig struct {
-	BrowserIP   string `json:"browser_ip,omitempty"`
-	DexImage    string `json:"oidc_image"`
-	DexPlatform string `json:"oidc_platform"`
-	OIDCPort    int    `json:"oidc_port"`
-	LDAPImage   string `json:"ldap_image"`
-	LogImage    string `json:"logging_image"`
-	LogPlatform string `json:"logging_platform"`
-	RoomPort    int    `json:"room_port"`
-	ServicePort int    `json:"service_port"`
-	LDAPPort    int    `json:"ldap_port"`
-	LogPort     int    `json:"logging_port"`
+	BrowserIP     string `json:"browser_ip,omitempty"`
+	DexImage      string `json:"oidc_image"`
+	DexPlatform   string `json:"oidc_platform"`
+	OIDCPort      int    `json:"oidc_port"`
+	SimulatorPort int    `json:"simulator_port,omitempty"`
+	LDAPImage     string `json:"ldap_image"`
+	LogImage      string `json:"logging_image"`
+	LogPlatform   string `json:"logging_platform"`
+	RoomPort      int    `json:"room_port"`
+	ServicePort   int    `json:"service_port"`
+	LDAPPort      int    `json:"ldap_port"`
+	LogPort       int    `json:"logging_port"`
 	// Optional loopback Visa Service; zero/false values keep earlier inventories valid.
 	VisaService bool `json:"visa_service,omitempty"`
 	VSAdminPort int  `json:"vs_admin_port,omitempty"`
@@ -130,6 +131,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&config.DexImage, "oidc-image", evaluationDexImage, "current packaged Dex immutable image")
 	flags.StringVar(&config.DexPlatform, "oidc-platform", "linux/arm64", "platform of the current packaged Dex image")
 	flags.IntVar(&config.OIDCPort, "oidc-port", 15556, "named-operator OIDC HTTPS port")
+	flags.IntVar(&config.SimulatorPort, "simulator-port", 0, "optional separate Simulator HTTPS callback port; registers a client only, never starts or requires Simulator")
 	flags.IntVar(&config.RoomPort, "room-port", 18787, "Control Room HTTPS port")
 	flags.IntVar(&config.ServicePort, "service-port", 18790, "loopback Control-Service mTLS port")
 	flags.IntVar(&config.LDAPPort, "ldap-port", 11636, "loopback starter LDAPS port")
@@ -307,6 +309,9 @@ func (config evaluationConfig) validate() error {
 		}
 		ports[port] = true
 	}
+	if config.SimulatorPort != 0 && (config.SimulatorPort < 1024 || config.SimulatorPort > 65535 || ports[config.SimulatorPort]) {
+		return errors.New("simulator-port must be a distinct unprivileged TCP port")
+	}
 	return nil
 }
 
@@ -478,6 +483,9 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 		}
 	}
 	required := []string{"ca.pem", "ca-key.pem", "server-chain.pem", "server-key.pem", "client-chain.pem", "client-key.pem", "ldap-admin.secret", "ldap-reader.secret", "logging-admin.secret", "openobserve.env", "slapd.conf", "directory.ldif", "serve-directory.sh", "compose.json", "dex.json", "operator-admin.secret", "oidc-room-client.secret", "EVALUATION.txt", "source-registration.json"}
+	if config.SimulatorPort != 0 {
+		required = append(required, "oidc-simulator-client.secret")
+	}
 	if config.VisaService {
 		required = append(required, evaluationVisaRequired(config)...)
 	}
@@ -693,6 +701,18 @@ ZO_LOG_LEVEL=warn
 		"staticClients":    []map[string]any{{"id": "zpr-control-room", "name": "ZPR Evaluation Control Room", "secret": string(files["oidc-room-client.secret"]), "redirectURIs": []string{config.browserOrigin(config.RoomPort) + "/auth/operator/callback"}}},
 		"staticPasswords":  staticPasswords,
 		"logger":           map[string]string{"level": "error", "format": "json"},
+	}
+	if config.SimulatorPort != 0 {
+		secret := make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			return nil, inventory, err
+		}
+		files["oidc-simulator-client.secret"] = []byte(base64.RawURLEncoding.EncodeToString(secret))
+		dexConfig["staticClients"] = append(dexConfig["staticClients"].([]map[string]any), map[string]any{
+			"id": "zpr-simulator", "name": "ZPR Evaluation Simulator",
+			"secret":       string(files["oidc-simulator-client.secret"]),
+			"redirectURIs": []string{config.browserOrigin(config.SimulatorPort) + "/auth/operator/callback"},
+		})
 	}
 	data, err := json.MarshalIndent(dexConfig, "", "  ")
 	if err != nil {

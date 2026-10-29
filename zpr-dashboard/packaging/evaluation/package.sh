@@ -31,6 +31,13 @@ GOTOOLCHAIN=local GOPROXY=off GOOS=linux GOARCH=amd64 GOAMD64=v1 CGO_ENABLED=0 \
 GOTOOLCHAIN=local GOPROXY=off GOOS=linux GOARCH=amd64 GOAMD64=v1 CGO_ENABLED=0 \
     go build -mod=readonly -trimpath -buildvcs=false -tags production \
     -o "$package/bin/zpr-control-room" ./cmd/zpr-web-dashboard
+companion=$output/zpr-simulator-$release
+mkdir -m 700 "$companion" "$companion/bin"
+GOTOOLCHAIN=local GOPROXY=off GOOS=linux GOARCH=amd64 GOAMD64=v1 CGO_ENABLED=0 \
+    go build -mod=readonly -trimpath -buildvcs=false \
+    -o "$companion/bin/zpr-simulator" ./cmd/zpr-web-dashboard
+cp packaging/evaluation/simulator-installed.sh "$companion/simulator.sh"
+chmod 700 "$companion/simulator.sh"
 
 save_image() {
     role=$1 reference=$2
@@ -59,16 +66,27 @@ chmod 700 "$package/demo.sh" "$package/client.sh"
     if [ -z "$(git status --porcelain --untracked-files=normal)" ]; then printf 'false\n'; else printf 'true\n'; fi
     go version
 } > "$package/BUILD-INFO.txt"
+cp "$package/BUILD-INFO.txt" "$companion/BUILD-INFO.txt"
+cp packaging/evaluation/README.md "$companion/README.md"
+cp "$package/images.txt" "$companion/images.txt"
+(
+    cd "$companion"
+    sha256sum BUILD-INFO.txt README.md simulator.sh images.txt bin/* > SHA256SUMS
+    sha256sum --check --strict SHA256SUMS
+)
 (
     cd "$package"
     sha256sum BUILD-INFO.txt README.md demo.sh client.sh images.txt bin/* images/*.tar > SHA256SUMS
     sha256sum --check --strict SHA256SUMS
 )
 archive=zpr-evaluation-$release-linux-amd64.tar.gz
-case "$(uname -s)" in
-    Darwin) COPYFILE_DISABLE=1 tar --no-xattrs -czf "$output/$archive" -C "$output" "zpr-evaluation-$release" ;;
-    *) tar -czf "$output/$archive" -C "$output" "zpr-evaluation-$release" ;;
-esac
-(cd "$output" && sha256sum "$archive" > "$archive.sha256")
+for name in "zpr-evaluation-$release" "zpr-simulator-$release"; do
+    archive=$name-linux-amd64.tar.gz
+    case "$(uname -s)" in
+        Darwin) COPYFILE_DISABLE=1 tar --no-xattrs -czf "$output/$archive" -C "$output" "$name" ;;
+        *) tar -czf "$output/$archive" -C "$output" "$name" ;;
+    esac
+    (cd "$output" && sha256sum "$archive" > "$archive.sha256")
+done
 rm "$output/INCOMPLETE"
-printf 'Built %s\nSource-independent ZPR evaluation only; Simulator integration and scenario acceptance are separate.\n' "$output/$archive"
+printf 'Built matching ZPR and Simulator archives in %s\nEngineering endpoint-traffic demonstration; full scenario acceptance remains separate.\n' "$output"

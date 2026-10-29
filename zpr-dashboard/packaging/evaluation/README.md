@@ -3,8 +3,8 @@
 ## Offline Linux/amd64 engineering package
 
 The evaluation stack can also be built into a source-independent archive.
-This is the ZPR-side engineering package, **not yet the integrated ZPR +
-Simulator demo**. It includes a prebuilt bootstrap, production-tagged
+The builder creates matching ZPR and Simulator archives. This is **not yet
+the complete sign-in-to-scenario demo**. The ZPR archive includes a prebuilt bootstrap, production-tagged
 Control Room/Control-Service, the privileged data-plane image, and the exact
 LDAP, logging and OIDC images. It does not contain installation secrets:
 credentials and identities are generated into the private target state.
@@ -32,7 +32,7 @@ Then, from the extracted package:
 ```sh
 ./demo.sh verify
 ./demo.sh load
-./demo.sh start /absolute/new-private-state
+./demo.sh start /absolute/new-private-state -simulator-port 18788
 ```
 
 `start` runs in the foreground. Ctrl-C stops this installation and retains its
@@ -50,9 +50,59 @@ bootstrap-admitted endpoints. Endpoint admission is an evaluation shortcut,
 not human authentication or successful subject-link publication. Control Room
 includes one Approvals navigation entry; its current queue handles subject-link
 approval only, not rejection or budget requests. Simulator-driven organization
-setup, complete scenario acceptance, a matching refreshed Simulator archive,
+setup, complete scenario acceptance,
 and clean-host qualification remain separate work. Stopping or omitting
 Simulator must not stop these operator services.
+
+### Matching Simulator companion
+
+The second archive contains the prebuilt Linux/amd64 Simulator and a startup
+wrapper. Verify its outer checksum before extraction. It requires the exact
+matching ZPR package: startup verifies both payload inventories and compares
+their build identities and immutable image inventories. No source tree or
+toolchain is required. This is a native engineering client with Docker access,
+which is root-equivalent; run only on a trusted isolated host.
+
+Create the ZPR installation with `-simulator-port PORT` from the outset.
+This optional setting registers an independent confidential OIDC client with
+its own secret and exact HTTPS callback, but never reserves that port, launches
+Simulator, or makes ZPR depend on it. The verified administrator receives
+organization-scoped Simulator grants automatically. No identifiers, versions
+or digests are entered in a browser. The same password works for both separate
+application sessions. Existing installations without this option are not
+silently migrated: create a separate private state directory.
+
+After ZPR reports ready, from the extracted Simulator package:
+
+```sh
+./simulator.sh start \
+  /absolute/zpr-evaluation-demo-20261029 \
+  /absolute/new-private-state \
+  /absolute/new-private-simulator-state
+```
+
+Use the actual extracted ZPR package path. With the example port above the
+Simulator is at `https://localhost:18788`. For `-browser-ip`, it uses the same
+explicit private address and the same public CA. Sign in normally; the verified
+user is scoped to the paired evaluation organization. Simulator owns separate
+workspace state and observes Control-Service over verified mTLS. Its endpoint
+reconciler starts the three already-bootstrap-admitted endpoints and existing
+bounded evaluation workloads exercise allowed and denied flows. These workload
+observations are **not full Scenario runner acceptance** or successful
+human/device enrollment. The 20 legacy scenario-machine records are explicitly
+unprovisioned, not representations of the live endpoint containers.
+The evaluation organization profile currently supports only the starter
+directory, not custom LDIF installations.
+
+Stopping this foreground companion stops only Simulator. ZPR remains running;
+already started evaluation endpoint containers remain until ZPR teardown.
+Simulator has no stop/start authority over the ZPR backbone. The companion does
+hold an offline administrator-recovery lock: stop it as well as ZPR before
+resetting the administrator, so old in-memory sessions cannot survive recovery.
+Only one companion may run against an installation at a time.
+The companion does
+not yet automatically create budget requests, subject-link reviews, signed
+snapshots or policy-service state, and it does not bypass scenario preflight.
 
 The source launcher also accepts
 `-control-room-binary /absolute/prebuilt/zpr-control-room` to skip its Go build.

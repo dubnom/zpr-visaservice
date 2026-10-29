@@ -661,6 +661,28 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 	if err := writeEvaluationOnce(state, "operator-oidc.json", append(data, '\n')); err != nil {
 		return err
 	}
+	if inventory.Config.SimulatorPort != 0 {
+		simulator := operatorauth.Config{
+			Version: 1, Issuer: issuer, ClientID: "zpr-simulator",
+			RedirectURL: inventory.Config.browserOrigin(inventory.Config.SimulatorPort) + "/auth/operator/callback",
+			SessionLifetimeSeconds: 3600,
+			Grants: []operatorauth.Grant{{
+				Issuer: issuer, Subject: admin.Subject, Organizations: []string{organization},
+				Permissions: []string{"simulator.read", "simulator.control", "organization.read", "organization.activate",
+					"scenario.read", "scenario.analyze", "scenario.run", "scenario.cancel", "device.lifecycle", "device.workloads"},
+			}},
+		}
+		if err := simulator.Validate(); err != nil {
+			return errors.New("verified Simulator operator grant is invalid")
+		}
+		document, err := json.MarshalIndent(simulator, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := writeEvaluationOnce(state, "simulator-oidc.json", append(document, '\n')); err != nil {
+			return err
+		}
+	}
 	if reviewer.Subject == "" {
 		return nil
 	}

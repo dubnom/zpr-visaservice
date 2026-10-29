@@ -189,6 +189,13 @@ func resetEvaluationAdmin(state string, now time.Time) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if inventory.Config.SimulatorPort != 0 {
+		simulatorLock, err := lockEvaluationSimulator(state)
+		if err != nil {
+			return "", err
+		}
+		defer simulatorLock.Close()
+	}
 	release, err := reserveRecoveryPorts(inventory.Config)
 	if err != nil {
 		return "", err
@@ -210,7 +217,12 @@ func resetEvaluationAdmin(state string, now time.Time) (string, error) {
 	if inventory.Config.subjectLinks() {
 		passwords = 2
 	}
-	if err != nil || json.Unmarshal(dexData, &dex) != nil || json.Unmarshal(dexData, &document) != nil || len(dex.Passwords) != passwords || len(dex.Clients) != 1 || dex.Passwords[0]["email"] != "admin@evaluation.invalid" || dex.Clients[0]["id"] != "zpr-control-room" ||
+	clients := 1
+	if inventory.Config.SimulatorPort != 0 {
+		clients = 2
+	}
+	if err != nil || json.Unmarshal(dexData, &dex) != nil || json.Unmarshal(dexData, &document) != nil || len(dex.Passwords) != passwords || len(dex.Clients) != clients || dex.Passwords[0]["email"] != "admin@evaluation.invalid" || dex.Clients[0]["id"] != "zpr-control-room" ||
+		(clients == 2 && dex.Clients[1]["id"] != "zpr-simulator") ||
 		(passwords == 2 && dex.Passwords[1]["email"] != evaluationReviewerEmail) {
 		return "", errors.New("recovery supports only the bundled administrator (and subject-link reviewer) Dex configuration")
 	}
@@ -283,7 +295,7 @@ func resetEvaluationAdmin(state string, now time.Time) (string, error) {
 		}
 	}
 	// Never leave the previous subject's grants available for manual package startup.
-	for _, name := range []string{"operator-oidc.json", evaluationDelegationTrust} {
+	for _, name := range []string{"operator-oidc.json", "simulator-oidc.json", evaluationDelegationTrust} {
 		if err := root.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return "", errors.New("cannot retire old operator grants; keep stopped and restore backup")
 		}
