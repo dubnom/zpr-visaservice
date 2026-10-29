@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
+	evaluationruntime "neboagency.com/zpr-dashborad/internal/simulator/evaluation"
 )
 
 func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
@@ -60,7 +62,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 	}
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
-	fmt.Fprintln(stdout, "Simulator is separately supervised; stopping it does not stop ZPR. Endpoint traffic is evaluation-only, not scenario acceptance.")
+	fmt.Fprintln(stdout, "Simulator is separately supervised; stopping it does not stop ZPR. Only explicitly approved scenario runs provide scenario evidence; background traffic does not.")
 	select {
 	case err := <-done:
 		if err != nil {
@@ -218,7 +220,7 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 	if len(nodes) > 1 {
 		topology = "multi-node"
 	}
-	if err := write(filepath.Join("organizations", organization+".json"), map[string]any{
+	profile := map[string]any{
 		"id": organization, "name": "ZPR Evaluation",
 		"description": "Live admitted evaluation endpoints; scenario machine provisioning is not configured.",
 		"runtime":     map[string]any{"driver": "docker-multinode", "topology": topology, "nodes": nodes},
@@ -227,7 +229,48 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 			"health_uid": "evaluation-subject", "identity_mappings": map[string]string{"device.zpr.adapter.cn": "uid"},
 			"attributes": []string{"uid"}, "people": []any{}, "groups": []any{}, "departments": []any{},
 		}, "policies": []any{}, "services": []any{},
-	}); err != nil {
+	}
+	if inventory.Config.ScenarioDemo {
+		tlsConfig, err := evaluationTLS(evaluation, false)
+		if err != nil {
+			return nil, "", err
+		}
+		transport := &http.Transport{TLSClientConfig: tlsConfig}
+		defer transport.CloseIdleConnections()
+		client := &http.Client{Transport: transport, Timeout: 3 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		key, err := os.ReadFile(filepath.Join(evaluation, "vs-admin-api.key"))
+		if err != nil {
+			return nil, "", err
+		}
+		policy, err := evaluationruntime.ReadPolicyDigest(context.Background(), client,
+			fmt.Sprintf("https://localhost:%d", inventory.Config.VSAdminPort), strings.TrimSpace(string(key)))
+		if err != nil {
+			return nil, "", err
+		}
+		handoff, err := os.ReadFile(filepath.Join(evaluation, evaluationDataPlaneEndpointsFile))
+		if err != nil {
+			return nil, "", err
+		}
+		profile["evaluation_runtime"] = evaluationruntime.Contract{Version: 1, InstallID: inventory.InstallID,
+			ImageID: image, HandoffDigest: evaluationruntime.Digest(handoff), PolicyDigest: policy,
+			EndpointCount: inventory.Config.DataPlaneEndpoints, ListenerCount: len(evaluationDataPlaneListeners)}
+		var topologyNodes []map[string]string
+		for _, node := range nodes {
+			topologyNodes = append(topologyNodes, map[string]string{
+				"id": node["id"], "zpr_address": node["zpr_address"], "substrate": node["substrate_address"],
+			})
+		}
+		if err := write(filepath.Join("scenarios", "evaluation-endpoint-access.json"), map[string]any{
+			"id": "evaluation-endpoint-access", "organization_id": organization, "name": "Verify endpoint access policy",
+			"description": "Fresh bounded endpoint probes with healthy denied listeners and matching live Visa denials. No machine provisioning or policy changes.",
+			"topology":    map[string]any{"nodes": topologyNodes, "links": []any{}},
+			"steps":       []map[string]any{{"action": "verify_evaluation_endpoints", "timeout_seconds": 120}},
+		}); err != nil {
+			return nil, "", err
+		}
+	}
+	if err := write(filepath.Join("organizations", organization+".json"), profile); err != nil {
 		return nil, "", err
 	}
 	target := map[string]any{
@@ -238,6 +281,10 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 		"client_key_file":           filepath.Join(evaluation, "client-key.pem"),
 		"service_ca_file":           filepath.Join(evaluation, "ca.pem"),
 		"data_plane_endpoints_file": filepath.Join(evaluation, evaluationDataPlaneEndpointsFile),
+	}
+	if inventory.Config.ScenarioDemo {
+		target["visa_admin_url"] = fmt.Sprintf("https://localhost:%d", inventory.Config.VSAdminPort)
+		target["visa_admin_key_file"] = filepath.Join(evaluation, "vs-admin-api.key")
 	}
 	if err := write("installs.json", map[string]any{
 		"version": 1, "kind": "zpr-simulator-evaluation-installs", "evaluation_only": true, "installs": []any{target},
@@ -263,6 +310,16 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 		"ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE": filepath.Join(evaluation, "simulator-oidc.json"),
 		"ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE": filepath.Join(evaluation, "oidc-simulator-client.secret"),
 		"ZPR_SIMULATOR_OPERATOR_OIDC_CA_FILE":     filepath.Join(evaluation, "ca.pem"),
+	}
+	if inventory.Config.ScenarioDemo {
+		values["SIMULATOR_DATA_PLANE_WORKLOAD_INTERVAL"] = "off"
+		values["ZPR_BUDGET_AUTHORITY_URL"] = fmt.Sprintf("https://localhost:%d", inventory.Config.ServicePort)
+		values["ZPR_BUDGET_AUTHORITY_CLIENT_CERT_FILE"] = filepath.Join(evaluation, "client-chain.pem")
+		values["ZPR_BUDGET_AUTHORITY_CLIENT_KEY_FILE"] = filepath.Join(evaluation, "client-key.pem")
+		values["ZPR_BUDGET_AUTHORITY_CA_FILE"] = filepath.Join(evaluation, "ca.pem")
+		values["ZPR_OPERATOR_DELEGATION_SIGNER_FILE"] = filepath.Join(evaluation, "operator-delegation-signer.json")
+		values["ZPR_OPERATOR_DELEGATION_KEY_FILE"] = filepath.Join(evaluation, "operator-delegation-key.pem")
+		values["ZPR_OPERATOR_DELEGATION_AUDIENCE"] = evaluationServiceAudience(inventory.Config)
 	}
 	if inventory.Config.BrowserIP != "" {
 		values["ZPR_SIMULATOR_OPERATOR_DIRECT_IP"] = inventory.Config.BrowserIP

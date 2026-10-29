@@ -42,6 +42,8 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	if len(parts) == 6 && parts[2] == "organizations" && parts[4] == "scenario-plans" &&
 		method == http.MethodPost {
 		switch parts[5] {
+		case "budget-approval":
+			return "budget.approve", parts[3], true
 		case "preflight":
 			return "scenario.read", parts[3], true
 		case "approve":
@@ -54,6 +56,8 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 	}
 	if len(parts) == 4 && parts[2] == "scenario-plans" && method == http.MethodPost {
 		switch parts[3] {
+		case "budget-approval":
+			return "budget.approve", "", true
 		case "preflight":
 			return "scenario.read", "", true
 		case "approve":

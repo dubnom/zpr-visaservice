@@ -79,6 +79,7 @@ function scenarioPlanAppendOption(select, value, label) {
 
 function scenarioPlanRenderControls() {
   const busy = scenarioPlanState.busy;
+  document.getElementById("scenario-plan-budget-approve").disabled = busy;
   const organization = document.getElementById("scenario-plan-organization");
   const scenario = document.getElementById("scenario-plan-scenario");
   organization.disabled = busy || scenarioPlanState.organizations.length === 0;
@@ -207,6 +208,13 @@ async function scenarioPlanPreflightRequest(organizationID, scenarioID) {
 }
 
 function scenarioPlanRenderUnavailableBudget(response) {
+  const evaluationBudget = response.budget_approval_available === true;
+  document.getElementById("scenario-plan-budget-approve").hidden = !evaluationBudget;
+  document.getElementById("scenario-plan-budget-approve-status").textContent = evaluationBudget
+    ? "This bounded evaluation is ready. Your authorized identity can approve its exact scope for 15 minutes; no digest entry is needed."
+    : "";
+  document.getElementById("scenario-plan-budget-handoff-title").textContent = evaluationBudget
+    ? "Evaluation scenario budget approval" : "Manual first-grant handoff";
   document.getElementById("scenario-plan-handoff-organization").textContent = response.organization_id;
   document.getElementById("scenario-plan-handoff-scenario").textContent = response.scenario_id;
   document.getElementById("scenario-plan-handoff-digest").textContent = response.authorization_scope_digest;
@@ -231,7 +239,9 @@ function scenarioPlanApprovalBlockers(plan) {
   if (plan.status !== "plan-only") blockers.push("The plan is blocked.");
   if (plan.budget_status !== "approved") blockers.push(`Budget status is ${plan.budget_status}.`);
   if (plan.blockers.length) blockers.push("Preflight reported blockers.");
-  if (!plan.machine_ids.length) blockers.push("Preflight returned no machine IDs; no organization inventory fallback is allowed.");
+  if (!plan.machine_ids.length && plan.package_contract_status !== "evaluation-endpoints-v1") {
+    blockers.push("Preflight returned no machine IDs; no organization inventory fallback is allowed.");
+  }
   return blockers;
 }
 
@@ -495,6 +505,39 @@ async function preflightSelectedScenarioPlan() {
     document.getElementById("scenario-plan-run").hidden = true;
     scenarioPlanSetError(error.message || "Preflight failed; no approval was requested.");
     scenarioPlanSetStatus("Preflight failed; approval remains unavailable.");
+  } finally {
+    if (requestID === scenarioPlanState.planRequestID) {
+      scenarioPlanState.busy = false;
+      scenarioPlanRenderControls();
+    }
+  }
+}
+
+async function approveEvaluationScenarioBudget() {
+  const unavailable = scenarioPlanState.unavailableBudget;
+  if (scenarioPlanState.busy || unavailable?.budget_approval_available !== true) return;
+  const organizationID = scenarioPlanState.organizationID;
+  const scenarioID = scenarioPlanState.scenarioID;
+  const requestID = scenarioPlanState.planRequestID;
+  scenarioPlanState.busy = true;
+  scenarioPlanRenderControls();
+  scenarioPlanSetError("");
+  try {
+    const response = await scenarioResetRequest(
+      `/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenario-plans/budget-approval`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organization_id: organizationID, scenario_id: scenarioID }) },
+    );
+    if (requestID !== scenarioPlanState.planRequestID) return;
+    if (response.organization_id !== organizationID || response.scenario_id !== scenarioID ||
+        response.plan_digest !== unavailable.authorization_scope_digest || response.decision !== "approved") {
+      throw new Error("Budget service returned a mismatched approval; refresh preflight.");
+    }
+    scenarioPlanState.busy = false;
+    await preflightSelectedScenarioPlan();
+  } catch (error) {
+    if (requestID !== scenarioPlanState.planRequestID) return;
+    scenarioPlanSetError(`${error.message || "Budget approval was not confirmed."} Refresh preflight before retrying; the request may have reached the service.`);
   } finally {
     if (requestID === scenarioPlanState.planRequestID) {
       scenarioPlanState.busy = false;
@@ -793,6 +836,9 @@ document.getElementById("scenario-plan-copy-handoff").addEventListener("click", 
   }
 });
 document.getElementById("scenario-plan-approve").addEventListener("click", openScenarioPlanApprovalDialog);
+document.getElementById("scenario-plan-budget-approve").addEventListener("click", () => {
+  void approveEvaluationScenarioBudget();
+});
 document.getElementById("scenario-plan-explicit-confirm").addEventListener("change", scenarioPlanRenderControls);
 document.getElementById("scenario-plan-confirm-approval").addEventListener("click", () => {
   void confirmScenarioPlanApproval();

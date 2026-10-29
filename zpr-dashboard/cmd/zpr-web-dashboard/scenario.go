@@ -340,6 +340,12 @@ func validateSimulatorScenarioStep(step simulatorScenarioStep, manifest simulato
 		return errors.New("Northstar synthetic runtime only supports its configured machine")
 	}
 	switch step.Action {
+	case evaluationScenarioAction:
+		if cleanup || organization.EvaluationRuntime == nil || step.Machine != "" || step.Target != "" ||
+			step.Component != "" || step.Expected != "" || step.User != "" || len(step.Workloads) != 0 ||
+			step.TimeoutSeconds < 30 || step.TimeoutSeconds > 180 {
+			return errors.New("bounded endpoint verification requires a paired evaluation contract and no supplied targets")
+		}
 	case "verify_packaged_demo":
 		if cleanup || strings.TrimSpace(os.Getenv("SIMULATION_PACKAGED_DEMO_SCRIPT")) == "" {
 			return errors.New("packaged demo verification requires an explicitly configured probe script and cannot be cleanup")
@@ -555,6 +561,14 @@ func (manager *simulatorScenarioManager) startApprovedVersionedContext(
 	}
 	if !simulatorScenarioApprovedPlanMatchesRun(plan, planDigest, organizationID, scenario, manifest, organization) {
 		return errSimulatorScenarioApprovalPlanMismatch
+	}
+	if organization.EvaluationRuntime != nil {
+		if err := validateEvaluationScenario(scenario, organization); err != nil {
+			return err
+		}
+		if _, err := evaluationScenarioPlane(ctx, organization); err != nil {
+			return err
+		}
 	}
 	scope := budgetauthority.Scope{
 		OrganizationID: organizationID,
@@ -1149,6 +1163,8 @@ func waitForStressServiceFleet(ctx context.Context, machineID, serviceAddress, s
 
 func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulatorManifest, step simulatorScenarioStep) (string, error) {
 	switch step.Action {
+	case evaluationScenarioAction:
+		return executeEvaluationScenario(ctx, manifest)
 	case "verify_packaged_demo":
 		script := strings.TrimSpace(os.Getenv("SIMULATION_PACKAGED_DEMO_SCRIPT"))
 		if script == "" {

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"neboagency.com/zpr-dashborad/internal/gateway"
+	evaluationruntime "neboagency.com/zpr-dashborad/internal/simulator/evaluation"
 )
 
 const defaultSimulatorOrganizationID = "northstar"
@@ -45,6 +46,7 @@ type simulatorOrganization struct {
 	ActivePolicyTargetID string                         `json:"active_policy_target_id,omitempty"`
 	ActivePolicyDigest   string                         `json:"active_policy_digest,omitempty"`
 	PackagedProvisioning *simulatorPackagedProvisioning `json:"packaged_provisioning,omitempty"`
+	EvaluationRuntime    *evaluationruntime.Contract    `json:"evaluation_runtime,omitempty"`
 }
 
 type simulatorSyntheticWorkload struct {
@@ -310,6 +312,17 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 }
 
 func validateOrganizationDefinition(organization simulatorOrganization, incomplete bool) error {
+	if organization.EvaluationRuntime != nil {
+		contract := organization.EvaluationRuntime
+		if contract.Version != 1 || organization.ID != "evaluation-"+contract.InstallID ||
+			len(contract.InstallID) != 24 || !validSimulatorScenarioAuthorizationScopeDigest(contract.ImageID) ||
+			!validSimulatorScenarioAuthorizationScopeDigest(contract.HandoffDigest) ||
+			!validSimulatorScenarioAuthorizationScopeDigest(contract.PolicyDigest) ||
+			contract.EndpointCount < 2 || contract.EndpointCount > 16 || contract.ListenerCount < 1 || contract.ListenerCount > 8 ||
+			organization.PackagedProvisioning != nil || organization.SyntheticLabOnly {
+			return errors.New("invalid or conflicting evaluation endpoint runtime contract")
+		}
+	}
 	if err := validatePackagedProvisioning(organization.PackagedProvisioning); err != nil {
 		return err
 	}

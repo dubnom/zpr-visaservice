@@ -60,6 +60,9 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 		if config.subjectLinks() {
 			env = append(env, evaluationSubjectEnvironment(state, config, false)...)
 		}
+		if config.ScenarioDemo {
+			env = append(env, "ZPR_BUDGET_AUTHORITY_DB_PATH="+file("budget-authority.db"))
+		}
 		return env
 	}
 	if config.subjectLinks() {
@@ -634,6 +637,9 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 	}
 	organization := evaluationOrganization(inventory)
 	admin := operatorGrantIdentity{Subject: adminSubject, Permissions: []string{"monitor.read", "logs.read", "policy.read", "policy.edit", "policy.analyze"}}
+	if inventory.Config.ScenarioDemo {
+		admin.Permissions = append(admin.Permissions, "budget.approve")
+	}
 	var reviewer operatorGrantIdentity
 	if inventory.Config.subjectLinks() {
 		admin.Permissions = append(admin.Permissions, evaluationAdminSubjectLinkPermissions...)
@@ -671,6 +677,9 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 				Permissions: []string{"simulator.read", "simulator.control", "organization.read", "organization.activate",
 					"scenario.read", "scenario.analyze", "scenario.run", "scenario.cancel", "device.lifecycle", "device.workloads"},
 			}},
+		}
+		if inventory.Config.ScenarioDemo {
+			simulator.Grants[0].Permissions = append(simulator.Grants[0].Permissions, "budget.approve")
 		}
 		if err := simulator.Validate(); err != nil {
 			return errors.New("verified Simulator operator grant is invalid")

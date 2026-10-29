@@ -36,6 +36,7 @@ type evaluationConfig struct {
 	DexPlatform   string `json:"oidc_platform"`
 	OIDCPort      int    `json:"oidc_port"`
 	SimulatorPort int    `json:"simulator_port,omitempty"`
+	ScenarioDemo  bool   `json:"scenario_demo,omitempty"`
 	LDAPImage     string `json:"ldap_image"`
 	LogImage      string `json:"logging_image"`
 	LogPlatform   string `json:"logging_platform"`
@@ -132,6 +133,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	flags.StringVar(&config.DexPlatform, "oidc-platform", "linux/arm64", "platform of the current packaged Dex image")
 	flags.IntVar(&config.OIDCPort, "oidc-port", 15556, "named-operator OIDC HTTPS port")
 	flags.IntVar(&config.SimulatorPort, "simulator-port", 0, "optional separate Simulator HTTPS callback port; registers a client only, never starts or requires Simulator")
+	flags.BoolVar(&config.ScenarioDemo, "scenario-demo", false, "enable independent budget authority and the bounded paired endpoint scenario (requires Simulator callback, data plane, endpoints and delegation)")
 	flags.IntVar(&config.RoomPort, "room-port", 18787, "Control Room HTTPS port")
 	flags.IntVar(&config.ServicePort, "service-port", 18790, "loopback Control-Service mTLS port")
 	flags.IntVar(&config.LDAPPort, "ldap-port", 11636, "loopback starter LDAPS port")
@@ -311,6 +313,10 @@ func (config evaluationConfig) validate() error {
 	}
 	if config.SimulatorPort != 0 && (config.SimulatorPort < 1024 || config.SimulatorPort > 65535 || ports[config.SimulatorPort]) {
 		return errors.New("simulator-port must be a distinct unprivileged TCP port")
+	}
+	if config.ScenarioDemo && (config.SimulatorPort == 0 || !config.DataPlane || config.DataPlaneEndpoints < 2 || !config.subjectLinks() ||
+		len(config.DataPlaneNodes) != 0 || config.Directory != nil) {
+		return errors.New("scenario-demo requires simulator-port, single-node data-plane, at least two endpoints, starter directory and snapshot-delivery-port for named delegation")
 	}
 	return nil
 }

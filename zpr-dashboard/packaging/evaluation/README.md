@@ -56,6 +56,32 @@ Simulator must not stop these operator services.
 
 ### Matching Simulator companion
 
+#### Bounded scenario opt-in
+
+For the single-node starter-directory endpoint-access scenario, create a **new** installation with
+`-simulator-port PORT -scenario-demo`. This frozen opt-in enables the independent
+production budget-authority database and gives the verified administrator
+`budget.approve` permission. ZPR still does not start or require Simulator.
+The companion captures a versioned evaluation runtime contract binding the
+installation, immutable image, endpoint handoff and canonical live Visa policy
+bundle. A changed policy or handoff is rejected, not silently rebound.
+
+Open Simulator's Scenarios page, select **Verify endpoint access policy**, and
+choose **Preview plan**. With no current budget evidence, choose **Approve
+15-minute evaluation budget**. This sends your named, CSRF-protected delegated
+approval to Control-Service; scope and digest are computed by the server.
+Review and approve the resulting plan, then explicitly run it.
+
+The runner rechecks current budget and runtime evidence, consumes the exact
+plan approval once, and executes a fresh bounded probe round. It checks denied
+listeners locally and requires matching fresh Visa denials, not just missing
+replies. Results belong to the scenario run; cached background probes cannot
+pass it. This opt-in disables background traffic probes to isolate run evidence.
+It authorizes no provisioning, machine lifecycle, arbitrary targets or commands.
+The existing OciWeb package gate remains mandatory for legacy machine scenarios.
+This is one endpoint-policy scenario, not full user enrollment, subject-link
+automation, multi-organization onboarding or policy-service qualification.
+
 The second archive contains the prebuilt Linux/amd64 Simulator and a startup
 wrapper. Verify its outer checksum before extraction. It requires the exact
 matching ZPR package: startup verifies both payload inventories and compares
@@ -100,9 +126,9 @@ Simulator has no stop/start authority over the ZPR backbone. The companion does
 hold an offline administrator-recovery lock: stop it as well as ZPR before
 resetting the administrator, so old in-memory sessions cannot survive recovery.
 Only one companion may run against an installation at a time.
-The companion does
-not yet automatically create budget requests, subject-link reviews, signed
-snapshots or policy-service state, and it does not bypass scenario preflight.
+Outside the explicit bounded-scenario opt-in above, the companion does not
+automatically create budget requests. It does not create subject-link reviews,
+signed snapshots or policy-service state, and it never bypasses scenario preflight.
 
 The source launcher also accepts
 `-control-room-binary /absolute/prebuilt/zpr-control-room` to skip its Go build.

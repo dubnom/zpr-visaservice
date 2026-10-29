@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"neboagency.com/zpr-dashborad/internal/budgetauthority"
 )
@@ -56,6 +57,7 @@ type simulatorScenarioPlanResponse struct {
 }
 
 type simulatorScenarioBudgetEvidenceUnavailableResponse struct {
+	BudgetApprovalAvailable  bool     `json:"budget_approval_available,omitempty"`
 	OrganizationID           string   `json:"organization_id"`
 	ScenarioID               string   `json:"scenario_id"`
 	AuthorizationScopeDigest string   `json:"authorization_scope_digest"`
@@ -169,6 +171,8 @@ func writeSimulatorScenarioBudgetEvidenceUnavailable(
 		blockers = append(blockers, blocker)
 	}
 	response := simulatorScenarioBudgetEvidenceUnavailableResponse{
+		BudgetApprovalAvailable: plan.PackageContractStatus == "evaluation-endpoints-v1" &&
+			len(withoutSimulatorRuntimeBudgetEvidenceBlockers(plan.Blockers)) == 0,
 		OrganizationID:           plan.OrganizationID,
 		ScenarioID:               plan.ScenarioID,
 		AuthorizationScopeDigest: plan.AuthorizationScopeDigest,
@@ -731,6 +735,16 @@ func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simul
 		Policy:          simulatorRuntimePolicyEvidence{OrganizationID: organizationID},
 		NorthstarAssets: simulatorRuntimeNorthstarAssets(organization, simulatorOrganizationsDirectory()),
 	}
+	var evaluationRuntimeErr error
+	if organization.EvaluationRuntime != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, evaluationRuntimeErr = evaluationScenarioPlane(ctx, organization)
+		cancel()
+		if evaluationRuntimeErr == nil {
+			input.Policy = simulatorRuntimePolicyEvidence{Resolved: true, OrganizationID: organizationID,
+				Digest: organization.EvaluationRuntime.PolicyDigest}
+		}
+	}
 	scopeDigest, err := simulatorScenarioAuthorizationScopeDigest(input)
 	if err != nil {
 		return simulatorRuntimePlan{}, &simulatorScenarioPlanBuildFailure{
@@ -739,6 +753,9 @@ func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simul
 	}
 	input.AuthorizationScopeDigest = scopeDigest
 	plan := buildSimulatorRuntimePlan(input)
+	if evaluationRuntimeErr != nil {
+		addSimulatorRuntimePlanBlocker(&plan, "evaluation runtime verification failed: "+evaluationRuntimeErr.Error())
+	}
 	if err := validateSimulatorScenario(scenario, manifest); err != nil {
 		addSimulatorRuntimePlanBlocker(&plan, "scenario validation failed: "+err.Error())
 	}

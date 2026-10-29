@@ -29,6 +29,8 @@ type simulatorEvaluationInstall struct {
 	ClientKeyFile          string `json:"client_key_file"`
 	ServiceCAFile          string `json:"service_ca_file"`
 	DataPlaneEndpointsFile string `json:"data_plane_endpoints_file,omitempty"`
+	VisaAdminURL           string `json:"visa_admin_url,omitempty"`
+	VisaAdminKeyFile       string `json:"visa_admin_key_file,omitempty"`
 }
 
 type simulatorEvaluationInstallsFile struct {
@@ -89,6 +91,11 @@ func loadSimulatorEvaluationInstalls(path, organizationsDirectory string) (*simu
 		}
 		if !exactHTTPSOrigin(install.OperatorServiceURL) {
 			return nil, fmt.Errorf("organization %q operator service URL must be an exact HTTPS origin", id)
+		}
+		if install.VisaAdminURL != "" || install.VisaAdminKeyFile != "" {
+			if !exactHTTPSOrigin(install.VisaAdminURL) || !filepath.IsAbs(install.VisaAdminKeyFile) {
+				return nil, errors.New("evaluation policy readback requires an HTTPS origin and absolute API key path")
+			}
 		}
 		if install.ControlRoomURL != "" {
 			if _, err := simulatorControlRoomURL(install.ControlRoomURL); err != nil {

@@ -6,7 +6,7 @@
 <main class="main-content"><header class="topbar"><div class="topbar-status"></div></header>
 <div id="scenario-error" class="scenario-error" role="alert" hidden></div>
 <section id="scenario-plan-workflow" class="section-block" aria-labelledby="scenario-plan-title">
-<header class="section-head"><div><h2 id="scenario-plan-title">Scenario preflight and approval</h2><p>Select an organization and scenario to request a read-only plan. This page does not run or provision scenarios.</p></div></header>
+<header class="section-head"><div><h2 id="scenario-plan-title">Scenario preflight and approval</h2><p>Select an organization and scenario, preview its plan, then explicitly approve and run it.</p></div></header>
 <div class="scenario-plan-selection">
 <label for="scenario-plan-organization">Organization</label><select id="scenario-plan-organization" aria-describedby="scenario-plan-workflow-status" disabled><option value="">Loading organizations…</option></select>
 <label for="scenario-plan-scenario">Scenario</label><select id="scenario-plan-scenario" aria-describedby="scenario-plan-workflow-status" disabled><option value="">Select an organization first</option></select>
@@ -16,9 +16,11 @@
 <p id="scenario-plan-error" role="alert" aria-live="assertive" aria-atomic="true" hidden></p>
 <section id="scenario-plan-budget-handoff" aria-labelledby="scenario-plan-budget-handoff-title" hidden>
 <h3 id="scenario-plan-budget-handoff-title">Manual first-grant handoff</h3>
-<p>Current budget evidence is unavailable or invalid. This response does not establish that evidence is absent. Review the exact scope below and manually submit it through the authenticated Control Room budget-authority workflow. This Simulator page never grants or revokes production budget authority.</p>
+<p>Current budget evidence is unavailable or invalid. This does not establish that evidence is absent. For an explicitly configured bounded evaluation, the approval button delegates your authorized identity to the independent budget service. Other scenarios require the authenticated Control Room handoff below.</p>
 <dl><dt>Organization</dt><dd id="scenario-plan-handoff-organization"></dd><dt>Scenario</dt><dd id="scenario-plan-handoff-scenario"></dd><dt>Authorization-scope digest</dt><dd><code id="scenario-plan-handoff-digest"></code></dd></dl>
 <h4>Service blockers</h4><ul id="scenario-plan-handoff-blockers"></ul>
+<button id="scenario-plan-budget-approve" class="button" type="button" hidden>Approve 15-minute evaluation budget</button>
+<p id="scenario-plan-budget-approve-status" role="status" aria-live="polite"></p>
 <button id="scenario-plan-copy-handoff" class="button" type="button">Copy grant scope for manual handoff</button>
 <p id="scenario-plan-copy-status" role="status" aria-live="polite" aria-atomic="true"></p>
 <p>After an authorized operator records the grant in Control Room, preview this exact organization and scenario again. A successful budget-authority response is required before local plan approval or a run request is available.</p>

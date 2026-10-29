@@ -206,7 +206,14 @@ func buildSimulatorRuntimePlan(input simulatorRuntimePlanInput) simulatorRuntime
 		}
 	}
 
-	if input.Organization.PackagedProvisioning == nil {
+	if input.Organization.EvaluationRuntime != nil {
+		if err := validateEvaluationScenario(input.Scenario, input.Organization); err != nil {
+			plan.PackageContractStatus = "unsupported"
+			addBlocker("evaluation runtime contract: " + err.Error())
+		} else {
+			plan.PackageContractStatus = "evaluation-endpoints-v1"
+		}
+	} else if input.Organization.PackagedProvisioning == nil {
 		plan.PackageContractStatus = "missing"
 		addBlocker("version 2 shared-approved-bootstrap OciWeb package contract is required")
 	} else if err := validatePackagedProvisioning(input.Organization.PackagedProvisioning); err != nil {
@@ -285,6 +292,10 @@ func validateSimulatorRuntimePlanActions(input simulatorRuntimePlanInput, addBlo
 				addBlocker(fmt.Sprintf("%s timeout is outside the supported range", stepLabel))
 			}
 			switch step.Action {
+			case evaluationScenarioAction:
+				if err := validateEvaluationScenario(input.Scenario, input.Organization); err != nil {
+					addBlocker(err.Error())
+				}
 			case "verify_packaged_demo":
 				if cleanup || step.Machine != "" || step.Component != "" || step.Target != "" ||
 					step.Expected != "" || step.User != "" || len(step.Workloads) != 0 {
@@ -374,6 +385,12 @@ func simulatorRuntimePlanBudgetInputs(input simulatorRuntimePlanInput) []simulat
 	for _, phase := range phases {
 		for index, step := range phase.steps {
 			switch step.Action {
+			case evaluationScenarioAction:
+				if contract := input.Organization.EvaluationRuntime; contract != nil {
+					requests = append(requests, simulatorRuntimeBudgetInput{Phase: phase.name, Step: index + 1,
+						Action: step.Action, FanoutCount: positiveSimulatorRuntimePlanCount(contract.EndpointCount),
+						ServiceCount: positiveSimulatorRuntimePlanCount(contract.ListenerCount)})
+				}
 			case "stress_traffic":
 				request := simulatorRuntimeBudgetInput{Phase: phase.name, Step: index + 1, Action: step.Action}
 				fanoutCount := step.ClientCount

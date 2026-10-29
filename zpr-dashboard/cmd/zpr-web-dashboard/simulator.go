@@ -207,6 +207,10 @@ func runSimulator(listen string) (runErr error) {
 		return err
 	}
 	defer security.close()
+	signer, err := configuredOperatorSigner(security)
+	if err != nil {
+		return err
+	}
 	resetHandler, closeResetStore, err := configureSimulatorReset(security.auth, activeSimulatorScenario)
 	if err != nil {
 		return err
@@ -250,6 +254,8 @@ func runSimulator(listen string) (runErr error) {
 	}
 	mux := http.NewServeMux()
 	security.register(mux)
+	mux.HandleFunc("POST /api/simulator/scenario-plans/budget-approval", simulatorScenarioBudgetApproval(security.auth, signer))
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-plans/budget-approval", simulatorScenarioBudgetApproval(security.auth, signer))
 	mux.HandleFunc("GET /simulator-navigation.json", handleSimulatorNavigationConfig)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenario-reset/status", resetHandler.ServeHTTP)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-reset/intents", resetHandler.ServeHTTP)
