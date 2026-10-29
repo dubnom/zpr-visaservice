@@ -41,6 +41,7 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 			"ZPR_TRUSTED_SOURCE_ORGANIZATION_ID=evaluation-"+inventory.InstallID,
 			"ZPR_ASSERTION_SOURCES_FILE="+file("assertion-sources.json"),
 			"ZPR_ADAPTER_LOG_CONFIG_FILE="+file("adapter-logs.json"),
+			"ZPR_AUDIT_DB_PATH="+file(filepath.Join("audit", "audit.db")),
 			"ZPR_CONTROL_SERVICE_LISTEN="+fmt.Sprintf("127.0.0.1:%d", config.ServicePort),
 			"ZPR_CONTROL_SERVICE_CERT_FILE="+file("server-chain.pem"),
 			"ZPR_CONTROL_SERVICE_KEY_FILE="+file("server-key.pem"),
