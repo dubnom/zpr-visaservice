@@ -48,20 +48,6 @@ func ValidPermission(permission string) bool {
 	}, permission)
 }
 
-// RequireIndependentReviewer takes the proposer from the authoritative proposal,
-// never from the approval request. Permission and CSRF checks remain required.
-func RequireIndependentReviewer(reviewer, proposer Identity) error {
-	for _, identity := range []Identity{reviewer, proposer} {
-		if !ValidPrincipal(identity) {
-			return errors.New("verified reviewer and proposer identities are required")
-		}
-	}
-	if reviewer.Issuer == proposer.Issuer && reviewer.Subject == proposer.Subject {
-		return errors.New("subject-link approval requires an independent reviewer")
-	}
-	return nil
-}
-
 // ValidPrincipal validates identity shape, not authentication or permission.
 func ValidPrincipal(identity Identity) bool {
 	_, ok := httpsURL(identity.Issuer)

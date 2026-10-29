@@ -22,13 +22,13 @@ Production appliance work is tracked in the
 `-check-files` opts into read-only local TLS/OIDC credential-file checks.
 It is not an installer or runtime activation command.
 
-The separately planned Simulator/LDAP/OIDC/DNS companion now has an initial
+The separately planned Simulator/LDAP/OIDC companion now has an initial
 [`zpr-lab-bootstrap` trust-generation tool](packaging/simulator/README.md).
 It creates protected per-install lab TLS identities and service-secret files;
-optional explicit network inputs also generate separate bootstrap/ZPR BIND
-configuration, zones and TSIG credentials. Existing network DNS is the default:
-underlay addresses generate record requests, while a bootstrap BIND server
-requires explicit `-host-bootstrap-dns`; protected ZPR DNS is independent.
+optional explicit network inputs generate underlay DNS record requests and
+protected ZPR BIND configuration, zone and TSIG credentials. Existing network
+DNS owns bootstrap names; the lab generator does not create a separate
+bootstrap BIND service. Protected ZPR DNS remains a required production service.
 The original lab/companion modes do not apply configuration or
 start services, and no complete companion bundle is ready; the independent
 `-evaluation` mode has its own explicitly evaluation-only lifecycle.

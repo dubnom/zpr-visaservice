@@ -56,9 +56,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	domain := flags.String("domain", "", "explicit lab DNS suffix (required; no DNS changes)")
 	output := flags.String("output", "", "new absolute directory under an existing protected parent (required)")
-	bootstrapIP := flags.String("bootstrap-ip", "", "private companion IPv4 for LDAP, OIDC and Simulator records (requires room-ip; does not enable a DNS server)")
-	roomIP := flags.String("room-ip", "", "private IPv4 for the real package's Control Room")
-	hostBootstrapDNS := flags.Bool("host-bootstrap-dns", false, "generate optional companion BIND bootstrap server files instead of using existing network DNS (requires bootstrap-ip and room-ip)")
+	bootstrapIP := flags.String("bootstrap-ip", "", "private companion IPv4 for LDAP, OIDC and Simulator records in existing network DNS (requires room-ip)")
+	roomIP := flags.String("room-ip", "", "private IPv4 for the real package's Control Room (record request for existing network DNS)")
 	zprDNSIP := flags.String("zpr-dns-ip", "", "ULA IPv6 for BIND behind the ZPR DNS adapter")
 	zprClients := flags.String("zpr-client-prefix", "", "canonical ULA IPv6 prefix allowed to query ZPR DNS")
 	identityServices := flags.Bool("identity-services", false, "also render lab OpenLDAP/Dex configuration (requires three explicit HTTPS origins)")
@@ -91,7 +90,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if *runtimeOutputs {
 		if *identityInputDir == "" || *identityServices || *identityCompose || *bootstrapIP != "" ||
-			*roomIP != "" || *zprDNSIP != "" || *zprClients != "" || *hostBootstrapDNS ||
+			*roomIP != "" || *zprDNSIP != "" || *zprClients != "" ||
 			*bindIP != "" || *ldapImage != "" || *dexImage != "" || *platform != "linux/amd64" {
 			fmt.Fprintln(stderr, "zpr-lab-bootstrap: runtime-outputs requires an existing identity-input-dir and cannot regenerate or initialize identity services")
 			return 2
@@ -122,8 +121,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	var dns *dnsConfig
-	if *bootstrapIP != "" || *roomIP != "" || *zprDNSIP != "" || *zprClients != "" || *hostBootstrapDNS {
-		dns = &dnsConfig{BootstrapIP: *bootstrapIP, RoomIP: *roomIP, ZPRDNSIP: *zprDNSIP, ZPRClientPrefix: *zprClients, HostBootstrapDNS: *hostBootstrapDNS}
+	if *bootstrapIP != "" || *roomIP != "" || *zprDNSIP != "" || *zprClients != "" {
+		dns = &dnsConfig{BootstrapIP: *bootstrapIP, RoomIP: *roomIP, ZPRDNSIP: *zprDNSIP, ZPRClientPrefix: *zprClients}
 	}
 	var providers *providerConfig
 	var deployment *identityStackConfig
@@ -148,7 +147,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "zpr-lab-bootstrap: %v\n", err)
 		return 1
 	}
-	message := "Lab-only TLS identities and service secrets created; lab-bootstrap.json is the completion inventory.\nExisting network DNS is the default; underlay record requests and protected ZPR DNS files are generated independently when selected. Companion bootstrap BIND requires explicit -host-bootstrap-dns.\nWith -identity-services, protected OpenLDAP/Dex configuration and initial directory data are generated, not applied. Named operator grants still require verified issuer/subject identities.\nWith -identity-compose, pinned identity services and private state directories are generated for separate initialization/startup; nothing is launched."
+	message := "Lab-only TLS identities and service secrets created; lab-bootstrap.json is the completion inventory.\nExisting network DNS owns bootstrap hostnames; underlay record requests and protected ZPR DNS files are generated independently when selected. This tool does not generate or operate a bootstrap DNS server.\nWith -identity-services, protected OpenLDAP/Dex configuration and initial directory data are generated, not applied. Named operator grants still require verified issuer/subject identities.\nWith -identity-compose, pinned identity services and private state directories are generated for separate initialization/startup; nothing is launched."
 	if providers != nil && providers.Deployment != nil {
 		message += "\nGenerate identity-compose service keys on Ubuntu as the intended service-state owner. OpenLDAP remains demo-only and unqualified; image digest syntax is checked, but local image identity/platform are not inspected."
 	}

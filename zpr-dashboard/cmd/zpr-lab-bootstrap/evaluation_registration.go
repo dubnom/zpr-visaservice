@@ -128,28 +128,37 @@ func registerEvaluationSourceWithClient(ctx context.Context, state string, inven
 }
 
 func collectEvaluationLog(ctx context.Context, state string, inventory evaluationInventory, event string) error {
-	config, err := adapterlogs.ReadInventory(filepath.Join(state, "adapter-logs.json"))
+	selected, err := evaluationLogSourceConfig(state, inventory)
 	if err != nil {
-		return errors.New("evaluation logging inventory unavailable")
-	}
-	var selected *adapterlogs.SourceConfig
-	for _, target := range config.Adapters {
-		if target.ID == "logs_"+inventory.InstallID {
-			if len(target.Sources) != 1 || target.Sources[0].URL == "" {
-				return errors.New("evaluation logging destination changed; no fallback attempted")
-			}
-			source := target.Sources[0]
-			selected = &source
-		}
-	}
-	if selected == nil {
-		return errors.New("evaluation logging destination missing; no fallback attempted")
+		return err
 	}
 	data, _ := json.Marshal([]map[string]any{{"_timestamp": time.Now().UnixMicro(), "event": event, "install_id": inventory.InstallID, "source_id": "logs_" + inventory.InstallID, "organization_id": "evaluation-" + inventory.InstallID, "label": "EVALUATION ONLY"}})
-	if err := adapterlogs.Append(ctx, *selected, data); err != nil {
+	if err := adapterlogs.Append(ctx, selected, data); err != nil {
 		return errors.New("evaluation lifecycle log ingestion failed")
 	}
-	if output, err := adapterlogs.Query(ctx, *selected); err != nil || !strings.Contains(output, inventory.InstallID) {
+	return requireEvaluationLog(ctx, selected, inventory.InstallID, event)
+}
+
+func evaluationLogSourceConfig(state string, inventory evaluationInventory) (adapterlogs.SourceConfig, error) {
+	config, err := adapterlogs.ReadInventory(filepath.Join(state, "adapter-logs.json"))
+	if err != nil {
+		return adapterlogs.SourceConfig{}, errors.New("evaluation logging inventory unavailable")
+	}
+	for _, target := range config.Adapters {
+		if target.ID != "logs_"+inventory.InstallID {
+			continue
+		}
+		if len(target.Sources) != 1 || target.Sources[0].URL == "" {
+			return adapterlogs.SourceConfig{}, errors.New("evaluation logging destination changed; no fallback attempted")
+		}
+		return target.Sources[0], nil
+	}
+	return adapterlogs.SourceConfig{}, errors.New("evaluation logging destination missing; no fallback attempted")
+}
+
+func requireEvaluationLog(ctx context.Context, source adapterlogs.SourceConfig, installID, event string) error {
+	output, err := adapterlogs.Query(ctx, source)
+	if err != nil || !strings.Contains(output, installID) || !strings.Contains(output, event) {
 		return errors.New("evaluation lifecycle log query failed")
 	}
 	return nil

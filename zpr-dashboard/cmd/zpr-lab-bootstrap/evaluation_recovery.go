@@ -205,7 +205,7 @@ func resetEvaluationAdmin(state string, now time.Time) (string, error) {
 		Clients   []map[string]any    `json:"staticClients"`
 	}
 	var document map[string]json.RawMessage
-	// Subject-link installs add exactly one independent reviewer, left unchanged.
+	// Subject-link installs add exactly one optional second operator, left unchanged.
 	passwords := 1
 	if inventory.Config.subjectLinks() {
 		passwords = 2

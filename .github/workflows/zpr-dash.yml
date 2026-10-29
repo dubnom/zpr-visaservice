@@ -5,10 +5,12 @@ on:
     branches: [ "main" ]
     paths:
       - 'zpr-dashboard/**'
+      - 'dns/bind9/**'
       - '.github/workflows/zpr-dash.yml'
   pull_request:
     paths:
       - 'zpr-dashboard/**'
+      - 'dns/bind9/**'
       - '.github/workflows/zpr-dash.yml'
 
 concurrency:
@@ -26,6 +28,68 @@ jobs:
       name: ${{ matrix.target }}
       path: ./${{ matrix.target }}
     secrets: inherit
+
+  production-boundary:
+    name: Production boundary tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: zpr-dashboard
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: zpr-dashboard/go.mod
+          cache: true
+          cache-dependency-path: zpr-dashboard/go.sum
+      - run: go build -tags production -o "$RUNNER_TEMP/zpr-control-room" ./cmd/zpr-web-dashboard
+      - run: go test -tags production ./cmd/zpr-web-dashboard
+      - run: go vet -tags production ./cmd/zpr-web-dashboard
+
+  production-browser-boundary:
+    name: Production browser boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: zpr-dashboard
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: zpr-dashboard/go.mod
+          cache: true
+          cache-dependency-path: zpr-dashboard/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: zpr-dashboard/package-lock.json
+      - run: go test -c -o "$RUNNER_TEMP/assets.test" ./cmd/zpr-web-dashboard
+      - run: go test -tags production -c -o "$RUNNER_TEMP/assets-production.test" ./cmd/zpr-web-dashboard
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify production browser boundary
+        env:
+          ZPR_ASSET_BROWSER_TEST_BINARY: ${{ runner.temp }}/assets.test
+          ZPR_PRODUCTION_ASSET_BROWSER_TEST_BINARY: ${{ runner.temp }}/assets-production.test
+        run: npm run test:browser -- production-assets.spec.mjs control-room-boundary.spec.mjs --workers=1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: production-browser-boundary-failures
+          path: zpr-dashboard/test-results/
+          retention-days: 7
+
+  protected-dns-config:
+    name: Protected DNS configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate standalone and Simulator protected DNS configurations
+        run: sh dns/bind9/test-config.sh
 
   browser-tests:
     name: Browser regressions

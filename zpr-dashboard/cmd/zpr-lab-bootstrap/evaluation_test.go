@@ -155,6 +155,7 @@ func TestEvaluationRejectUnsafeConfigurationAndState(t *testing.T) {
 		{"duplicate OIDC port", func(c *evaluationConfig) { c.OIDCPort = c.LogPort }},
 		{"privileged port", func(c *evaluationConfig) { c.LDAPPort = 636 }},
 		{"invalid port", func(c *evaluationConfig) { c.LogPort = 65536 }},
+		{"protected DNS without data plane", func(c *evaluationConfig) { c.ProtectedDNS = true }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			config := testEvaluationConfig()

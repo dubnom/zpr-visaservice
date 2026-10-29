@@ -106,9 +106,6 @@ func TestChangeReviewAPIRevisionBindingPermissionsDriftAndNoApplication(t *testi
 		return string(data)
 	}
 	path := changeReviewPrefix + "requests/" + record.ID
-	if w := call("POST", path+"/approve", decision(1, record.Digest), "proof"); w.Code != 409 {
-		t.Fatal("default self approval accepted")
-	}
 	auth.subject = "reviewer"
 	current = "changed source"
 	if w := call("POST", path+"/approve", decision(1, record.Digest), "proof"); w.Code != 409 {
@@ -152,8 +149,7 @@ func TestChangeReviewExplicitSingleOperatorApproval(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	api := &changeReviewAPI{store: store, auth: &reviewAuthFixture{subject: "author"}, allowSelf: true,
-		capture: func(context.Context, string, string, string, int) (changereview.Proposal, error) { return p, nil }}
+	api := &changeReviewAPI{store: store, auth: &reviewAuthFixture{subject: "author"}, capture: func(context.Context, string, string, string, int) (changereview.Proposal, error) { return p, nil }}
 	body, _ := json.Marshal(changeReviewInput{Organization: "great-lakes", Digest: record.Digest, ExpectedVersion: 1, Reason: "Single operator reviewed"})
 	r := httptest.NewRequest("POST", changeReviewPrefix+"requests/"+record.ID+"/approve", strings.NewReader(string(body)))
 	r.Header.Set("X-ZPR-CSRF", "proof")
@@ -303,18 +299,17 @@ func TestChangeReviewConfigurationDefaultsAndStrictOptIn(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The former opt-in is ignored: approval by the proposer is always allowed and audited.
 	for _, allow := range []bool{false, true} {
-		if allow {
-			config["allow_self_approval"] = true
-		}
+		config["allow_self_approval"] = allow
 		writeConfig()
 		handler, close, err := configuredChangeReview(&operatorauth.Auth{}, http.NotFoundHandler())
 		if err != nil {
 			t.Fatal(err)
 		}
-		if api := handler.(*changeReviewAPI); api.allowSelf != allow {
+		if _, ok := handler.(*changeReviewAPI); !ok {
 			close()
-			t.Fatal("single-operator opt-in default changed")
+			t.Fatal("change review handler not configured")
 		}
 		close()
 	}

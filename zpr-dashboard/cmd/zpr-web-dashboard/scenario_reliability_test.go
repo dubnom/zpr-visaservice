@@ -1,3 +1,5 @@
+//go:build !production
+
 package main
 
 import (
@@ -10,28 +12,6 @@ import (
 	"strings"
 	"testing"
 )
-
-func stackFunctionForTest(t *testing.T, name string) string {
-	t.Helper()
-	scriptPath := "../../scripts/dashboard-stack.sh"
-	if name == "resolve_machine_placement" {
-		scriptPath = "../../scripts/machine-runtime.sh"
-	}
-	content, err := os.ReadFile(scriptPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(content)
-	start := strings.Index(script, name+"() {")
-	if start < 0 {
-		t.Fatalf("stack function %s missing", name)
-	}
-	end := strings.Index(script[start:], "\n}\n")
-	if end < 0 {
-		t.Fatalf("stack function %s incomplete", name)
-	}
-	return script[start : start+end+3]
-}
 
 func TestMachineControllerInstallReplacesOnlyInvalidDestinations(t *testing.T) {
 	function := stackFunctionForTest(t, "install_machine_controller")

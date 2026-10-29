@@ -1,17 +1,14 @@
+//go:build !production
+
 package main
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -21,7 +18,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestControlServiceProxiesPolicyRepositoryOverMutualTLS(t *testing.T) {
@@ -195,70 +191,4 @@ func TestPolicyServiceMuxFailsClosedWhenLDAPScanFails(t *testing.T) {
 	if len(catalog.Attributes) != 1 || catalog.Attributes[0].Attribute != "user.sub" || strings.Contains(response.Body.String(), "sensitive command details") {
 		t.Fatalf("failed scan response exposed LDAP mappings or command details: %s", response.Body.String())
 	}
-}
-
-func createTestPolicyCA() (*x509.Certificate, *ecdsa.PrivateKey, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	now := time.Now()
-	template := &x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Policy Service Test CA"},
-		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true,
-		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
-	}
-	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
-	if err != nil {
-		return nil, nil, err
-	}
-	cert, err := x509.ParseCertificate(der)
-	return cert, key, err
-}
-
-func createTestPolicyLeaf(ca *x509.Certificate, caKey *ecdsa.PrivateKey, commonName string, usages []x509.ExtKeyUsage, server bool) (tls.Certificate, *ecdsa.PrivateKey, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return tls.Certificate{}, nil, err
-	}
-	now := time.Now()
-	template := &x509.Certificate{
-		SerialNumber: big.NewInt(now.UnixNano()), Subject: pkix.Name{CommonName: commonName},
-		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: usages,
-	}
-	if server {
-		template.DNSNames = []string{"localhost"}
-		template.IPAddresses = []net.IP{net.ParseIP("127.0.0.1")}
-	}
-	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
-	if err != nil {
-		return tls.Certificate{}, nil, err
-	}
-	certificatePEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	if _, err := x509.ParseCertificate(der); err != nil {
-		return tls.Certificate{}, nil, err
-	}
-	privatePEM, err := x509.MarshalPKCS8PrivateKey(key)
-	if err != nil {
-		return tls.Certificate{}, nil, err
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privatePEM})
-	pair, err := tls.X509KeyPair(certificatePEM, keyPEM)
-	return pair, key, err
-}
-
-func writeTLSCertificate(path string, certificate tls.Certificate) error {
-	if len(certificate.Certificate) == 0 {
-		return errors.New("certificate chain is empty")
-	}
-	return os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Certificate[0]}), 0o600)
-}
-
-func writeTLSPrivateKey(path string, key *ecdsa.PrivateKey) error {
-	der, err := x509.MarshalPKCS8PrivateKey(key)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0o600)
 }

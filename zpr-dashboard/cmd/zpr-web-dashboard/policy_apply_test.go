@@ -83,7 +83,7 @@ func newPolicyApplyFixture(t *testing.T) *policyApplyFixture {
 		t.Fatal(err)
 	}
 	_, err = store.Decide(context.Background(), trust.Organization, r.ID, r.Digest, 1, "approve", "Reviewed candidate",
-		changereview.Principal{Issuer: "https://idp.example", Subject: "reviewer"}, false)
+		changereview.Principal{Issuer: "https://idp.example", Subject: "reviewer"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func newPolicyApplyFixture(t *testing.T) *policyApplyFixture {
 func (f *policyApplyFixture) pair(t *testing.T, current operatordelegation.PolicyCurrentState) ([]byte, operatordelegation.PolicyProof) {
 	t.Helper()
 	body, proof, err := prepareReviewedPolicyPair(context.Background(), f.store, f.signer, f.trust.Organization,
-		f.reviewID, "stable-op", f.proposal, f.stage, f.container, current, false, f.now)
+		f.reviewID, "stable-op", f.proposal, f.stage, f.container, current, f.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestPolicyApplyReviewedCandidateRejectsDriftAndCallerIdentity(t *testing.T)
 		changed := *f
 		mutate(&changed)
 		if _, _, err := prepareReviewedPolicyPair(context.Background(), f.store, f.signer, f.trust.Organization,
-			f.reviewID, "stable-op", changed.proposal, changed.stage, changed.container, changed.current, false, f.now); err == nil {
+			f.reviewID, "stable-op", changed.proposal, changed.stage, changed.container, changed.current, f.now); err == nil {
 			t.Fatal("changed source/stage/target accepted")
 		}
 	}
@@ -160,17 +160,17 @@ func TestPolicyApplyRejectsApprovedReviewFromDifferentSignerOrganization(t *test
 		t.Fatal(err)
 	}
 	_, err = f.store.Decide(ctx, other.Organization, record.ID, record.Digest, 1, "approve", "Reviewed exact candidate",
-		changereview.Principal{Issuer: "https://idp.example", Subject: "reviewer"}, false)
+		changereview.Principal{Issuer: "https://idp.example", Subject: "reviewer"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = f.store.ApprovedPolicy(ctx, other.Organization, record.ID, other, false); err != nil {
+	if _, _, err = f.store.ApprovedPolicy(ctx, other.Organization, record.ID, other); err != nil {
 		t.Fatal("fixture must have a valid independent approval", err)
 	}
 	receiver := f.current
 	receiver.Organization = other.Organization
 	body, proof, err := prepareReviewedPolicyPair(ctx, f.store, f.signer, other.Organization,
-		record.ID, "other-org-op", other, f.stage, f.container, receiver, false, f.now)
+		record.ID, "other-org-op", other, f.stage, f.container, receiver, f.now)
 	if err == nil || len(body) != 0 || proof.Payload != "" || proof.Signature != "" {
 		t.Fatal("cross-organization review was signed under another organization's trust")
 	}

@@ -6,11 +6,20 @@ remaining full-demo scenarios are still open. This is deliberately less strict
 than the production contract. A passing demo is not a production release or a
 supported customer installation.
 
+This package is a runnable dataplane demonstration, not a complete working ZPR
+network under the
+[product-wide minimum](../../../System%20release%20plan.md#common-minimum-for-a-working-zpr-network).
+In particular, this contract does not provide an independent Control Room and
+operator service or prove durable, queryable logging. Demo-specific substitutes
+may simplify implementation, but do not waive the common functional baseline;
+do not describe this pair as a baseline-complete network.
+
 ## Goal
 
 Produce two separately downloadable but version-matched Linux/amd64 archives:
 
-1. **ZPR demo package:** the existing `zpr-demo/multinode-demo` scenario,
+1. **ZPR dataplane demo package:** the existing
+   `zpr-demo/multinode-demo` scenario,
    including its runnable ZPR service/node/adapters, sample organization and
    policy, demo web workload, runtime configuration/setup, and stop/status
    instructions.
@@ -141,6 +150,20 @@ with start/stop/status commands. Do not rebuild images merely to repeat the
 completed image-import step, and do not describe image loading as service
 installation or startup.
 
+### Bundled Audit UI package slice
+
+The ZPR runtime archive now includes the regular static files from the reviewed
+`zpr-audit/public` source directory and a package-owned `serve-audit.py`
+launcher. Build requires the explicit `--audit-public-dir` input; isolated
+candidate preflight requires that directory's `index.html` in the selected
+`zpr-visaservice` source snapshot. Archive verification requires both the
+launcher and `audit/index.html`; symlinks and private/credential-named files are
+rejected, and test-prefixed assets are omitted. Package tests cover asset
+inclusion, safe install, and local HTTP serving. The launcher binds to `127.0.0.1` and
+serves only static files. This is not an Audit backend integration, does not
+connect the UI to production audit data, and does not close clean-host,
+Simulator-scenario, or complete-demo acceptance.
+
 ### Paired Simulator-world source implementation
 
 The source package runtime now passes the installed ZPR package and persistent
@@ -228,6 +251,17 @@ production enrollment remain unqualified. The downloaded pair remains
   runtime/state directories and Compose project names. Simulator may control
   its provisioned demo scenario through the approved local Docker socket, but
   ZPR services must continue running when the Simulator UI/container stops.
+- Bundle the reviewed `verify-packaged-demo.sh` probe in the Simulator runtime
+  package and configure it only for the demo profile. The probe must verify
+  the exact installed ZPR project/image and leave the active policy unchanged;
+  never point packaged-demo verification at a host-provided script.
+- The packaged demo profile uses `activate-packaged-demo.sh` as a demo-only
+  activation/restore gate: it verifies the exact installed ZPR pair and
+  preserves identity and policy state. It rejects all other organizations.
+  The development `scripts/activate-organization.sh` depends on a source
+  checkout and `.local-runtime`, so it must not be mounted into the downloaded
+  package. Cross-organization execution remains unqualified until each
+  organization has its own package-owned activation/reset contract.
 - Preserve the current multinode demo's service process boundary for this
   viability test. Do not silently turn the Simulator into a ZPR service or
   make ZPR production services depend on Simulator APIs or files.

@@ -1121,12 +1121,17 @@ function renderTopology(data, exitComponents = []) {
   const actorsByName = new Map(actors.map((actor) => [actor.cn, actor]));
   const actorsByAddress = new Map(actors.map((actor) => [actor.zpr_addr, actor]));
   const counts = mapComponentCounts(data);
-  const visaCountBadge = (count, x, y, denial = false) => {
-    const label = count == null ? "?" : count === 0 ? "" : String(count);
+  const visaCountBadge = (count, x, y, owner, actorCN, serviceName, denial = false) => {
+    const label = count > 0 ? String(count) : "";
     const width = Math.max(22, label.length * 7 + 10);
     const description = count == null ? denial ? "Buffered denial count unavailable" : "Active visa count unavailable" : `${count} ${denial ? "buffered denials" : "active visas"}`;
-    return `<g class="graph-visa-count${denial ? " graph-denial-count" : ""}${count === 0 ? " empty" : ""}"${denial ? ' role="button" tabindex="0" aria-description="Click, right-click or press Enter to show buffered denial details"' : ' role="button" tabindex="0" aria-description="Click, right-click or press Enter to show visas"'} aria-label="${description}"><title>${description}</title><rect x="${x - width / 2}" y="${y - 9}" width="${width}" height="18" rx="9"/>${label ? `<text x="${x}" y="${y + 3}">${label}</text>` : ""}</g>`;
+    const visible = count > 0;
+    const shape = visible
+      ? `<rect x="${x - width / 2}" y="${y - 9}" width="${width}" height="18" rx="9"/><text x="${x}" y="${y + 3}">${label}</text>`
+      : `<rect class="graph-count-hit-area" x="${x - 11}" y="${y - 9}" width="22" height="18"/>`;
+    return `<g class="graph-visa-count${denial ? " graph-denial-count" : ""}${visible ? "" : " empty"}" data-count-owner="${escapeHTML(owner)}"${actorCN ? ` data-count-actor="${escapeHTML(actorCN)}"` : ""}${serviceName ? ` data-count-service="${escapeHTML(serviceName)}"` : ""}${denial ? ' role="button" tabindex="0" aria-description="Click, right-click or press Enter to show buffered denial details"' : ' role="button" tabindex="0" aria-description="Click, right-click or press Enter to show visas"'} aria-label="${description}"><title>${description}</title>${shape}</g>`;
   };
+  const numberMarkup = [];
   const edges = [];
 
   for (const node of nodes) {
@@ -1487,12 +1492,12 @@ function renderTopology(data, exitComponents = []) {
       : isGateway ? { x: 28, y: -16 }
       : isVisaService ? { x: 17.5, y: -17.5 }
       : { x: 29 / Math.SQRT2, y: -29 / Math.SQRT2 };
-    const count = visaCountBadge(counts.get(componentKey), pos.x + countAnchor.x, pos.y + countAnchor.y, isNode);
+    numberMarkup.push(visaCountBadge(counts.get(componentKey), pos.x + countAnchor.x, pos.y + countAnchor.y, componentKey, actor.cn, "", isNode));
     const baseTitle = `${isGateway ? "ZPR gateway · " : ""}${displayName} · ${actor.cn} · ${dnsAddressTitle(actor.zpr_addr)}`;
     const traffic = isNode ? mapTraffic.get(actor.cn) : null;
     const trafficDescription = traffic ? window.ZPRMapTraffic.describe(traffic) : "";
     const halo = traffic ? `<g class="graph-traffic-halo ${traffic.status === "ready" ? `band-${window.ZPRMapTraffic.band(traffic.smoothed)}` : "band-unknown"}" data-traffic-node="${escapeHTML(actor.cn)}" data-traffic-status="${traffic.status}" role="img" aria-label="${escapeHTML(trafficDescription)}"><title>${escapeHTML(trafficDescription)}</title><rect x="${pos.x - 50}" y="${pos.y - 29}" width="100" height="58" rx="10"/></g>` : "";
-    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" data-base-title="${escapeHTML(baseTitle)}"${traffic ? ` aria-description="${escapeHTML(trafficDescription)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(baseTitle)}${traffic ? ` · ${escapeHTML(trafficDescription)}` : ""}</title>${cloudMarkup}${halo}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text>${count}</g>`;
+    return `<g class="graph-vertex ${isNode ? "node" : isGateway ? "gateway" : isVisaService ? "visa" : "adapter"}${arrivingClass} ${highlighted}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${pos.x}" data-origin-y="${pos.y}"${positionAttributes} data-inspect-actor="${escapeHTML(actor.cn)}" data-base-title="${escapeHTML(baseTitle)}"${traffic ? ` aria-description="${escapeHTML(trafficDescription)}"` : ""} tabindex="0" role="button" aria-label="Inspect ${escapeHTML(isGateway ? "gateway " : "")}${escapeHTML(displayName)}"><title>${escapeHTML(baseTitle)}${traffic ? ` · ${escapeHTML(trafficDescription)}` : ""}</title>${cloudMarkup}${halo}${glyph}${marker}<text class="graph-label" x="${pos.x}" y="${pos.y + 3}">${escapeHTML(shortName)}</text></g>`;
   });
 
   const serviceEdgeMarkup = [];
@@ -1525,12 +1530,12 @@ function renderTopology(data, exitComponents = []) {
     const parentMovement = marker ? enteringOffsets.get(parentKey) || previousMovement.get(parentKey) : null;
     const entry = marker && parentMovement ? { x: offset.x + parentMovement.x, y: offset.y + parentMovement.y } : null;
     const positionAttributes = offsetAttributes(offset, parentKey, entry);
-    const count = visaCountBadge(counts.get(componentKey), position.x + badgeWidth / 2 - 2, position.y - 8);
-    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-service-actor="${escapeHTML(service.actor_cn)}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text>${count}</g>`;
+    numberMarkup.push(visaCountBadge(counts.get(componentKey), position.x + badgeWidth / 2 - 2, position.y - 8, componentKey, "", service.service_name));
+    return `<g class="graph-service-badge${gatewayClass}${trustedClass}${arrivingClass} ${highlighted}" data-service-type="${escapeHTML(type.key)}" fill="${escapeHTML(type.background)}" stroke="${escapeHTML(type.border)}" color="${escapeHTML(type.color)}" data-topology-component="${escapeHTML(componentKey)}" data-origin-x="${position.x}" data-origin-y="${position.y}"${positionAttributes} data-service-actor="${escapeHTML(service.actor_cn)}" data-inspect-service="${escapeHTML(service.service_name)}" tabindex="0" role="button" aria-label="${escapeHTML(labelForScreenReader)}"><title>${escapeHTML(title)}</title><rect x="${position.x - badgeWidth / 2}" y="${position.y - 10}" width="${badgeWidth}" height="20" rx="4"/>${marker}<text x="${position.x}" y="${position.y + 3}">${escapeHTML(shortLabel)}</text></g>`;
   });
 
   const exiting = (kind) => exitComponents.filter((component) => component.kind === kind).map((component) => component.markup).join("");
-  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}<label class="graph-auto-fit"><input type="checkbox" data-graph-auto-fit${graphAutoFit ? " checked" : ""}>Auto-fit</label><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g>${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g></g></svg>`;
+  stage.innerHTML = `<div class="graph-controls" aria-label="Topology graph controls">${darkModeControl}<label class="graph-auto-fit"><input type="checkbox" data-graph-auto-fit${graphAutoFit ? " checked" : ""}>Auto-fit</label><button class="graph-control" data-graph-action="in" type="button" aria-label="Zoom in" title="Zoom in">+</button><button class="graph-control" data-graph-action="out" type="button" aria-label="Zoom out" title="Zoom out">−</button><button class="graph-control graph-fit" data-graph-action="fit" type="button" aria-label="Fit graph" title="Fit graph">Fit</button></div><svg class="topology-graph" viewBox="0 0 ${width} ${height}" role="img" aria-label="Topology graph with ${nodes.length} nodes, ${adapters.length} adapters, ${dockEdges.length} dock connections, ${networkEdges.length} inter-node links, and ${(data.services || []).filter((service) => servicesByActor.has(service.actor_cn)).length} registered services"><g id="graph-world">${edgeMarkup}${serviceEdgeMarkup.join("")}${vertexMarkup.slice(0, nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("node")}</g>${serviceMarkup.join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("service")}</g>${vertexMarkup.slice(nodes.length).join("")}<g class="graph-exit-layer" aria-hidden="true">${exiting("adapter")}</g><g id="graph-number-layer">${numberMarkup.join("")}</g></g></svg>`;
   setupGraphAppearance(stage);
   const world = stage.querySelector("#graph-world");
   const attachmentControls = document.createElement("div");
@@ -1653,7 +1658,7 @@ function renderTopology(data, exitComponents = []) {
     }
   }
 
-  setupGraphControls(stage, width, height, previousViewport);
+  setupGraphControls(stage, width, height, previousViewport, geographic);
   const focusStatus = document.createElement("p");
   focusStatus.className = "graph-visa-focus-status";
   focusStatus.setAttribute("role", "status");
@@ -1688,7 +1693,7 @@ function renderConnections(edges, unconnected) {
   }).join("") : `<tr><td colspan="5" class="empty-row">${rows.length ? "No matching connections" : "No dock or inter-node connections reported"}</td></tr>`;
 }
 
-function setupGraphControls(stage, width, height, previousViewport) {
+function setupGraphControls(stage, width, height, previousViewport, geographic) {
   const svg = stage.querySelector(".topology-graph");
   const world = stage.querySelector("#graph-world");
   if (!state.graphCamera) state.graphCamera = { x: 0, y: 0, scale: 1 };
@@ -1763,7 +1768,8 @@ function setupGraphControls(stage, width, height, previousViewport) {
       height = width / aspect;
       svg.setAttribute("viewBox", `${bounds.x + bounds.width / 2 - width / 2} ${bounds.y + bounds.height / 2 - height / 2} ${width} ${height}`);
     }
-    camera.scale = Math.min((width * 0.9) / Math.max(1, bounds.width), (height * 0.9) / Math.max(1, bounds.height));
+    const geographicFitScale = geographic ? 0.84 : 1;
+    camera.scale = geographicFitScale * Math.min((width * 0.9) / Math.max(1, bounds.width), (height * 0.9) / Math.max(1, bounds.height));
     camera.x = viewBox.x + width / 2 - (bounds.x + bounds.width / 2) * camera.scale;
     camera.y = viewBox.y + height / 2 - (bounds.y + bounds.height / 2) * camera.scale;
     apply();
@@ -1790,7 +1796,7 @@ function setupGraphControls(stage, width, height, previousViewport) {
   let drag = null;
   svg.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
-    if (event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-link], [data-inspect-attachment-group]")) return;
+    if (event.target.closest("[data-inspect-actor], [data-inspect-service], [data-inspect-link], [data-inspect-attachment-group], .graph-visa-count")) return;
     const point = pointAt(event);
     drag = { pointerId: event.pointerId, point, x: camera.x, y: camera.y };
     svg.classList.add("panning");
@@ -2012,7 +2018,9 @@ function policyCategoriesInUnifiedHierarchy(policy = state.policy) {
 function graphContentBounds(world) {
   const boxes = [...world.children]
     .filter((element) => !element.classList.contains("graph-geographic-basemap") && !element.classList.contains("graph-exit-layer"))
-    .map((element) => element.getBBox())
+    .flatMap((element) => element.id === "graph-number-layer"
+      ? [...element.children].map((badge) => badge.getBBox())
+      : [element.getBBox()])
     .filter((box) => box.width > 0 || box.height > 0);
   if (!boxes.length) return null;
   const left = Math.min(...boxes.map((box) => box.x));
@@ -4267,6 +4275,16 @@ const mapCountPulses = new Map();
 let previousMapCounts = null;
 const MAP_COUNT_PULSE_DURATION = window.ZPRPollingDisplay.duration;
 
+function mapCountBadge(owner) {
+  return [...document.querySelectorAll("#graph-number-layer .graph-visa-count")]
+    .find((badge) => badge.dataset.countOwner === owner) || null;
+}
+
+function mapCountOwner(badge) {
+  return [...document.querySelectorAll("#graph-world > [data-topology-component]")]
+    .find((component) => component.dataset.topologyComponent === badge?.dataset.countOwner) || null;
+}
+
 function pulseMapCounts(counts) {
   const now = Date.now();
   if (previousMapCounts) for (const [key, count] of counts) {
@@ -4277,7 +4295,7 @@ function pulseMapCounts(counts) {
   for (const [key, startedAt] of mapCountPulses) if (now - startedAt >= MAP_COUNT_PULSE_DURATION || !counts.has(key)) mapCountPulses.delete(key);
   for (const component of document.querySelectorAll("#graph-world > [data-topology-component]")) {
     const startedAt = mapCountPulses.get(component.dataset.topologyComponent);
-    const badge = component.querySelector(".graph-visa-count");
+    const badge = mapCountBadge(component.dataset.topologyComponent);
     if (startedAt == null || !badge) continue;
     badge.dataset.countPulse = "true";
     const bounds = badge.getBBox();
@@ -4737,15 +4755,16 @@ byId("map-clear-highlight").addEventListener("click", () => {
 function inspectMapVisaCount(target) {
   const denialBadge = target.closest(".graph-denial-count");
   if (denialBadge && state.snapshot) {
-    const node = denialBadge.closest(".graph-vertex[data-inspect-actor]");
+    const node = mapCountOwner(denialBadge);
     if (!node) return false;
     openInspector("denial-count", node.dataset.inspectActor);
     return true;
   }
   const badge = target.closest(".graph-visa-count:not(.graph-denial-count)");
   if (!badge || !state.snapshot) return false;
-  const service = badge.closest(".graph-service-badge[data-inspect-service]");
-  const component = badge.closest(".graph-vertex[data-inspect-actor]");
+  const owner = mapCountOwner(badge);
+  const service = owner?.matches(".graph-service-badge[data-inspect-service]") ? owner : null;
+  const component = owner?.matches(".graph-vertex[data-inspect-actor]") ? owner : null;
   if (!service && !component) return false;
   openInspector("visa-count", JSON.stringify(service
     ? { kind: "service", actorCN: service.dataset.serviceActor, serviceName: service.dataset.inspectService }
@@ -4770,18 +4789,24 @@ function toggleMapVisaFocus(focus) {
 // left-clicking the count badge opens the visa inventory.
 byId("topology-stage").addEventListener("contextmenu", event => {
   if (!state.snapshot) return;
-  const serviceBadge = event.target.closest(".graph-service-badge[data-inspect-service]");
+  const countBadge = event.target.closest(".graph-visa-count");
+  const countOwner = countBadge && mapCountOwner(countBadge);
+  const serviceBadge = countOwner?.matches(".graph-service-badge[data-inspect-service]")
+    ? countOwner
+    : event.target.closest(".graph-service-badge[data-inspect-service]");
   if (serviceBadge) {
     event.preventDefault();
     toggleMapVisaFocus({ kind: "service", actorCN: serviceBadge.dataset.serviceActor, serviceName: serviceBadge.dataset.inspectService });
     return;
   }
-  const component = event.target.closest(".graph-vertex[data-inspect-actor]");
+  const component = countOwner?.matches(".graph-vertex[data-inspect-actor]")
+    ? countOwner
+    : event.target.closest(".graph-vertex[data-inspect-actor]");
   const actor = component && state.snapshot.actors.find(actor => actor.cn === component.dataset.inspectActor);
   if (actor?.node) {
     event.preventDefault();
-    const onVisaCount = event.target.closest(".graph-visa-count:not(.graph-denial-count)");
-    if (!onVisaCount && component.querySelector(".graph-denial-count")) openInspector("denial-count", actor.cn);
+    const onVisaCount = countBadge && !countBadge.classList.contains("graph-denial-count");
+    if (!onVisaCount && mapCountBadge(component.dataset.topologyComponent)?.classList.contains("graph-denial-count")) openInspector("denial-count", actor.cn);
     else openInspector("visa-count", JSON.stringify({ kind: "actor", actorCN: actor.cn }));
   } else if (actor) {
     event.preventDefault();

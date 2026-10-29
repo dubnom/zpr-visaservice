@@ -1,44 +1,75 @@
 # ZPR Audit
 
-Standalone, history-first Audit application with sample workspaces, a separate
-read-only assertion-settings import, and an authenticated query of stored audit
-events. Use day/week/month windows for short-term history review; Control Room
-and Security remain the live operational interfaces. The stored-event query is
-not available from the standalone unauthenticated preview. Audit remains
-independent of Simulator and OpenObserve. No real policy evaluation or broad
-historical event coverage is implemented.
+Audit is included in the minimal ZPR package. It provides history-first sample
+workspaces, a separate read-only assertion-settings import, and an authenticated
+query of stored audit events. Use day/week/month windows for short-term history
+review; Control Room and Security remain the live operational interfaces. The
+stored-event query is not available from the standalone unauthenticated preview.
+The UI remains independent of Simulator and OpenObserve. An optional development
+adapter can read a configured production Policy-Service directly; static hosting
+and package inclusion alone do not enable this connection. No real policy
+evaluation or broad historical event coverage is implemented.
 
-## Maturity integration gate
+The local development UI is served from `public/`; see [Run](#run). Imported
+assertion settings remain operator-supplied data and are not submitted to a
+service by Audit.
 
-Audit feature development is paused at this checkpoint while maturity undergoes
-user acceptance testing. Keep Audit standalone; do not alter the maturity UAT
-baseline, deployment or running services to integrate it.
+## Read current settings from Policy-Service
 
-The maturity worktree had uncommitted UAT changes when this checkpoint was
-prepared. Its observed committed HEAD was
-`9ebf10bb651ddce862502564410bc4855a4e71a5`; this is **not** an approved integration
-baseline. Wait for the maturity owner to supply a committed or tagged UAT
-candidate. Do not copy or commit their working-tree changes.
+The dependency-free Node adapter (Node 20+), **not the packaged static UI**, provides
+an opt-in read-only connection to the existing production
+`GET /api/assertions/settings` contract. Start locally with an authorized service
+endpoint and an expected organization ID (the service's organization context,
+not a client-selected organization query):
 
-Once that candidate is identified:
+```sh
+ZPR_AUDIT_POLICY_SERVICE_URL=https://policy.example:8443 \
+ZPR_AUDIT_ORGANIZATION_ID=your-organization-id \
+ZPR_AUDIT_TLS_CA=operator-ca.pem \
+ZPR_AUDIT_TLS_CERT=audit-client.pem \
+ZPR_AUDIT_TLS_KEY=audit-client-key.pem \
+npm run start:connected
+```
 
-1. Create a separate integration worktree/branch from the exact candidate.
-2. Bring the Audit checkpoint into that branch, preserving the maturity branch.
-3. Validate the final production assertion-settings contract and import a
-   successful authorized real export. Never treat a service-error response as
-   empty settings or reuse credentials/browser sessions.
-4. Check organization, revision, source, paired-snapshot provenance, comparison
-   and downloaded/printed reports against that export.
-5. Run Audit tests and relevant maturity regressions with Simulator unavailable.
-   Retain category separation and the independent production-service boundary.
-6. Agree independent deployment/navigation and complete focused operator
-   acceptance. A development preview is not a production deployment.
-7. Merge only after maturity UAT acceptance and those gates pass, as a separately
-   reviewed additive change. No automatic merge or deployment is authorized.
+These are illustrative operator-owned paths, not bundled credentials. For an
+authorized loopback HTTP service, use `http://127.0.0.1:PORT` and omit TLS files.
+Remote HTTP is rejected. HTTPS uses normal certificate verification; custom CA
+and client certificate/key support deployments using mutual TLS. Certificate
+authorization remains the deployment owner's responsibility. No browser cookies,
+bearer tokens, local credential discovery or TLS-verification bypass is provided.
+If the deployment cannot authorize this client, retain the authorized file-export
+workflow rather than weakening service authentication.
 
-Successful real-data validation, final-contract compatibility and operator
-acceptance remain open gates. Synthetic automated tests are not production
-evidence. Do not resume broad UI feature batches in place of these checks.
+Open `http://127.0.0.1:49282/#inventory`, select **Check connection configuration**,
+then **Read current assertion settings**. Configuration checks do not read settings.
+`ZPR_AUDIT_PORT` optionally changes the local port. The adapter binds loopback only;
+it has no user authentication and must not be exposed as a network service or
+reverse-proxied to untrusted users. Local users can read its configured evidence.
+Host/origin checks reject cross-origin browser and DNS-rebinding requests. No
+cross-origin API access is enabled. `npm start` stays static-only, with imports
+available and connected reads explicitly unavailable.
+
+The UI never supplies an upstream URL, organization selector or credentials.
+The adapter exposes only `GET /api/audit/source` (non-secret configuration status)
+and `GET /api/audit/assertion-settings` (one settings snapshot plus acquisition
+metadata). It rejects redirects, non-200 responses, invalid JSON/UTF-8, service
+errors, load failures, scope mismatches, unexpected organizations, responses over
+256 KiB and reads exceeding 12 seconds. It never writes to the source, invokes an
+evaluator, reads runtime/history data, calls Simulator or falls back to fixtures.
+Responses use `Cache-Control: no-store`; there is no persistence or background polling.
+
+Successful reads use the existing source review, baseline comparison and report
+workflow, keeping fixtures separate. Every new read clears previous evidence and
+operator review fields, even on failure. Late reads cannot replace newer reads
+or file imports. Reports distinguish service-acquired snapshots from file imports
+and retain the configured endpoint, adapter retrieval time and upstream-response
+SHA-256 independently from operator-entered claims. The displayed filename/file
+size/file SHA-256 describe a **browser-generated settings-only JSON projection**;
+the separately labeled upstream-response digest fingerprints original bytes.
+Runtime fields are discarded, not reported as evaluation evidence. Neither digest
+authenticates origin; acquisition metadata trusts the local adapter and its clock,
+and does not prove publication time, activation, freshness or historical validity.
+Downloaded HTML may contain sensitive policy text and internal endpoint names.
 
 ## Backend building blocks
 

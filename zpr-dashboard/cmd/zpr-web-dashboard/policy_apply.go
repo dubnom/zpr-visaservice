@@ -33,7 +33,7 @@ func policyContainerDigest(container []byte) string {
 
 func prepareReviewedPolicyPair(ctx context.Context, store *changereview.Store, signer *operatordelegation.PolicySigner,
 	org, reviewID, operationID string, current changereview.Proposal, stage stagedPolicyCandidate,
-	container []byte, receiver operatordelegation.PolicyCurrentState, allowSelf bool, now time.Time,
+	container []byte, receiver operatordelegation.PolicyCurrentState, now time.Time,
 ) ([]byte, operatordelegation.PolicyProof, error) {
 	if store == nil || signer == nil {
 		return nil, operatordelegation.PolicyProof{}, errors.New("review store and explicit policy signer required")
@@ -41,7 +41,7 @@ func prepareReviewedPolicyPair(ctx context.Context, store *changereview.Store, s
 	if err := signer.ValidateScope(org, receiver.TargetID, now); err != nil {
 		return nil, operatordelegation.PolicyProof{}, err
 	}
-	record, actor, err := store.ApprovedPolicy(ctx, org, reviewID, current, allowSelf)
+	record, actor, err := store.ApprovedPolicy(ctx, org, reviewID, current)
 	if err != nil {
 		return nil, operatordelegation.PolicyProof{}, err
 	}
@@ -208,4 +208,9 @@ func (c *policyApplyClient) apply(ctx context.Context, store *changereview.Store
 		result.Readback = &current
 	}
 	return finish(result)
+}
+
+func encodePolicyApproval(proof operatordelegation.PolicyProof) (string, error) {
+	b, err := json.Marshal(proof)
+	return string(b), err
 }

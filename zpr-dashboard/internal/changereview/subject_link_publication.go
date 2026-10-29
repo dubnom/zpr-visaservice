@@ -278,15 +278,14 @@ func (s *Store) ChangeSubjectLinkPublicationOnce(ctx context.Context, request Su
 			!review.Proposal.ExpiresAt.After(time.Now()) {
 			return state, ErrConflict
 		}
-		independent := false
+		approved := false
 		for _, event := range review.Events {
-			if event.Action == "approve-review" && subjectLinkPrincipal(event.Actor) &&
-				(event.Actor.Issuer != review.Proposal.Author.Issuer || event.Actor.Subject != review.Proposal.Author.Subject) {
-				independent = true
+			if event.Action == "approve-review" && subjectLinkPrincipal(event.Actor) {
+				approved = true
 			}
 		}
-		if !independent {
-			return state, ErrSelfReview
+		if !approved {
+			return state, ErrConflict
 		}
 		if err := checkSubjectLinkRegistry(ctx, tx, review.Proposal); err != nil {
 			return state, err

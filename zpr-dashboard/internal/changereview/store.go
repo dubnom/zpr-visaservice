@@ -20,10 +20,9 @@ import (
 )
 
 var (
-	ErrNotFound   = errors.New("change request not found")
-	ErrConflict   = errors.New("change request changed or is no longer awaiting review")
-	ErrSelfReview = errors.New("self-approval requires explicit single-operator configuration")
-	ErrInvalid    = errors.New("invalid change request")
+	ErrNotFound = errors.New("change request not found")
+	ErrConflict = errors.New("change request changed or is no longer awaiting review")
+	ErrInvalid  = errors.New("invalid change request")
 )
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,128}$`)
@@ -89,6 +88,27 @@ type Event struct {
 	Actor  Principal `json:"actor"`
 	Reason string    `json:"reason"`
 	At     time.Time `json:"at"`
+	// SelfReview marks an approval by the proposer: a single-operator review
+	// that is allowed but weaker than an independent one. It is derived from the
+	// proposal author on every read and write, never trusted from storage.
+	SelfReview bool `json:"self_review,omitempty"`
+}
+
+func markSelfReview(events []Event, author Principal) {
+	for i := range events {
+		events[i].SelfReview = (events[i].Action == "approve" || events[i].Action == "approve-review") &&
+			events[i].Actor.Issuer == author.Issuer && events[i].Actor.Subject == author.Subject
+	}
+}
+
+// SelfReviewed reports whether any approval came from the proposer.
+func (r Record) SelfReviewed() bool {
+	for _, event := range r.Events {
+		if event.SelfReview {
+			return true
+		}
+	}
+	return false
 }
 
 type Record struct {
@@ -499,7 +519,7 @@ func validProposal(p Proposal) bool {
 
 // ApprovedPolicy derives the approver only from the persisted immutable decision.
 // The caller must capture current source/stage server-side, never from request fields.
-func (s *Store) ApprovedPolicy(ctx context.Context, org, id string, current Proposal, allowSelf bool) (Record, Principal, error) {
+func (s *Store) ApprovedPolicy(ctx context.Context, org, id string, current Proposal) (Record, Principal, error) {
 	r, err := s.Get(ctx, org, id)
 	if err != nil {
 		return Record{}, Principal{}, err
@@ -517,9 +537,6 @@ func (s *Store) ApprovedPolicy(ctx context.Context, org, id string, current Prop
 		return Record{}, Principal{}, ErrConflict
 	}
 	actor := r.Events[1].Actor
-	if !allowSelf && actor.Issuer == p.Author.Issuer && actor.Subject == p.Author.Subject {
-		return Record{}, Principal{}, ErrSelfReview
-	}
 	return r, actor, nil
 }
 func (s *Store) Submit(ctx context.Context, p Proposal) (Record, error) {
@@ -591,6 +608,7 @@ func read(ctx context.Context, q queryer, org, id string) (Record, error) {
 		}
 		r.Events = append(r.Events, e)
 	}
+	markSelfReview(r.Events, r.Proposal.Author)
 	return r, rows.Err()
 }
 func (s *Store) Get(ctx context.Context, org, id string) (Record, error) {
@@ -651,7 +669,7 @@ func appendEvent(ctx context.Context, tx *sql.Tx, id string, e Event) error {
 	return err
 }
 
-func (s *Store) Decide(ctx context.Context, org, id, digest string, version int, action, reason string, actor Principal, allowSelf bool) (Record, error) {
+func (s *Store) Decide(ctx context.Context, org, id, digest string, version int, action, reason string, actor Principal) (Record, error) {
 	if !actor.Valid() || !cleanText(reason, 1024) || (action != "approve" && action != "reject" && action != "cancel") {
 		return Record{}, ErrInvalid
 	}
@@ -668,9 +686,6 @@ func (s *Store) Decide(ctx context.Context, org, id, digest string, version int,
 		return r, ErrConflict
 	}
 	self := actor.Issuer == r.Proposal.Author.Issuer && actor.Subject == r.Proposal.Author.Subject
-	if action == "approve" && self && !allowSelf {
-		return r, ErrSelfReview
-	}
 	if action == "cancel" && !self {
 		return r, ErrConflict
 	}
@@ -693,5 +708,6 @@ func (s *Store) Decide(ctx context.Context, org, id, digest string, version int,
 		return r, fmt.Errorf("persist review decision: %w", err)
 	}
 	r.Events = append(r.Events, event)
+	markSelfReview(r.Events, r.Proposal.Author)
 	return r, nil
 }

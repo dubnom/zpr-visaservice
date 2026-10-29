@@ -197,25 +197,6 @@ func seedOrganizationAssertions(ctx context.Context, repository policyRepository
 	return err
 }
 
-func populateOrganizationAssertions(directory, organizationID, databasePath string) error {
-	organization, err := loadSimulatorOrganization(directory, organizationID)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(organization.AssertionsSource) == "" {
-		return errors.New("organization has no default assertions")
-	}
-	if _, err := parseAssertions(organization.AssertionsSource); err != nil {
-		return err
-	}
-	repository, err := openSQLitePolicyRepository(databasePath)
-	if err != nil {
-		return err
-	}
-	defer repository.Close()
-	return seedOrganizationAssertions(context.Background(), repository, organization.AssertionsSource)
-}
-
 func organizationAssertionRecord(ctx context.Context, repository policyRepository) (policyRecord, error) {
 	categories, records, err := repository.Catalog(ctx)
 	if err != nil {

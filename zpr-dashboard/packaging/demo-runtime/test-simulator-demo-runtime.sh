@@ -3,6 +3,7 @@ set -eu
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 source_runtime_script=$script_dir/simulator-demo-runtime.sh
+sh "$script_dir/test-activate-packaged-demo.sh"
 temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/zpr-simulator-runtime-test.XXXXXX")
 temp_dir=$(CDPATH='' cd -- "$temp_dir" && pwd -P)
 socket_pid=
@@ -32,7 +33,9 @@ mkdir -p "$package_dir/runtime/organizations" "$package_dir/runtime/scenarios" \
     "$northstar_zpr_package_dir/runtime" "$stub_dir"
 printf '%s\n' 'owned by W2' >"$northstar_route_output/route-output.txt"
 mkdir -p "$zpr_package_dir/runtime"
-cp "$source_runtime_script" "$script_dir/config.toml" "$script_dir/simulation-environment.json" "$package_dir/runtime/"
+cp "$source_runtime_script" "$script_dir/verify-packaged-demo.sh" \
+    "$script_dir/activate-packaged-demo.sh" "$script_dir/config.toml" \
+    "$script_dir/simulation-environment.json" "$package_dir/runtime/"
 cp "$script_dir/organizations/demo.json" "$package_dir/runtime/organizations/"
 printf '%s\n' '{"id":"fixture-scenario"}' >"$package_dir/runtime/scenarios/fixture-scenario.json"
 runtime_script=$package_dir/runtime/simulator-demo-runtime.sh
@@ -357,6 +360,28 @@ demo_project="zprdemo-$(printf '%s' test-release | shasum -a 256 | cut -c1-12)"
 grep -F -- "-e SIMULATION_DEMO_PROJECT=$demo_project" "$FAKE_DOCKER_LOG" >/dev/null
 grep -F -- "-e SIMULATION_DEMO_IMAGE=$zpr_image_id" "$FAKE_DOCKER_LOG" >/dev/null
 grep -F -- "-e SIMULATION_DEMO_RELEASE_ID=test-release" "$FAKE_DOCKER_LOG" >/dev/null
+grep -F -- "-e SIMULATION_PACKAGED_DEMO_SCRIPT=/opt/zpr-simulator/runtime/verify-packaged-demo.sh" \
+    "$FAKE_DOCKER_LOG" >/dev/null
+python3 - "$FAKE_DOCKER_LOG" <<'PY'
+import sys
+
+for line in open(sys.argv[1], encoding="utf-8"):
+    arguments = line.split()
+    if "container" not in arguments or "run" not in arguments:
+        continue
+    script_index = arguments.index(
+        "SIMULATION_PACKAGED_DEMO_SCRIPT=/opt/zpr-simulator/runtime/verify-packaged-demo.sh"
+    )
+    activation_index = arguments.index(
+        "SIMULATION_ORGANIZATION_RESET_SCRIPT=/opt/zpr-simulator/runtime/activate-packaged-demo.sh"
+    )
+    image_index = arguments.index("zpr-simulator:test-release")
+    if script_index > image_index or activation_index > image_index:
+        raise SystemExit("packaged demo scripts were passed after the image")
+    break
+else:
+    raise SystemExit("Docker container run was not recorded")
+PY
 [ -d "$state_dir/workspace-db" ] && [ -d "$state_dir/published-directories" ] &&
     [ -d "$state_dir/scenarios" ] || {
         echo "Simulator state directories were not created" >&2

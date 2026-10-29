@@ -28,11 +28,96 @@ func TestValidatesSystemAndPairedCompanionBundles(t *testing.T) {
 }
 
 func TestRejectsMissingRequiredSystemCapability(t *testing.T) {
-	manifest := testSystemManifest(t, t.TempDir())
-	manifest.Components = removeComponentProviding(manifest.Components, "gateway")
-	if err := manifest.Validate(); err == nil || !strings.Contains(err.Error(), `"gateway"`) {
-		t.Fatalf("Validate() error = %v, want missing gateway", err)
+	for _, capability := range requiredSystemCapabilities {
+		t.Run(capability, func(t *testing.T) {
+			manifest := testSystemManifest(t, t.TempDir())
+			manifest.Components = removeComponentProviding(manifest.Components, capability)
+			if err := manifest.Validate(); err == nil || !strings.Contains(err.Error(), `"`+capability+`"`) {
+				t.Fatalf("Validate() error = %v, want missing %s", err, capability)
+			}
+		})
 	}
+}
+
+func TestRejectsMissingBundledSystemCapability(t *testing.T) {
+	for _, capability := range bundledSystemCapabilities {
+		t.Run(capability, func(t *testing.T) {
+			manifest := testSystemManifest(t, t.TempDir())
+			manifest.Components = removeComponentProviding(manifest.Components, capability)
+			if err := manifest.Validate(); err == nil || !strings.Contains(err.Error(), `"`+capability+`"`) {
+				t.Fatalf("Validate() error = %v, want missing %s", err, capability)
+			}
+		})
+	}
+}
+
+func TestSystemBundleCapabilitySetsCoverWorkingNetworkBaseline(t *testing.T) {
+	required := map[string]bool{}
+	for _, capability := range requiredSystemCapabilities {
+		required[capability] = true
+	}
+	bundled := map[string]bool{}
+	for _, capability := range bundledSystemCapabilities {
+		bundled[capability] = true
+	}
+	for _, capability := range []string{
+		"visa-service", "node-runtime", "protected-dns", "logging",
+		"control-room", "operator-identity", "trusted-attributes",
+		"ldap-bootstrap", "bootstrap-config", "initial-policy",
+	} {
+		if !required[capability] && !bundled[capability] {
+			t.Errorf("working-network baseline capability %q is not mandatory", capability)
+		}
+	}
+}
+
+func TestRejectsIncorrectSystemCapabilityInstallMode(t *testing.T) {
+	for _, capability := range requiredSystemCapabilities {
+		t.Run(capability+"/not-required", func(t *testing.T) {
+			manifest := testSystemManifest(t, t.TempDir())
+			component := systemComponentProviding(&manifest, capability)
+			component.Install = "selectable"
+			if err := manifest.Validate(); err == nil {
+				t.Fatal("Validate() accepted a selectable required capability")
+			}
+		})
+		t.Run(capability+"/wrong-scope", func(t *testing.T) {
+			manifest := testSystemManifest(t, t.TempDir())
+			component := systemComponentProviding(&manifest, capability)
+			component.Scope = "production-support"
+			if err := manifest.Validate(); err == nil {
+				t.Fatal("Validate() accepted a required capability outside the ZPR scope")
+			}
+		})
+	}
+	for _, capability := range bundledSystemCapabilities {
+		t.Run(capability+"/not-bundled-default", func(t *testing.T) {
+			manifest := testSystemManifest(t, t.TempDir())
+			component := systemComponentProviding(&manifest, capability)
+			component.Install = "selectable"
+			if err := manifest.Validate(); err == nil {
+				t.Fatal("Validate() accepted a missing or optional baseline capability")
+			}
+		})
+		t.Run(capability+"/wrong-scope", func(t *testing.T) {
+			manifest := testSystemManifest(t, t.TempDir())
+			component := systemComponentProviding(&manifest, capability)
+			component.Scope = "zpr"
+			if err := manifest.Validate(); err == nil {
+				t.Fatal("Validate() accepted a bundled capability in the ZPR service scope")
+			}
+		})
+	}
+}
+
+func systemComponentProviding(manifest *Manifest, capability string) *Component {
+	for index := range manifest.Components {
+		component := &manifest.Components[index]
+		if len(component.Provides) == 1 && component.Provides[0] == capability {
+			return component
+		}
+	}
+	panic("test manifest has no component for " + capability)
 }
 
 func TestRejectsHostComponentPlatformMismatch(t *testing.T) {

@@ -1,3 +1,5 @@
+//go:build !production
+
 package main
 
 import (
@@ -653,18 +655,6 @@ func simulatorOrganizationAllowsUser(manifest simulatorManifest, organization si
 		return false
 	}
 	return simulatorMachineAllowsUser(manifest, machineID, user)
-}
-
-func validLDAPAttributeName(value string) bool {
-	if value == "" {
-		return false
-	}
-	for _, char := range value {
-		if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-') {
-			return false
-		}
-	}
-	return true
 }
 
 func handleSimulatorOrganizations(w http.ResponseWriter, r *http.Request) {

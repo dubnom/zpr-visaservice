@@ -8,16 +8,22 @@ OpenLDAP/OpenObserve/Dex state, verified TLS and protocol readiness. It does not
 start/require Simulator, register sources, ingest logs or implement the complete
 first-install BOM. Its mixed-platform package set is evaluation-only, not a
 qualified Ubuntu/amd64 appliance or a replacement for the contracts below.
+It is a component subset, not a working ZPR network under the
+[product-wide minimum](../../../System%20release%20plan.md#common-minimum-for-a-working-zpr-network):
+it does not by itself prove an admitted node, active Visa policy, protected DNS
+resolution, or end-to-end durable logging.
 
-## Current objective: paired demo packages
+## Current objective: paired dataplane demo packages
 
-The immediate goal is a working ZPR demo archive and a separate, version-matched
-Simulator companion for an isolated disposable Ubuntu 26.04.1 LTS x86-64 host. The
+The immediate goal is a runnable ZPR dataplane demo archive and a separate,
+version-matched Simulator companion for an isolated disposable Ubuntu 26.04.1
+LTS x86-64 host. The
 [demo package contract](DEMO-PACKAGE-CONTRACT.md) defines the allowed demo
 shortcuts, contents, downloaded-artifact acceptance and the remaining packaging
 blockers. In particular, Simulator's Docker-socket access is root-equivalent;
 the user approved it only for isolated disposable demo hosts. Nothing in the
-demo contract permits publishing or production use.
+demo contract permits publishing or production use. This pair is not a
+baseline-complete ZPR network and must not be described as one.
 For package-mode Simulator startup, the
 [multinode demo wrapper](../../../../zpr-demo/multinode-demo/packaging/run-simulator-package-mode.sh)
 requires an explicit dashboard support tree and locally loaded image reference,
@@ -177,18 +183,19 @@ Production uses explicitly selected existing or bundled identity/attribute and
 logging services, plus company-provided bootstrap DNS and TLS.
 Protected ZPR service DNS ships with the real ZPR package in both company
 and lab installations and must remain operational without Simulator.
-For a lab, the separately installed Simulator companion can supply lab LDAP,
-OIDC and optional bootstrap DNS through explicit endpoint, identity/mapping and
-trust inputs to the normal ZPR installer. Protected DNS remains ZPR-owned.
+For a lab, the separately installed Simulator companion can supply lab LDAP
+and OIDC through explicit endpoint, identity/mapping and trust inputs to the
+normal ZPR installer. Bootstrap names use existing network DNS; the companion
+does not run a separate bootstrap BIND service. Protected DNS remains ZPR-owned.
 Production bundled services are not owned by that companion.
 This does not make Simulator a runtime dependency or let the
 production package read simulation manifests, profiles or sessions.
 
-Existing network DNS resolves bootstrap/login hostnames by default, also in
-the lab. Companion-hosted bootstrap DNS is an explicit isolated-lab option,
-not an installation prerequisite. The lab generator can export the required
-underlay records without generating a bootstrap server; protected ZPR BIND
-configuration is independently selectable. mDNS/`.local` support is not added.
+Existing network DNS resolves bootstrap/login hostnames in company and lab
+installations. The lab generator can export the required underlay records; it
+does not generate or supervise a companion bootstrap DNS server. Protected ZPR
+BIND configuration is independently selectable and its service lifecycle
+belongs to the ZPR package. mDNS/`.local` support is not added.
 
 Supporting services must run independently of the Simulator application.
 Acceptance must demonstrate the same ZPR artifacts operating when Simulator is
@@ -681,7 +688,7 @@ source and image candidates are tracked in the
 | Authentication | [`zpr-bas`](../../../../zpr-bas/), `cargo build --locked --release` | BAS TLS identity, protected actor records and shared BAS/VS token-verification secret | BAS 0.1.0 is an approved engineering source candidate only; standalone BAS registry access must be reconciled with Enrollment sole-writer ownership before selecting it as the production provider. OIDC human login is a separate trust path |
 | Compiler/evaluator | [`zplc`](../../../../zpr-compiler/), `cargo build --locked --release`; `zpt` from Visa workspace | ZPLC configuration, per-company signing material, input schema and policy binary compatibility | Pin compiler/common-library versions and native runtime dependencies; no compiler source checkout on customer host |
 | Operator identity/directory | Bundled production provider path or external company OIDC/directory | Issuer/subject grants, redirect origin, TLS, protected client/bind credentials and configured attribute mappings | User requires a bundled new-user path and documented external integrations. Dex v2.44.0 is only a provisional image candidate; OpenLDAP image/version, production mappings and first-admin recovery remain open. Lab provider state/config is not a production default |
-| DNS | Existing network DNS (optional companion bootstrap DNS for isolated labs), distinct from [`ZPR BIND9`](../../../dns/bind9/) behind an adapter | Explicit bootstrap endpoints; protected DNS address/policy, publisher and separate viewer TSIG identities | Protected BIND9 is required in the first-install BOM. Package its adapter and independent supervised namespace; Visa publisher requires `nsupdate`. Bootstrap must not depend on ZPR DNS. Config generation exists, not service deployment; BIND image/package remains unpinned, with no Ubuntu amd64 runtime qualification |
+| DNS | Existing network DNS for bootstrap names; protected [`ZPR BIND9`](../../../dns/bind9/) behind an adapter | Explicit bootstrap endpoints; protected DNS address/policy, publisher and separate viewer TSIG identities | Protected BIND9 is required in the first-install BOM. Package its adapter and independent supervised namespace; Visa publisher requires `nsupdate`. Bootstrap must not depend on ZPR DNS. Config generation exists, not service deployment; BIND image/package remains unpinned, with no Ubuntu amd64 runtime qualification |
 | Gateway | Existing gateway runtime and [`rollout contract`](../../scripts/gateway-runtime-rollout.md) | Independent installed identity, allowlist, destination/forwarding configuration and adapter link | Required in the first-install BOM by user direction; editor activation/rollback, fresh-host packaging and CONNECT enforcement limits remain unresolved. Existing image overlays a baseline and is not a from-scratch gateway bundle |
 | Logging/telemetry | Existing [`observability`](../../../observability/) profile or a configured external logging service | Persistent backend data, retention, operator endpoints and protected credentials | Logging is a required capability with bundled or existing-provider mode. OpenObserve is a provisional pinned-image candidate, but the profile remains optional, needs license/runtime/access-control qualification, and is not a generic external-provider contract |
 | Simulator | Separate companion package | Simulation profiles, workloads and manifests; drives the installed ZPR services through supported production contracts | Excluded from the production appliance and its startup dependencies; companion must pair with the exact same ZPR release artifacts and use separate lab-provider state |
@@ -802,10 +809,14 @@ The standalone `endpoint-adapter` artifact may declare its own `os/architecture`
 that explicit value is not evidence that the platform is supported or qualified.
 
 System manifests must include the required ZPR service capabilities, including
-Gateway and protected DNS, plus bundled-default operator identity,
-actor-authentication, trusted-attribute and logging capabilities. These
-bundled artifacts remain available when an installation explicitly selects
-external providers instead. A production manifest rejects Simulator, lab-only
+Gateway and protected DNS, the bootstrap configuration, and an initial policy.
+They must also include bundled-default operator identity,
+actor-authentication, trusted-attribute, logging and readable LDAP bootstrap
+capabilities. These bundled artifacts remain available when an installation
+explicitly selects external providers instead. This is a package-completeness
+gate: the manifest does not prove that LDAP is readable at runtime, the initial
+policy is active, or any service is healthy. Those remain installer and
+end-to-end acceptance gates. A production manifest rejects Simulator, lab-only
 and bootstrap-DNS capabilities. Companion manifests require Simulator and lab
 LDAP/OIDC, and may include bootstrap DNS only as a selectable lab service. The
 manifest does not encode or enforce runtime provider-state separation; that

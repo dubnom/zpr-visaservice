@@ -112,12 +112,14 @@ the existing M0-M6 ordinary-client and production-boundary gates:
   TLS verification. B3 now supplies ordinary named-source configuration,
   allowlisted lifecycle ingestion and authorized Control Room querying; raw
   application-log collection and release acceptance remain separate.
-- **B1-RECOVERY (design/task, not implemented):** local CLI reset generates a
-  unique one-time password into a new protected file, never stdout/logs; verify
-  local ownership, lock, supported provider update, invalidate sessions and require
-  replacement on first use. Include expiry/replay/rollback and independent logging
-  admin tests. Dex static credentials cannot enforce this safely as a small reset
-  script; do not claim editing a hash or deleting state is admin recovery.
+- **B1-RECOVERY (evaluation-only implementation):** the stopped-host CLI reset
+  rotates the Dex static password, client secret and subject, preserves provider
+  data, audits without credentials and delivers a fresh 256-bit password once to
+  a new protected file or terminal. Focused tests cover local ownership, lifecycle
+  locking, safe delivery and fail-closed interruption. This is one-time disclosure,
+  not enforced single-use: Dex does not enforce replacement, expiry or replay, old
+  signed JWTs remain valid until expiry, and OpenObserve's independent admin is not
+  reset. Live IdP/browser recovery and production qualification remain open.
 - **B4 decision:** Control-Service owns durable **per-source** change-watcher
   checkpoints/resync health. B4 now embeds the existing RFC 4533 consumer with
   production-source opt-in, restart resume, metadata-only health and the existing
@@ -527,7 +529,7 @@ Depends on M1 and the required M2 operator contracts.
   endpoint identities. For the demo, pre-enroll a small fixed set through
   existing supported tools rather than making native key/helper development a
   prerequisite. Persist each identity; do not clone endpoint keys.
-- [ ] **U05:** Run normal allow/deny workloads against services. Compare one
+- [x] **U05:** Run normal allow/deny workloads against services. Compare one
   generated client and one non-Simulator client under equivalent policy.
   Scenario intent/expected outcomes stay in Simulator; Control Room reports
   only independently observed production events.
@@ -621,21 +623,185 @@ drives an evaluation install's own data plane instead.
     at its position, and cross-node workloads match policy with no
     mismatches.
 
+#### Known data-plane defects
+
+Open defects found while running the live installs. They are outside the
+Simulator/Control Room boundary work, but they affect long-running
+environments, so each must be fixed or explicitly accepted before M5.
+
+- [ ] **DP-K01 (fixed and running live; zpr-core merge pending; found
+  2026-10-26, owner: zpr-core adapter/node):** an endpoint adapter whose dock
+  link fails keep-alive never recovers.
+  - **Seen:** once, on northstar endpoint-02, about 4 minutes after start
+    while `make test` loaded the host. Both the node (link 5) and the adapter
+    logged "failed to respond to keep-alive messages" at 15:27:00Z. The node
+    removed the link and revoked its visas. The adapter then retried every
+    ~25 s with "noise: handshake timeout - node-adapter connection failed"
+    and never re-tethered. The Simulator reported every allowed probe to or
+    from endpoint-02 as `unreachable` (6 mismatches per round).
+  - **Second symptom:** after the stuck container was replaced, the new
+    adapter linked and TCP/UDP visas worked again. But ICMP between
+    re-connected adapters (endpoint-01/03 and client-01, which were also
+    recycled) stayed broken for at least 7 minutes. No ICMP visa requests
+    reached the VS for those flows, so the node dropped them before asking
+    the VS. The node's denied-flow backoff is capped at 60 s, so it is not
+    the deny cache.
+  - **Workaround:** restart the install with the same command (identity,
+    CA and passwords are kept). After that, all 18 Simulator probes matched.
+  - **Evidence:** `zpr-dashboard/.evaluation-build/stuck-endpoint-02-adapter.log`
+    and `stuck-endpoint-02-node.log` (local, not committed).
+  - **Reproduced** on a two-endpoint trial install by pausing endpoint-02 for
+    10 s (`docker pause`): TCP recovered (each connection is a new 5-tuple)
+    but ICMP to and from endpoint-02 stayed broken.
+  - **Root causes (three, all in `zpr-core/adapter/ph`):**
+    1. Revoking a visa (VS revocation, expiry, or ejection for a removed
+       link) silently removed the node's PFT entries on *surviving* adapter
+       links. Those adapters kept sending on the stale stream ID and the node
+       dropped it ("Unknown Stream ID"). ICMP echo always reuses one 5-tuple,
+       so it never re-bound.
+    2. Tether IDs are scoped to the dock link, but the adapter kept its ELT
+       across a dock-link restart, so the restarted adapter also sent on
+       stale IDs.
+    3. **DP-K02:** when a replacement adapter re-authorized an address before
+       the stale link timed out, the stale link's deregistration made the VS
+       delete the new actor (`SourceNotFound`/`DestNotFound` for good). This
+       is the likely cause of the "never recovers" symptom after the
+       container replacement above.
+  - **Fix:** zpr-core branch `dp-k01/link-recovery`, commit `9e7fc00` (from
+    `3c7ef60`; local only, not merged into the default zpr-core checkout):
+    1. Revocation paths return the removed forwarding entries, and the node
+       sends a per-flow `StreamIdWithdrawal` to each affected adapter, which
+       drops the matching ELT entry so its next packet re-binds.
+    2. The adapter clears its ELT during dock-link cleanup.
+    3. Deregistration skips addresses now held by another live link.
+  - **Verification:**
+    - `ph` unit tests: 321 pass, including new regression tests for the
+      withdrawn entries and ELT removal/clear.
+    - Clippy warnings are identical to the `3c7ef60` baseline.
+    - On the trial install (image built with `ZPR_CORE_DIR`), these all
+      recovered every allow probe in every direction for ping and TCP: three
+      10 s and one 30 s endpoint pauses, a 10 s node pause, and replacing all
+      endpoint containers in place.
+  - **Not reproduced:** the adapter retrying "noise: handshake timeout"
+    forever. Node and endpoint pauses both re-tethered cleanly. Reopen this
+    if it recurs with the fixed image.
+  - **Follow-up (not a correctness issue):** a restarted adapter leaks its
+    stale DLT entries; the node binds fresh egress IDs, so they are not
+    reused. The node's `Pft::clear` is also still a TODO.
+  - **Rolled out live:** the `:local` image was rebuilt with
+    `ZPR_CORE_DIR=<zpr-core worktree> sh packaging/evaluation/data-plane/build.sh`
+    (the previous image is kept as `:pre-dpk01`). Each install was restarted
+    with its same command and the Simulator relaunched the endpoints. Redwood
+    and great-lakes each passed a 12/12 endpoint ping/TCP matrix, the
+    northstar client matched policy, and the Simulator reported 0 mismatches.
+  - **Remaining:** merge the zpr-core branch upstream; then tick this item.
+    The Simulator's workload mismatches remain the detector for a recurrence.
+
+- [ ] **DP-K03 (found 2026-10-28, owner: zpr-core adapter; Visa side
+  accepted for now):** an endpoint adapter stops getting visas about 4 hours
+  after it enrolls, because it never re-authenticates.
+  - **Seen:** on the r5 paired demo, Alice's
+    `device.zpr.authority=zpr-bootstrap` attribute (source `zpr`, 4 h
+    lifetime, `DEFAULT_AUTH_EXPIRATION`) expired at 05:46:53Z. Visa then logged
+    `trusted service not found: ID=zpr` and `attribute refresh indeterminate`
+    and denied every visa request. Alice, then web0, lost HTTP to OciWeb, so
+    the packaged demo verifier failed its first check. Nodes got
+    `must reconnect to renew authentication` at the 4 h mark and renewed.
+  - **Root causes (two):**
+    1. Visa can only refresh a claim through a trusted service with the same
+       source ID. Built-in issuers such as `zpr` have none, so
+       `refresh_expired_attributes` (`vs/src/actor_attributes.rs`) can never
+       extend them; only re-authentication can.
+    2. The endpoint adapter (`zpr-core/adapter/ph`) has no credential-expiry
+       handling: it never reconnects and re-enrolls before the claim lapses.
+  - **Workaround:** restart the adapter process (restarting the container
+    also kills docker-exec'd adapters, which must be relaunched by hand). If
+    the same address re-registers before the old session clears, the VS
+    evicts the new actor (DP-K02-like); wait about 20 s after stopping the
+    old adapter.
+  - **Decision:** fix in the adapter (reconnect and re-enroll before the
+    claim expires). Making built-in claims refreshable in Visa is a security
+    design change and is deferred.
+  - **Fix (written, not yet rolled out):** zpr-core branch
+    `dp-k03/adapter-reauth`, commit `3aa7af8` (stacked on
+    `dp-k01/link-recovery`, because an orderly re-dock depends on the DP-K02
+    fix; local only). When an adapter dock link becomes Active it arms a
+    timer (default 3 h, `adapter.reauth_interval_secs` in the adapter TOML;
+    0 disables, minimum 60). On expiry it closes the link with the normal
+    terminate/ack path and the existing restart holddown re-docks and
+    re-authenticates. The timer is cleared on any state change. `ph` unit
+    tests: 324 pass, including config validation and timer arm/clear tests;
+    clippy warnings match the baseline.
+  - **Live check (2026-10-28, r5 paired demo, no image rebuild):** the branch
+    was built in an `ubuntu:24.04` container on the workbench (matches the
+    runtime image's glibc 2.39) and copied into the alice and web0 containers
+    as `/app/bin/ph-dpk03` (the shipped `/app/bin/ph` is untouched). With
+    `reauth_interval_secs = 120` for both adapters, an 18-minute soak ran an
+    Alice→OciWeb HTTP probe every 15 s across 9-11 re-docks per adapter:
+    57 probes passed and 10 failed. Every failure fell inside a 5-6 s re-dock
+    window of Alice (new address each time) or web0 (same fixed address, no
+    DP-K02 eviction), and each recovered on its own. The soak also crossed
+    Alice's 16:04:40Z attribute-file TTL: Visa refreshed it (new expiry
+    17:04:23Z), so that source is not a second expiry problem. Both adapters
+    now run `ph-dpk03` with the default 3 h interval.
+  - **Cost:** each re-dock is a brief (about 5-6 s) outage for that endpoint
+    and gives it a new ZPR address unless one is pinned. A longer
+    `reauth_interval_secs` (up to just under the 4 h lifetime) reduces
+    churn; make-before-break re-docking is a possible follow-up.
+  - **Remaining:** a real 4 h soak with the default interval (first re-dock at
+    about 19:10Z); bake the fix into the packaged image (the demo deploy
+    script launches adapters from `/app/bin/ph` and relaunches nothing after a
+    container restart); confirm interactive (AuthCode) adapters accept
+    periodic re-auth or set the interval to 0; merge zpr-core; then tick this
+    item.
+
 ### M4 - Enforce separation in builds, configuration and lifecycle
 
 Depends on M2 and M3. This closes deployable boundaries, not just code naming.
 
-- [ ] **P01:** Give production and Simulator separate entrypoints/configuration,
+- [x] **P01:** Give production and Simulator separate entrypoints/configuration,
   startup and shutdown ownership. Finish the minimal package/import extraction
   needed to prevent production importing Simulator code; reuse neutral helpers.
+  Production builds use `main_production.go` with `-tags production`; the
+  default build uses `main_lab.go`. Production-tagged package tests verify the
+  selected Go source/import graph, reject non-production modes, and exercise the
+  production composition with Simulator unavailable. Default and production
+  package tests, builds, and vet pass. This closes the compile-time/entrypoint
+  boundary only; P02-P05 and the M4 exit evidence remain open.
 - [ ] **P02:** Produce a production deployment with no Simulator executable,
   routes, static pages, manifests, scenario mounts or lab defaults. Reject
   missing explicit operator configuration rather than discovering demo values.
-- [ ] **P03:** Independently supervise lab LDAP/OIDC/DNS. Document which
-  disposable resources belong to the lab and which services are shared.
+  The production package candidate now contains only the production binary and
+  its two manifests; package tests verify Simulator mode is rejected and
+  Control Room refuses to start without explicit TLS, OIDC and organization
+  configuration. Production source/import and asset tests cover the compiled
+  and served boundaries. The installed-deployment/cold-start acceptance remains
+  open; this is not deployment evidence.
+- [ ] **P03:** Independently supervise lab LDAP/OIDC. Document which disposable
+  resources belong to the lab and which services are shared; keep bootstrap
+  names on existing network DNS and integrate protected DNS with the production
+  package lifecycle.
+  The companion LDAP/Dex Compose project has independent per-install identity
+  and persistent state, with generated stop/restart instructions and a
+  container-recreation identity test. Ownership is now documented in the
+  Simulator packaging guide. Per the user's 2026-10-26 direction, the companion
+  no longer generates an optional bootstrap-BIND role; bootstrap names use
+  existing network DNS, while required protected BIND is production-owned.
+  P03 remains open until protected DNS has production package
+  namespace/state/supervisor integration and restart evidence. The envelope
+  model is deferred and is not an implemented namespace boundary.
 - [ ] **P04:** Add CI import/configuration/route checks and runtime boundary
-  tests. Capture browser and server egress plus file-access evidence; browser
-  request interception alone cannot detect server-side reverse dependencies.
+  tests. The dashboard workflow now has explicit production-tagged build/test/
+  vet and production browser-boundary jobs covering compiler-selected imports,
+  configuration rejection, production routes/assets, process startup, browser
+  navigation and reverse-request interception. CI also builds the protected
+  BIND image and validates both standalone and Simulator configurations,
+  including their configured zones, with disposable owner-only key/zone inputs.
+  The checker requires a local Docker Unix socket and disables networking for
+  validation containers. Capture browser and server egress plus file-access
+  evidence; browser request interception alone cannot detect server-side
+  reverse dependencies. BIND configuration checks do not establish service
+  lifecycle or restart evidence.
 - [ ] **P05:** Test cold start, independent restart and client disconnects.
   Stopping Simulator may naturally stop its workload traffic and disconnect its
   endpoints, but must not cause production dependency errors or erase state.

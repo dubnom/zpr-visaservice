@@ -150,10 +150,6 @@ BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END;`); err != nil {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.ApproveSubjectLinkWithAuthorityOnce(ctx, p.Organization, record.ID, record.Digest,
-		"1", p.RegistryRevision, "Self", p.Author, "self"); !errors.Is(err, ErrSelfReview) {
-		t.Fatal("guarded self-review allowed", err)
-	}
 	reviewer := Principal{Issuer: p.Author.Issuer, Subject: "reviewer"}
 	results := make(chan error, 2)
 	for i := 0; i < 2; i++ {

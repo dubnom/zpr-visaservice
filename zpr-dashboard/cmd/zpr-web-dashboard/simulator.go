@@ -1,3 +1,5 @@
+//go:build !production
+
 package main
 
 import (
@@ -198,9 +200,6 @@ func simulatorScript() string {
 }
 
 func runSimulator(listen string) (runErr error) {
-	if productionAssetsOnly {
-		return errors.New("Simulator mode is unavailable in the production build; use the Simulator build")
-	}
 	securityContext, cancelSecurity := context.WithTimeout(context.Background(), 20*time.Second)
 	security, err := configuredSimulatorSecurity(securityContext, listen)
 	cancelSecurity()

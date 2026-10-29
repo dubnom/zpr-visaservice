@@ -61,7 +61,7 @@ It does not replace its release gates or the broader
 | Production editor workflows | Control Room / production-owned UI modules |
 | Simulated machine creation, activity, faults and workload control | Simulator |
 | Scenario definitions and execution timelines | Simulator |
-| Lab LDAP/OIDC/DNS lifecycle | Independently supervised companion services |
+| Lab LDAP/OIDC lifecycle | Independently supervised companion services; bootstrap DNS uses existing network DNS and protected ZPR DNS is production-owned |
 
 - Production never reads Simulator manifests, profiles, sessions or workloads.
 - Simulator uses supported authenticated APIs, not production databases or

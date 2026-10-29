@@ -11,16 +11,20 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -36,11 +40,28 @@ const evaluationDataPlaneImage = "zpr-evaluation-data-plane:local"
 // published only to host loopback at the configured -vs-admin-port.
 const evaluationDataPlaneAdminPort = 8182
 
+// evaluationDataPlaneDNSTransferPort is the container-side relay of the
+// read-only zone transfer; published to host loopback only.
+const evaluationDataPlaneDNSTransferPort = 5353
+
 var evaluationDataPlaneFiles = []string{
 	"dp-policy.zpl", "dp-policy.zplc", "dp-policy-signing.key", "dp-ca.crt",
 	"dp-node.crt", "dp-node.key", "dp-node-auth.key", "dp-node-auth.pub",
 	"dp-vs.zpr.crt", "dp-vs.zpr.key", "dp-vs-auth.key", "dp-vs-auth.pub",
 }
+
+var evaluationProtectedDNSFiles = []string{
+	"dp-dns.crt", "dp-dns.key", "dp-dns-auth.key", "dp-dns-auth.pub",
+	"dp-dns-publisher.key", "dp-dns-viewer.key", "dp-dns-named.conf",
+}
+
+const (
+	evaluationProtectedDNSAddress = "fd5a:5052::53"
+	// Substrate address of BIND's namespace; only the TSIG viewer may transfer.
+	evaluationProtectedDNSTransferAddress = "10.0.0.4"
+	evaluationProtectedDNSVisaAddress     = "fd5a:5052::1"
+	evaluationProtectedDNSBootstrap       = "\"vs.zpr\" = \"dp-vs-auth.pub\"\n"
+)
 
 // Per-install policy: the node, the VS adapter and optional evaluation
 // endpoints (bootstrap keys, shortcut X15) that may ping one another.
@@ -176,6 +197,9 @@ func evaluationDataPlaneListenerProtocol(listener evaluationDataPlaneListener) s
 // evaluationDataPlaneRequired lists the protected data-plane files for config.
 func evaluationDataPlaneRequired(config evaluationConfig) []string {
 	files := slices.Clone(evaluationDataPlaneFiles)
+	if config.ProtectedDNS {
+		files = append(files, evaluationProtectedDNSFiles...)
+	}
 	for index := 1; index <= config.DataPlaneEndpoints; index++ {
 		name := evaluationDataPlaneEndpointName(index)
 		files = append(files, "dp-"+name+"-auth.key", "dp-"+name+"-auth.pub")
@@ -186,9 +210,10 @@ func evaluationDataPlaneRequired(config evaluationConfig) []string {
 	return append(files, evaluationDataPlaneNodeFiles(config)...)
 }
 
-func renderEvaluationDataPlanePolicy(endpoints int, nodes []evaluationDataPlaneTopologyNode) (policy, compiler string) {
+func renderEvaluationDataPlanePolicy(endpoints int, nodes []evaluationDataPlaneTopologyNode, protectedDNS bool) (policy, compiler string) {
 	if endpoints == 0 {
-		return evaluationDataPlanePolicy, renderEvaluationDataPlaneTopology(evaluationDataPlaneCompilerConfig, nodes)
+		policy, compiler = evaluationDataPlanePolicy, renderEvaluationDataPlaneTopology(evaluationDataPlaneCompilerConfig, nodes)
+		return addEvaluationProtectedDNSPolicy(policy, compiler, protectedDNS)
 	}
 	var zpl, keys, services strings.Builder
 	zpl.WriteString(evaluationDataPlanePolicy)
@@ -228,7 +253,67 @@ func renderEvaluationDataPlanePolicy(endpoints int, nodes []evaluationDataPlaneT
 			}
 		}
 	}
-	return zpl.String(), strings.Replace(renderEvaluationDataPlaneTopology(evaluationDataPlaneCompilerConfig, nodes), evaluationDataPlaneBootstrapAnchor, keys.String(), 1) + services.String()
+	policy, compiler = zpl.String(), strings.Replace(renderEvaluationDataPlaneTopology(evaluationDataPlaneCompilerConfig, nodes), evaluationDataPlaneBootstrapAnchor, keys.String(), 1)+services.String()
+	return addEvaluationProtectedDNSPolicy(policy, compiler, protectedDNS)
+}
+
+func addEvaluationProtectedDNSPolicy(policy, compiler string, enabled bool) (string, string) {
+	if !enabled {
+		return policy, compiler
+	}
+	policy += fmt.Sprintf(`
+
+# EVALUATION ONLY protected authoritative DNS service.
+define ZprDNS as a service with device.zpr.adapter.cn:'zpr-dns' and zpr.addr:'%s'.
+define AuthenticatedZprDevice as a device with device.zpr.adapter.cn.
+define VisaDnsPublisher as an adapter with zpr.adapter.cn:'vs.zpr'.
+
+provide ZprDNS at dns.svc.zpr over TCP 53.
+  allow AuthenticatedZprDevice.
+  allow VisaDnsPublisher.
+`, evaluationProtectedDNSAddress)
+	compiler = strings.Replace(compiler, evaluationProtectedDNSBootstrap,
+		evaluationProtectedDNSBootstrap+`"zpr-dns" = "dp-dns-auth.pub"
+`, 1)
+	compiler += `
+[protocols.dns_tcp]
+l4protocol = "iana.TCP"
+port = 53
+
+[services.ZprDNS]
+protocol = "dns_tcp"
+`
+	return policy, compiler
+}
+
+func renderEvaluationProtectedDNSConfig() []byte {
+	return fmt.Appendf(nil, `acl zpr_clients { fd5a:5052::/32; };
+
+include "/run/zpr/zpr-vs-publisher.key";
+include "/run/zpr/zpr-dns-viewer.key";
+
+options {
+    directory "/var/cache/bind";
+    recursion no;
+    dnssec-validation no;
+    allow-recursion { none; };
+    allow-query-cache { none; };
+    allow-query { zpr_clients; };
+    allow-transfer { none; };
+    listen-on port 53 { %s; };
+    listen-on-v6 port 53 { %s; };
+};
+
+controls { };
+
+zone "svc.zpr" {
+    type primary;
+    file "/var/lib/bind/db.svc.zpr";
+    allow-query { zpr_clients; key zpr-dns-viewer; };
+    allow-transfer { key zpr-dns-viewer; };
+    update-policy { grant zpr-vs-publisher zonesub A AAAA; };
+};
+`, evaluationProtectedDNSTransferAddress, evaluationProtectedDNSAddress)
 }
 
 // generateEvaluationDataPlane renders unique per-install ZPR identities: an
@@ -284,6 +369,9 @@ func generateEvaluationDataPlane(files map[string][]byte, state string, inventor
 	files["dp-ca.crt"] = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
 	nodes := evaluationDataPlaneTopology(inventory)
 	actors := []struct{ name, cn string }{{"node", "node"}, {"vs.zpr", "vs.zpr"}}
+	if inventory.Config.ProtectedDNS {
+		actors = append(actors, struct{ name, cn string }{"dns", "zpr-dns"})
+	}
 	for index := 1; index < len(nodes); index++ {
 		actors = append(actors, struct{ name, cn string }{fmt.Sprintf("node%d", index), nodes[index].Name})
 	}
@@ -308,6 +396,9 @@ func generateEvaluationDataPlane(files map[string][]byte, state string, inventor
 		files["dp-"+actor.name+".key"] = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: private})
 	}
 	authNames := []string{"node", "vs"}
+	if inventory.Config.ProtectedDNS {
+		authNames = append(authNames, "dns")
+	}
 	for index := 1; index < len(nodes); index++ {
 		authNames = append(authNames, fmt.Sprintf("node%d", index))
 	}
@@ -320,8 +411,21 @@ func generateEvaluationDataPlane(files map[string][]byte, state string, inventor
 	}
 	// The CA key is deliberately not retained: endpoints are admitted by bootstrap key.
 	endpoints := inventory.Config.DataPlaneEndpoints
-	policy, compiler := renderEvaluationDataPlanePolicy(endpoints, nodes)
+	policy, compiler := renderEvaluationDataPlanePolicy(endpoints, nodes, inventory.Config.ProtectedDNS)
 	files["dp-policy.zpl"], files["dp-policy.zplc"] = []byte(policy), []byte(compiler)
+	if inventory.Config.ProtectedDNS {
+		secret := make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			return errors.New("cannot generate protected DNS publisher key")
+		}
+		files["dp-dns-publisher.key"] = fmt.Appendf(nil, "key \"zpr-vs-publisher\" {\n    algorithm hmac-sha256;\n    secret \"%s\";\n};\n", base64.StdEncoding.EncodeToString(secret))
+		viewer := make([]byte, 32)
+		if _, err := rand.Read(viewer); err != nil {
+			return errors.New("cannot generate protected DNS viewer key")
+		}
+		files["dp-dns-viewer.key"] = fmt.Appendf(nil, "key \"zpr-dns-viewer\" {\n    algorithm hmac-sha256;\n    secret \"%s\";\n};\n", base64.StdEncoding.EncodeToString(viewer))
+		files["dp-dns-named.conf"] = renderEvaluationProtectedDNSConfig()
+	}
 	if len(nodes) > 1 {
 		for index := range nodes {
 			files[evaluationDataPlaneNodeFile(index, ".toml")] = renderEvaluationDataPlaneNodeConfig(state, nodes, index)
@@ -457,6 +561,9 @@ func evaluationDataPlaneName(inventory evaluationInventory) string {
 // plane sees, each at its original absolute path so vs.toml stays valid.
 func evaluationDataPlaneMounts(state string, config evaluationConfig) (readOnly, writable []string) {
 	readOnly = append([]string{"vs.toml", "valkey.conf", "vs-admin-keys.toml", "server-chain.pem", "server-key.pem", "vs-trusted-services"}, evaluationDataPlaneFiles...)
+	if config.ProtectedDNS {
+		readOnly = append(readOnly, evaluationProtectedDNSFiles...)
+	}
 	// Endpoint and operator client public keys only: their private keys stay
 	// with the Simulator or the operator.
 	for _, name := range evaluationDataPlaneRequired(config) {
@@ -491,6 +598,9 @@ func evaluationDataPlaneArguments(state string, inventory evaluationInventory, i
 		"--label", "org.zpr.evaluation-install=" + inventory.InstallID,
 		"-p", fmt.Sprintf("127.0.0.1:%d:%d", inventory.Config.VSAdminPort, evaluationDataPlaneAdminPort),
 		"-e", "ZPR_DP_STATE=" + state}
+	if inventory.Config.ProtectedDNS && inventory.Config.DNSTransferPort != 0 {
+		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", inventory.Config.DNSTransferPort, evaluationDataPlaneDNSTransferPort))
+	}
 	if dock := evaluationDataPlaneTopology(inventory)[0]; dock.Substrate != "" {
 		args = append(args, "--ip", dock.Substrate, "-e", "ZPR_DP_NODE_SUBSTRATE="+dock.Substrate)
 	}
@@ -499,6 +609,12 @@ func evaluationDataPlaneArguments(state string, inventory evaluationInventory, i
 	}
 	if inventory.Config.subjectLinks() {
 		args = append(args, "-e", fmt.Sprintf("ZPR_DP_DELIVERY_PORT=%d", inventory.Config.SnapshotDeliveryPort))
+		if inventory.Config.DeliveryHost != "" {
+			args = append(args, "--add-host", "host.docker.internal:"+inventory.Config.DeliveryHost)
+		}
+	}
+	if inventory.Config.ProtectedDNS {
+		args = append(args, "-e", "ZPR_DP_PROTECTED_DNS=1")
 	}
 	readOnly, writable := evaluationDataPlaneMounts(state, inventory.Config)
 	for _, path := range readOnly {
@@ -624,4 +740,68 @@ func evaluationDataPlaneActorsAdmitted(body []byte, nodes ...string) bool {
 	}
 	walk(actors)
 	return len(found) == len(required)
+}
+
+func checkEvaluationProtectedDNS(ctx context.Context, inventory evaluationInventory) error {
+	if err := checkEvaluationDNSRecord(ctx, inventory, "dns.svc.zpr.", evaluationProtectedDNSAddress); err != nil {
+		return fmt.Errorf("protected DNS TCP query over the ZPR tunnel failed: %w", err)
+	}
+	if err := checkEvaluationDNSRecord(ctx, inventory, "vs.zpr.adapters.svc.zpr.", evaluationProtectedDNSVisaAddress); err != nil {
+		return fmt.Errorf("Visa Service dynamic DNS publication was not queryable over the ZPR tunnel: %w", err)
+	}
+	return nil
+}
+
+func checkEvaluationDNSRecord(ctx context.Context, inventory evaluationInventory, name, expected string) error {
+	args := append([]string{"exec", evaluationDataPlaneName(inventory)}, evaluationProtectedDNSQueryArguments(name)...)
+	command := exec.CommandContext(ctx, "docker", args...)
+	command.Env = evaluationDockerEnvironment()
+	output, err := command.Output()
+	if err != nil {
+		return err
+	}
+	if evaluationProtectedDNSAnswerMatches(output, expected) {
+		return nil
+	}
+	return fmt.Errorf("DNS record %s did not return expected address", name)
+}
+
+func evaluationProtectedDNSQueryArguments(name string) []string {
+	return []string{"ip", "netns", "exec", "zpr-vs", "dig", "+tcp", "+time=2", "+tries=1", "+short",
+		"AAAA", "@" + evaluationProtectedDNSAddress, name}
+}
+
+func evaluationProtectedDNSAnswerMatches(output []byte, expected string) bool {
+	expectedAddress, expectedErr := netip.ParseAddr(expected)
+	if expectedErr != nil {
+		return false
+	}
+	for _, answer := range strings.Fields(string(output)) {
+		address, err := netip.ParseAddr(answer)
+		if err == nil && address == expectedAddress {
+			return true
+		}
+	}
+	return false
+}
+
+// evaluationLinuxDeliveryHost returns the data-plane network gateway on Linux,
+// where host.docker.internal does not exist and a loopback-only listener is
+// unreachable from the container. Other hosts keep the loopback listener.
+func evaluationLinuxDeliveryHost(ctx context.Context, inventory evaluationInventory) (string, error) {
+	if runtime.GOOS != "linux" || !inventory.Config.subjectLinks() {
+		return "", nil
+	}
+	command := exec.CommandContext(ctx, "docker", "network", "inspect", "-f", "{{range .IPAM.Config}}{{.Gateway}} {{end}}", evaluationDataPlaneName(inventory))
+	command.Env = evaluationDockerEnvironment()
+	output, err := command.Output()
+	if err != nil {
+		return "", errors.New("cannot inspect the data-plane Docker network")
+	}
+	for _, field := range strings.Fields(string(output)) {
+		if address := net.ParseIP(field); address != nil && address.To4() != nil {
+			return address.String(), nil
+		}
+	}
+	return "", errors.New("the data-plane Docker network has no IPv4 gateway")
 }

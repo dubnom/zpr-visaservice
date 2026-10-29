@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -189,12 +190,20 @@ func TestEvaluationVisaPolicyMatchesFixture(t *testing.T) {
 
 func TestEvaluationVisaPolicyInstalledOnce(t *testing.T) {
 	state := t.TempDir()
+	required, err := evaluationRequiresInitialPolicy(state)
+	if err != nil || !required {
+		t.Fatalf("new install policy requirement = %v, %v; want required", required, err)
+	}
 	first := evaluationVisaArguments(state)
 	if len(first) != 3 || first[2] != filepath.Join(state, "vs-policy.bin2") {
 		t.Fatalf("first start must install the bundled policy: %v", first)
 	}
 	if err := os.WriteFile(filepath.Join(state, evaluationVisaPolicyMarker), nil, 0o600); err != nil {
 		t.Fatal(err)
+	}
+	required, err = evaluationRequiresInitialPolicy(state)
+	if err != nil || required {
+		t.Fatalf("retained install policy requirement = %v, %v; want current policy accepted", required, err)
 	}
 	if later := evaluationVisaArguments(state); len(later) != 2 {
 		t.Fatalf("restart must keep the stored policy: %v", later)
@@ -231,6 +240,69 @@ func TestEvaluationVisaRuntimeResolve(t *testing.T) {
 	if err != nil || resolved.ValkeyServer != valkey {
 		t.Fatalf("valid executables rejected: %v", err)
 	}
+}
+
+func TestEvaluationPolicyBundleMatches(t *testing.T) {
+	expected := []byte("compiled initial policy container")
+	body := evaluationPolicyBundleForTest(t, 0, "base64;zip;1.2.3", expected)
+	if err := evaluationPolicyBundleMatches(body, expected); err != nil {
+		t.Fatalf("evaluationPolicyBundleMatches() error = %v", err)
+	}
+	if err := evaluationPolicyBundleMatches(body, nil); err != nil {
+		t.Fatalf("evaluationPolicyBundleMatches() rejected a valid retained policy: %v", err)
+	}
+}
+
+func TestEvaluationPolicyBundleRejectsInvalidOrChangedPolicy(t *testing.T) {
+	expected := []byte("compiled initial policy container")
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		{name: "different policy", body: evaluationPolicyBundleForTest(t, 0, "base64;zip;1.2.3", []byte("another policy"))},
+		{name: "wrong policy id", body: evaluationPolicyBundleForTest(t, 1, "base64;zip;1.2.3", expected)},
+		{name: "wrong encoding", body: evaluationPolicyBundleForTest(t, 0, "base64;gzip;1.2.3", expected)},
+		{name: "invalid json", body: []byte(`{"config_id":`)},
+		{name: "invalid base64", body: []byte(`{"config_id":0,"format":"base64;zip;1","container":"!"}`)},
+		{name: "invalid gzip", body: []byte(`{"config_id":0,"format":"base64;zip;1","container":"` + base64.StdEncoding.EncodeToString([]byte("not gzip")) + `"}`)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := evaluationPolicyBundleMatches(test.body, expected); err == nil {
+				t.Fatal("evaluationPolicyBundleMatches() accepted an invalid or changed policy")
+			}
+		})
+	}
+}
+
+func TestEvaluationPolicyBundleRejectsOversizedDecodedContainer(t *testing.T) {
+	oversized := bytes.Repeat([]byte("x"), evaluationPolicyContainerMaxBytes+1)
+	body := evaluationPolicyBundleForTest(t, 0, "base64;zip;1.2.3", oversized)
+	if err := evaluationPolicyBundleMatches(body, oversized); err == nil ||
+		!strings.Contains(err.Error(), "too large") {
+		t.Fatalf("evaluationPolicyBundleMatches() error = %v, want size-limit failure", err)
+	}
+}
+
+func evaluationPolicyBundleForTest(t *testing.T, id uint64, format string, container []byte) []byte {
+	t.Helper()
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write(container); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(struct {
+		ConfigID  uint64 `json:"config_id"`
+		Format    string `json:"format"`
+		Container string `json:"container"`
+	}{ConfigID: id, Format: format, Container: base64.StdEncoding.EncodeToString(compressed.Bytes())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return body
 }
 
 func TestEvaluationValkeyReadiness(t *testing.T) {

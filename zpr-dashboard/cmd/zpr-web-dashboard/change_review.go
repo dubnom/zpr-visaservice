@@ -24,18 +24,18 @@ const changeReviewPrefix = "/api/change-review/"
 var reviewIdentifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 type changeReviewConfig struct {
-	Version           int    `json:"version"`
-	Database          string `json:"database"`
+	Version  int    `json:"version"`
+	Database string `json:"database"`
+	// AllowSelfApproval is ignored: approval by the proposer is always allowed and audited.
 	AllowSelfApproval bool   `json:"allow_self_approval"`
 	PolicyApplyConfig string `json:"policy_apply_config_file,omitempty"`
 }
 type changeReviewCapture func(context.Context, string, string, string, int) (changereview.Proposal, error)
 type changeReviewAPI struct {
-	store     *changereview.Store
-	auth      operatorRequestAuthorizer
-	capture   changeReviewCapture
-	allowSelf bool
-	apply     *policyReviewApply
+	store   *changereview.Store
+	auth    operatorRequestAuthorizer
+	capture changeReviewCapture
+	apply   *policyReviewApply
 }
 type changeReviewInput struct {
 	Organization    string `json:"organization"`
@@ -80,7 +80,7 @@ func configuredChangeReview(auth *operatorauth.Auth, proxy http.Handler) (http.H
 			return nil, nil, err
 		}
 	}
-	return &changeReviewAPI{store: store, auth: auth, capture: changeReviewDomainCapture(proxy), allowSelf: config.AllowSelfApproval, apply: apply},
+	return &changeReviewAPI{store: store, auth: auth, capture: changeReviewDomainCapture(proxy), apply: apply},
 		func() {
 			if apply != nil {
 				apply.close()
@@ -154,11 +154,11 @@ func (a *changeReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet && path == "capabilities" {
 		if a.apply != nil {
-			writeJSON(w, 200, map[string]any{"allow_self_approval": a.allowSelf, "application_enabled": true,
+			writeJSON(w, 200, map[string]any{"application_enabled": true,
 				"message": "Policy application requires policy.apply, a candidate-bound approved review and verified Policy-Service reconciliation."})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"allow_self_approval": a.allowSelf, "application_enabled": false,
+		writeJSON(w, 200, map[string]any{"application_enabled": false,
 			"message": "Approval records a reviewed revision only. Production application contracts are not configured."})
 		return
 	}
@@ -258,7 +258,7 @@ func (a *changeReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					a.storeError(w, err)
 					return
 				}
-				result, err := a.apply.apply(r.Context(), a.store, record, current, a.allowSelf)
+				result, err := a.apply.apply(r.Context(), a.store, record, current)
 				if err != nil {
 					if result.ID != "" {
 						writeJSON(w, 502, map[string]any{"operation_id": result.ID, "status": "uncertain", "error": "Policy-Service response unavailable; retry this reviewed request to reconcile."})
@@ -284,10 +284,13 @@ func (a *changeReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	record, err = a.store.Decide(r.Context(), input.Organization, record.ID, input.Digest, input.ExpectedVersion, parts[2],
-		input.Reason, reviewPrincipal(identity), a.allowSelf)
+		input.Reason, reviewPrincipal(identity))
 	if err != nil {
 		a.storeError(w, err)
 		return
+	}
+	if record.SelfReviewed() {
+		log.Printf("AUDIT WARNING: change review %s approved by its proposer (single-operator review, less secure than independent review)", record.ID)
 	}
 	writeJSON(w, 200, record)
 }
@@ -301,7 +304,7 @@ func (a *changeReviewAPI) storeError(w http.ResponseWriter, err error) {
 	case errors.Is(err, changereview.ErrNotFound):
 		status = 404
 		message = err.Error()
-	case errors.Is(err, changereview.ErrConflict) || errors.Is(err, changereview.ErrSelfReview):
+	case errors.Is(err, changereview.ErrConflict):
 		status = 409
 		message = err.Error()
 	}

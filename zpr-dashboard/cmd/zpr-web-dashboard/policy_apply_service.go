@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -180,15 +179,4 @@ func configuredPolicyApplyResources() (*policyApplyResources, error) {
 		return nil, errors.New("Policy-Service source organization differs from guarded trust")
 	}
 	return resources, nil
-}
-
-// Optional resources are only supplied by protected startup configuration.
-func policyServiceHandler(workspace *policyWorkspace, resources *policyApplyResources) http.Handler {
-	workspace.guardedApply = resources
-	return policyServiceMux(workspace)
-}
-
-func encodePolicyApproval(proof operatordelegation.PolicyProof) (string, error) {
-	b, err := json.Marshal(proof)
-	return string(b), err
 }

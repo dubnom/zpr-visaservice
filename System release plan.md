@@ -108,6 +108,36 @@ external company integrations must be explicit, validated configuration, never
 demo replacements. No existing Visa Service, Control-Service, production
 database, or Simulator installation may be assumed on the test host.
 
+#### Common minimum for a working ZPR network
+
+This is a product-wide baseline, not a requirement unique to the operator's
+current evaluation environment or to the production installer. Every deployment
+profile described as a **working ZPR network** must provide these capabilities.
+Profiles may use different implementations or topology, but may not omit a
+capability; a profile that has not passed the evidence below must be identified
+as incomplete or as a component subset.
+
+| Required capability | Minimum configuration and readiness evidence |
+| --- | --- |
+| ZPR node and Visa Service | At least one configured node is authenticated and actively connected to Visa Service; a container or process merely running is insufficient. |
+| Protected ZPR DNS | DNS service, its ZPR adapter and authorized record-publishing path are configured; resolve a published ZPR service name through the protected service path. This is separate from company underlay/bootstrap DNS. |
+| Logging | A configured collector and log store accept a real ZPR lifecycle event, retain it across restart, and return it through an authorized query. Container stdout alone is insufficient. |
+| Control Room and operator services | An operator can authenticate and use the Control Room against its independently configured production-facing service contracts. Control Room must remain usable with Simulator absent. |
+| Bootstrap identity source | A configured, readable identity source is available to the services that need it. For a directory-backed profile, its initial directory data/configuration must be readable by the intended service identity and support a successful identity lookup. |
+| Initial policy and network configuration | Validated baseline configuration and an initial policy are installed and active in Visa Service. Readiness verifies the active policy and at least one expected allow and deny decision. |
+
+These are functional gates, not a checklist of containers. Bootstrap and
+supervision must coordinate the configuration, identities, policy, adapters
+and service dependencies so the operator does not have to assemble or start
+required components by hand. Simulator may exercise a network but is never a
+required service or source of production state. The [first-install runtime
+contract](zpr-dashboard/packaging/system/INSTALLER-RUNTIME-CONTRACT.md)
+defines the production profile's component responsibilities and qualification
+gaps; its gates do not narrow this common baseline. The bundle manifest now
+requires explicit bootstrap-configuration and initial-policy artifacts plus a
+bundled LDAP bootstrap input; those declarations establish package completeness,
+not readability, active policy, or runtime readiness.
+
 Required handoff:
 
 - A single versioned downloadable bundle containing loadable, pinned images,
@@ -120,8 +150,10 @@ Required handoff:
 - Locally generated unique company trust/service identities and protected
   persistent state; retries must preserve identities and existing customer data.
 - An acceptance report from a fresh supported Ubuntu host: named operator login,
-  first endpoint enrollment/admission, loaded policy and actual allowed/denied
-  traffic, plus restart/recovery with Simulator unavailable.
+  successful bootstrap identity lookup, first endpoint enrollment/admission,
+  active initial policy and actual allowed/denied traffic, protected DNS
+  resolution of a published service name, durable logging ingestion/query across
+  restart, and recovery with Simulator unavailable.
 
 **Not available yet.** Current blockers include the Enrollment Service's
 sole-writer/API boundary, supervised node entry point, company trust/bootstrap
@@ -248,10 +280,11 @@ The following user decisions are frozen for the evaluation profile only:
   imply production support or copy Simulator's synthetic directory into it.
 - **Admin recovery:** a local CLI reset must generate a unique one-time password,
   write it only to a new `0600` local file, invalidate prior sessions and force
-  replacement on first use. **B1-RECOVERY is a design/task, not shipped:** static
-  Dex password mode lacks forced-change/one-time semantics. Implement supported
-  provider updates with ownership/lock/expiry/replay/rollback tests for the operator
-  and independent OpenObserve admin; never reset by deleting/reseeding data.
+  replacement on first use. The evaluation-only CLI reset is implemented and
+  rotates the Dex password, client secret and subject while preserving provider
+  data. It does not enforce password replacement, expiry or single-use, revoke
+  already-issued JWTs, or reset the independent OpenObserve administrator.
+  Production recovery remains unqualified; never reset by deleting/reseeding data.
 - **Logging:** OpenObserve **AGPL-3.0 accepted, evaluation-only, 7-day global
   retention, administrator-only access**. B1 verifies authenticated/unauthenticated
   boundaries and TLS; B3 now supplies allowlisted lifecycle ingestion, named source identity
@@ -298,17 +331,17 @@ for planning, is:
   The bundled path must be independently supervised and Simulator-free. The
   current company config documents operator OIDC only; provider and logging
   handoffs still need explicit contracts and operator instructions.
-- **Separate companion:** Simulator and its lab LDAP/Dex services, plus
-  opt-in bootstrap BIND for isolated labs. The companion must pair with the
-  exact same ZPR release artifacts, use separate provider state, and exercise
-  production APIs. Simulator is not part of or required by the production
-  bundle. Company underlay DNS and supplied HTTPS certificate/key remain
-  external inputs.
-- **Optionality distinction:** company underlay/bootstrap DNS is external by
-  default; companion bootstrap BIND is optional. Protected ZPR DNS is
-  required. Gateway is required by the new direction, although its complete
-  runtime contract is not yet qualified. Identity and logging are required
-  capabilities, with a bundled path and supported existing-provider option.
+- **Separate companion:** Simulator and its lab LDAP/Dex services. The
+  companion must pair with the exact same ZPR release artifacts, use separate
+  provider state, and exercise production APIs. Simulator is not part of or
+  required by the production bundle. Company underlay DNS and supplied HTTPS
+  certificate/key remain external inputs.
+- **Optionality distinction:** company and lab underlay/bootstrap DNS use
+  existing external network DNS. A separate bootstrap BIND is not supported.
+  Protected ZPR DNS is required. Gateway is required by the new direction,
+  although its complete runtime contract is not yet qualified. Identity and
+  logging are required capabilities, with a bundled path and supported
+  existing-provider option.
 
 The user approved these source/image references for engineering qualification
 planning only, not as compatible release pins or production approvals:
@@ -567,8 +600,9 @@ Ownership and limits:
 - The standard installer/bootstrap establishes the initial services, trust and
   operator access before this workflow. Simulator must not need a working ZPR
   policy to create the only identity capable of installing that first policy.
-  Lab LDAP/OIDC and optional bootstrap DNS remain independently supervised
-  companion services. Protected ZPR service DNS belongs to the ZPR package.
+  Lab LDAP/OIDC remain independently supervised companion services. Bootstrap
+  names use existing network DNS; protected ZPR service DNS belongs to the ZPR
+  package.
 - Automation must have explicit organization scope and attributable, least-
   privilege authorization. How automation receives its operator authority is
   still a design decision; do not copy browser cookies, bypass CSRF or reuse a
@@ -713,21 +747,20 @@ shortcuts. This lifecycle is a proposed contract, not implemented provisioning.
 On 2026-10-15 the user clarified the outcome: **both packages together must
 demonstrate a working ZPR network**, not merely running infrastructure or
 populated dashboards. OpenLDAP and Dex backed by LDAP are approved companion
-providers. BIND9 has two separate roles: optional companion bootstrap DNS for setup/login
-hostnames, and a protected DNS service inside ZPR behind a real adapter and
-ordinary ZPR policy. Bootstrap must not depend on that protected service being
-up; protected queries must not fall back to underlay DNS.
+providers. The initial design separated optional companion bootstrap DNS from
+protected DNS inside ZPR; the 2026-10-26 decision below supersedes the optional
+companion BIND role. Bootstrap names continue to resolve outside the protected
+ZPR DNS path, and protected queries must not fall back to underlay DNS.
 
-Subsequent clarification: use existing network DNS by default for bootstrap
-names in both company and lab installations. Companion-hosted bootstrap BIND
-is an explicit isolated-lab opt-in, not a package prerequisite. The generator
-exports fully qualified underlay record requests without creating a new zone
-or changing resolvers by default. Underlay record generation and protected
-ZPR DNS generation are independent selections. mDNS is not a required bootstrap
-mechanism; `.local` HTTPS/OIDC support remains unimplemented. Focused race tests,
-isolated BIND config/zone loading, vet and Linux amd64 build pass for these
-independent modes; full `make test` retains the same four recorded dashboard
-failure groups. No service or resolver settings were changed.
+On 2026-10-26 the user clarified that BIND is an essential ZPR service and
+preferred not to support a second companion bootstrap-BIND role. The lab
+generator now only exports fully qualified bootstrap record requests for
+existing network DNS; it does not generate bootstrap BIND files or supervise a
+bootstrap server. Required protected ZPR BIND remains production-owned. The
+envelope/realm model in `ENVELOPE_REALM_SPEC.md` is deferred and is not an
+implemented service-namespace mechanism. mDNS is not a required bootstrap
+mechanism; `.local` HTTPS/OIDC support remains unimplemented. No live service
+or resolver settings were changed.
 
 The combined acceptance path must demonstrate:
 
@@ -1063,7 +1096,7 @@ using only release artifacts and company inputs, with Simulator unavailable.
   validation. Do not claim HTTP method/path enforcement inside opaque CONNECT.
 - [ ] Verify named-user authorization, organization isolation, audit attribution,
   first-admin recovery and enrollment approval separation for the supported
-  operator model. Any single-operator exception must be explicit and audited.
+  operator model. Single-operator approval is supported (the two steps remain) and is flagged in the audit as less secure.
 - [ ] Present component versions, applied versus draft revisions, certificate
   status, diagnostics and readiness without requiring developer shell access.
 

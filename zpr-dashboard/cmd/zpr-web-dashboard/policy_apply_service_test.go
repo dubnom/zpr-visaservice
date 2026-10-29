@@ -1,3 +1,5 @@
+//go:build !production
+
 package main
 
 import (
@@ -119,7 +121,7 @@ func policyApplyServiceFixture(t *testing.T) (*policyApplyFixture, *policyApplyR
 		t.Fatal(err)
 	}
 	_, err = f.store.Decide(context.Background(), f.trust.Organization, r.ID, r.Digest, 1, "approve", "Reviewed exact candidate",
-		changereview.Principal{Issuer: "https://idp.example", Subject: "reviewer"}, false)
+		changereview.Principal{Issuer: "https://idp.example", Subject: "reviewer"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,11 +313,11 @@ func TestPolicyApplyControlInvalidSuccessRetainsReconciliationIdentity(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			first, err := client.apply(context.Background(), f.store, record, f.proposal, false)
+			first, err := client.apply(context.Background(), f.store, record, f.proposal)
 			if err == nil || first.ID == "" || first.Status != "uncertain" || *posts != 1 {
 				t.Fatalf("invalid response lost operation identity: %+v %v posts=%d", first, err, *posts)
 			}
-			retry, err := client.apply(context.Background(), f.store, record, f.proposal, false)
+			retry, err := client.apply(context.Background(), f.store, record, f.proposal)
 			if err != nil || retry.ID != first.ID || retry.Status != "succeeded" || *posts != 1 {
 				t.Fatalf("reconciliation: %+v %v posts=%d", retry, err, *posts)
 			}

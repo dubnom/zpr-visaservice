@@ -178,8 +178,6 @@ func subjectReviewError(w http.ResponseWriter, err error) {
 		status, message = http.StatusConflict, "Subject-link review, retry key or registry context has changed."
 	case errors.Is(err, changereview.ErrNotFound):
 		status, message = http.StatusNotFound, "Subject-link review or registration was not found in this organization."
-	case errors.Is(err, changereview.ErrSelfReview):
-		status, message = http.StatusForbidden, "An independent reviewer is required."
 	}
 	log.Printf("Subject-link review denied (HTTP %d, %T)", status, err)
 	writePolicyError(w, status, message)
@@ -238,6 +236,9 @@ func (api *subjectReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		subjectReviewError(w, err)
 		return
+	}
+	if request.permission == "subject-link.approve" && record.SelfReviewed() {
+		log.Printf("AUDIT WARNING: subject-link review %s approved by its proposer (single-operator review, less secure than independent review)", record.ID)
 	}
 	writeJSON(w, http.StatusOK, record)
 }

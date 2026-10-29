@@ -51,6 +51,11 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 				"ZPR_ADMIN_CA_FILE="+file("ca.pem"),
 				"ZPR_ADMIN_KEY_FILE="+file("vs-admin-api.key"))
 		}
+		if config.ProtectedDNS && config.DNSTransferPort != 0 {
+			env = append(env,
+				"ZPR_DNS_TRANSFER_ADDR="+fmt.Sprintf("127.0.0.1:%d", config.DNSTransferPort),
+				"ZPR_DNS_TRANSFER_TSIG_KEY_FILE="+file("dp-dns-viewer.key"))
+		}
 		if config.subjectLinks() {
 			env = append(env, evaluationSubjectEnvironment(state, config, false)...)
 		}
@@ -226,19 +231,38 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		if err := createEvaluationDataPlaneNetwork(startup, inventory); err != nil {
 			return err
 		}
+		if gateway, err := evaluationLinuxDeliveryHost(startup, inventory); err != nil {
+			return err
+		} else if gateway != "" {
+			inventory.Config.DeliveryHost = gateway
+		}
 		_, markerErr := os.Stat(filepath.Join(state, evaluationVisaPolicyMarker))
 		plane, err := launch("data-plane", "docker", evaluationDataPlaneArguments(state, inventory, runtime.DataPlaneImage, errors.Is(markerErr, os.ErrNotExist)), evaluationDockerEnvironment())
 		if err != nil {
 			return err
 		}
-		if err := waitEvaluation(startup, "data plane: Visa Service admin API with node and vs.zpr admitted", out, func() error {
+		dataPlaneReadiness := "data plane: Visa Service admin API with node and vs.zpr admitted"
+		if inventory.Config.ProtectedDNS {
+			dataPlaneReadiness += " and protected DNS TCP query"
+		}
+		if err := waitEvaluation(startup, dataPlaneReadiness, out, func() error {
 			if err := exited(plane); err != nil {
 				return err
 			}
 			if err := checkEvaluationVisa(state, inventory.Config.VSAdminPort, tlsConfig); err != nil {
 				return err
 			}
-			return checkEvaluationDataPlaneActors(state, inventory.Config.VSAdminPort, tlsConfig)
+			requiredActors := []string{"node"}
+			if inventory.Config.ProtectedDNS {
+				requiredActors = append(requiredActors, "zpr-dns")
+			}
+			if err := checkEvaluationDataPlaneActors(state, inventory.Config.VSAdminPort, tlsConfig, requiredActors...); err != nil {
+				return err
+			}
+			if inventory.Config.ProtectedDNS {
+				return checkEvaluationProtectedDNS(startup, inventory)
+			}
+			return nil
 		}); err != nil {
 			return err
 		}
@@ -335,7 +359,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 				if err := exited(process); err != nil {
 					return err
 				}
-				return checkEvaluationDelivery(state, inventory.Config.SnapshotDeliveryPort)
+				return checkEvaluationDeliveryAt(state, inventory.Config.deliveryHost(), inventory.Config.SnapshotDeliveryPort)
 			}); err != nil {
 				return err
 			}
@@ -356,6 +380,21 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 	if err := waitEvaluation(startup, "evaluation lifecycle ingestion/query", out, func() error { return collectEvaluationLog(startup, state, inventory, "bootstrap_ready") }); err != nil {
 		return err
 	}
+	if err := compose(startup, "restart", "logging"); err != nil {
+		return errors.New("OpenObserve restart failed; lifecycle data persistence was not verified; private state retained")
+	}
+	logSource, err := evaluationLogSourceConfig(state, inventory)
+	if err != nil {
+		return err
+	}
+	if err := waitEvaluation(startup, "OpenObserve lifecycle retention across restart", out, func() error {
+		if err := checkEvaluationLogging(inventory.Config.LogPort, state, tlsConfig); err != nil {
+			return err
+		}
+		return requireEvaluationLog(startup, logSource, inventory.InstallID, "bootstrap_ready")
+	}); err != nil {
+		return err
+	}
 	fmt.Fprintf(out, "%s\nREADY (B1-B3 evaluation): %s\nOpenObserve administrator: admin@evaluation.invalid at https://localhost:%d (password: private logging-admin.secret).\nTrust ONLY this install's ca.pem in your evaluation browser; never disable certificate checks.\n", evaluationBanner, inventory.Config.browserOrigin(inventory.Config.RoomPort), inventory.Config.LogPort)
 	if inventory.Config.BrowserIP != "" {
 		fmt.Fprintf(out, "Local entrypoint https://localhost:%d redirects to the canonical network origin. Restrict browser/OIDC ports to intended clients; other services remain loopback-only.\n", inventory.Config.RoomPort)
@@ -373,6 +412,9 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 				nodes = fmt.Sprintf("%d fully linked nodes", count)
 			}
 			upstream = fmt.Sprintf("Data-plane Visa Service admin at https://localhost:%d (container %s: %s and vs.zpr admitted; %s). Policy-Service is NOT configured.", inventory.Config.VSAdminPort, evaluationDataPlaneName(inventory), nodes, endpoints)
+			if inventory.Config.ProtectedDNS {
+				upstream += " Protected DNS passed a direct TCP query over the ZPR tunnel at fd5a:5052::53."
+			}
 		}
 	}
 	fmt.Fprintln(out, "Operator login: admin@evaluation.invalid (password: private operator-admin.secret). Administrator-scoped evaluation grants; no shared sessions.\nStarter directory registered; lifecycle events ingested into evaluation logging. "+upstream)
@@ -381,7 +423,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		if inventory.Config.DataPlane {
 			initCommand = evaluationDataPlaneInitCommand(inventory, state)
 		}
-		fmt.Fprintf(out, "Subject links: independent reviewer %s (password: private operator-reviewer.secret); see %s for the publication cycle.\nAfter the first signed snapshot, initialize the VS checkpoint once: %s\n",
+		fmt.Fprintf(out, "Subject links: the administrator can propose and approve (a self-approval is flagged in the audit); optional second login %s (password: private operator-reviewer.secret); see %s for the publication cycle.\nAfter the first signed snapshot, initialize the VS checkpoint once: %s\n",
 			evaluationReviewerEmail, filepath.Join(state, "SUBJECT-LINKS.txt"), initCommand)
 	}
 	fmt.Fprintln(out, "Foreground supervision active. Ctrl-C stops this install's services/containers; rerun the SAME command to preserve identity and directory/log data.")

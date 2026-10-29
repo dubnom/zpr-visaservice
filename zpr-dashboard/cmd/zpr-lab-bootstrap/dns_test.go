@@ -23,7 +23,6 @@ func testDNSConfig() dnsConfig {
 	return dnsConfig{
 		BootstrapIP: "10.20.30.40", RoomIP: "10.20.30.41",
 		ZPRDNSIP: "fd5a:5052:adda:1::53", ZPRClientPrefix: "fd5a:5052:adda:1::/64",
-		HostBootstrapDNS: true,
 	}
 }
 
@@ -80,12 +79,11 @@ func TestLabDNSRenderedSeparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 10 {
+	if len(files) != 8 {
 		t.Fatalf("unexpected DNS file count: %d", len(files))
 	}
-	bootstrap := string(files["bootstrap-named.conf"])
 	protected := string(files["zpr-named.conf"])
-	for _, content := range []string{bootstrap, protected} {
+	for _, content := range []string{protected} {
 		for _, required := range []string{
 			"recursion no;", "allow-recursion { none; };", "allow-query-cache { none; };",
 			"allow-transfer { none; };", "controls {};",
@@ -98,13 +96,6 @@ func TestLabDNSRenderedSeparation(t *testing.T) {
 			t.Fatal("unrestricted DNS access")
 		}
 	}
-	if !strings.Contains(bootstrap, "listen-on port 53 { "+config.BootstrapIP+"; };") ||
-		!strings.Contains(bootstrap, "listen-on-v6 { none; };") ||
-		!strings.Contains(bootstrap, "allow-update { none; };") ||
-		strings.Contains(bootstrap, "svc.zpr") || strings.Contains(bootstrap, config.ZPRDNSIP) ||
-		strings.Contains(bootstrap, "include ") {
-		t.Fatal("bootstrap depends on protected DNS or update keys")
-	}
 	if !strings.Contains(protected, "listen-on { none; };") ||
 		!strings.Contains(protected, "listen-on-v6 port 53 { "+config.ZPRDNSIP+"; };") ||
 		!strings.Contains(protected, "acl zpr_clients { "+config.ZPRClientPrefix+"; };") ||
@@ -115,23 +106,9 @@ func TestLabDNSRenderedSeparation(t *testing.T) {
 		strings.Contains(protected, "lab.example.test") || strings.Contains(protected, "statistics-channels") {
 		t.Fatal("ZPR DNS exposes wrong address, privileges or namespace")
 	}
-	records := parseZone(t, files["bootstrap.zone"])
-	expected := map[string]string{
-		"bootstrap.lab.example.test.": config.BootstrapIP, "room.lab.example.test.": config.RoomIP,
-		"simulator.lab.example.test.": config.BootstrapIP, "ldap.lab.example.test.": config.BootstrapIP,
-		"oidc.lab.example.test.": config.BootstrapIP,
-	}
-	addresses := map[string]string{}
-	for _, record := range records {
-		if record.Header().Ttl != 30 {
-			t.Fatal("unexpected TTL")
-		}
-		if a, ok := record.(*dns.A); ok {
-			addresses[a.Hdr.Name] = a.A.String()
-		}
-	}
-	if len(records) != 7 || !reflect.DeepEqual(addresses, expected) {
-		t.Fatalf("unexpected bootstrap zone: %v", records)
+	records := parseZone(t, files["underlay-records.txt"])
+	if len(records) != 4 {
+		t.Fatalf("unexpected external DNS record request: %v", records)
 	}
 	protectedRecords := parseZone(t, files["db.svc.zpr"])
 	if len(protectedRecords) != 3 {
@@ -165,7 +142,7 @@ func TestLabDNSRenderedSeparation(t *testing.T) {
 	}
 	for _, name := range []string{"zpr-vs-publisher", "zpr-dns-viewer"} {
 		secret := parseTSIG(t, name, files[name+".key"])
-		for _, contents := range []string{bootstrap, protected, string(files["dns-files.json"])} {
+		for _, contents := range []string{protected, string(files["dns-files.json"])} {
 			if strings.Contains(contents, secret) {
 				t.Fatal("TSIG secret embedded outside key file")
 			}
@@ -199,7 +176,6 @@ func TestLabDNSCLIAndProtectedOutput(t *testing.T) {
 			"-domain", "lab.example.test", "-output", output,
 			"-bootstrap-ip", config.BootstrapIP, "-room-ip", config.RoomIP,
 			"-zpr-dns-ip", config.ZPRDNSIP, "-zpr-client-prefix", config.ZPRClientPrefix,
-			"-host-bootstrap-dns",
 		}
 		if code := run(args, &stdout, &stderr); code != 0 {
 			t.Fatalf("code=%d diagnostics=%s", code, &stderr)
@@ -212,7 +188,7 @@ func TestLabDNSCLIAndProtectedOutput(t *testing.T) {
 			t.Fatal("DNS input absent from completion inventory")
 		}
 		entries, err := os.ReadDir(output)
-		if err != nil || len(entries) != 25 {
+		if err != nil || len(entries) != 23 {
 			t.Fatalf("unexpected files: count=%d err=%v", len(entries), err)
 		}
 		for _, entry := range entries {
@@ -246,19 +222,16 @@ func TestLabDNSCLIAndProtectedOutput(t *testing.T) {
 
 func TestLabDNSIndependentModes(t *testing.T) {
 	for _, test := range []struct {
-		name                        string
-		underlay, protected, hosted bool
-		count                       int
+		name                string
+		underlay, protected bool
+		count               int
 	}{
-		{"existing-dns-records", true, false, false, 2},
-		{"protected-only", false, true, false, 7},
-		{"existing-dns-with-protected", true, true, false, 8},
-		{"hosted-only", true, false, true, 4},
-		{"hosted-with-protected", true, true, true, 10},
+		{"existing-dns-records", true, false, 2},
+		{"protected-only", false, true, 7},
+		{"existing-dns-with-protected", true, true, 8},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			config := testDNSConfig()
-			config.HostBootstrapDNS = test.hosted
 			if !test.underlay {
 				config.BootstrapIP, config.RoomIP = "", ""
 			}
@@ -271,11 +244,6 @@ func TestLabDNSIndependentModes(t *testing.T) {
 			}
 			if len(files) != test.count {
 				t.Fatalf("count=%d expected=%d", len(files), test.count)
-			}
-			for _, name := range []string{"bootstrap-named.conf", "bootstrap.zone"} {
-				if _, exists := files[name]; exists != test.hosted {
-					t.Fatalf("unexpected hosted bootstrap file: %s", name)
-				}
 			}
 			for _, name := range []string{"zpr-named.conf", "db.svc.zpr", "zpr-vs-publisher.key", "zpr-dns-viewer.key"} {
 				if _, exists := files[name]; exists != test.protected {
@@ -322,9 +290,6 @@ func TestLabDNSIndependentModes(t *testing.T) {
 			if test.protected {
 				args = append(args, "-zpr-dns-ip", config.ZPRDNSIP, "-zpr-client-prefix", config.ZPRClientPrefix)
 			}
-			if test.hosted {
-				args = append(args, "-host-bootstrap-dns")
-			}
 			var stdout, stderr bytes.Buffer
 			if code := run(args, &stdout, &stderr); code != 0 {
 				t.Fatalf("code=%d diagnostics=%s", code, &stderr)
@@ -340,20 +305,18 @@ func TestLabDNSIndependentModes(t *testing.T) {
 			if err != nil || len(entries) != 15+test.count {
 				t.Fatalf("unexpected CLI file count=%d err=%v", len(entries), err)
 			}
-			if !test.hosted {
-				if _, err := os.Stat(filepath.Join(output, "bootstrap-named.conf")); !os.IsNotExist(err) {
-					t.Fatal("CLI generated an unrequested bootstrap server")
+			for _, name := range []string{"bootstrap-named.conf", "bootstrap.zone"} {
+				if _, err := os.Stat(filepath.Join(output, name)); !os.IsNotExist(err) {
+					t.Fatalf("obsolete bootstrap BIND output generated: %s", name)
 				}
 			}
 		})
 	}
 }
 
-func TestLabDNSHostedRequiresAddresses(t *testing.T) {
+func TestLabDNSRequiresCompleteInputs(t *testing.T) {
 	for _, config := range []dnsConfig{
 		{},
-		{HostBootstrapDNS: true},
-		{HostBootstrapDNS: true, ZPRDNSIP: "fd01::53", ZPRClientPrefix: "fd01::/64"},
 		{BootstrapIP: "10.1.1.1"},
 		{RoomIP: "10.1.1.2"},
 		{ZPRDNSIP: "fd01::53"},
@@ -365,11 +328,12 @@ func TestLabDNSHostedRequiresAddresses(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 	output := filepath.Join(t.TempDir(), "lab")
-	if code := run([]string{"-domain", "lab.example.test", "-output", output, "-host-bootstrap-dns"}, &stdout, &stderr); code != 1 || stdout.Len() != 0 || stderr.Len() == 0 {
-		t.Fatal("hosted mode without addresses did not fail explicitly")
+	if code := run([]string{"-domain", "lab.example.test", "-output", output, "-host-bootstrap-dns"}, &stdout, &stderr); code != 2 ||
+		stdout.Len() != 0 || !strings.Contains(stderr.String(), "flag provided but not defined") {
+		t.Fatalf("removed bootstrap-BIND option was not rejected: code=%d stderr=%s", code, stderr.String())
 	}
 	if _, err := os.Stat(output); !os.IsNotExist(err) {
-		t.Fatal("invalid hosted selection wrote files")
+		t.Fatal("removed bootstrap-BIND option created output")
 	}
 }
 
@@ -400,15 +364,13 @@ func TestLabDNSNativeBINDValidation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"bootstrap-named.conf", "zpr-named.conf"} {
+	for _, name := range []string{"zpr-named.conf"} {
 		if output, err := exec.Command(checkconf, "-z", filepath.Join(directory, name)).CombinedOutput(); err != nil {
 			t.Fatalf("native config validation failed: %v %s", err, output)
 		}
 	}
-	for zone, filename := range map[string]string{"lab.example.test": "bootstrap.zone", "svc.zpr": "db.svc.zpr"} {
-		if output, err := exec.Command(checkzone, zone, filepath.Join(directory, filename)).CombinedOutput(); err != nil {
-			t.Fatalf("native zone validation failed: %v %s", err, output)
-		}
+	if output, err := exec.Command(checkzone, "svc.zpr", filepath.Join(directory, "db.svc.zpr")).CombinedOutput(); err != nil {
+		t.Fatalf("native zone validation failed: %v %s", err, output)
 	}
 }
 
@@ -432,7 +394,6 @@ func TestLabDNSContainerBINDValidation(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"-v"},
-		{"-z", "/etc/zpr/lab/bootstrap-named.conf"},
 		{"-z", "/etc/zpr/lab/zpr-named.conf"},
 	} {
 		command := []string{

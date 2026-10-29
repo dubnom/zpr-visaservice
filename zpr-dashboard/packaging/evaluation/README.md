@@ -3,6 +3,11 @@
 **EVALUATION ONLY — NOT PRODUCTION SUPPORTED.** This is a foreground,
 single-host engineering evaluation launcher, not the production appliance BOM,
 a complete Visa Service installation, or a Simulator launcher.
+It is a component subset, not a working ZPR network under the
+[product-wide minimum](../../../System%20release%20plan.md#common-minimum-for-a-working-zpr-network):
+it does not by itself prove an admitted node, active Visa policy, protected DNS
+resolution (unless `-protected-dns` is enabled with the data plane), or
+end-to-end durable logging.
 
 From `zpr-dashboard`, one command renders protected configuration, builds the
 current production Control Room/Control-Service package, starts the packaged
@@ -148,10 +153,12 @@ verifies and checkpoints snapshots but **never enforces** them.
   with `-visa-service` before this cycle existed have no delivery port. Restart
   them with `-snapshot-delivery-port 0`, or create a new state directory.
 - **Second login:** `reviewer@evaluation.invalid` (password in
-  `operator-reviewer.secret`) is an independent Dex subject that may only read
+  `operator-reviewer.secret`) is an optional second Dex subject that may only read
   and approve. The administrator gains `subject-link.read`, `.propose`,
-  `.registry.manage`, `.publish`, `.snapshot.capture` and `.snapshot.sign`.
-  It cannot approve its own proposals.
+  `.registry.manage`, `.publish`, `.snapshot.capture`, `.snapshot.sign` and
+  `.approve`. A single operator may propose and approve; the two steps stay
+  separate, and a proposer's own approval is flagged in the audit as a less
+  secure single-operator review.
 - **Generated, protected files:**
   - `subject-link-providers.json`: binds LDAP source `evaluation-directory`
     version `1` to this install's LDAPS directory.
@@ -184,7 +191,7 @@ Operator flow, using the Subject links and Publication pages:
    provider no longer binds.
 2. Load the registry context, then propose a link from a device subject to the
    sample `entryUUID`.
-3. Sign in as the reviewer and approve the review.
+3. Approve the review (as the administrator, or as the optional second login).
 4. As the administrator, on the Publication page:
    - provision `evaluation-vs` / `evaluation`;
    - promote the approved review;
@@ -217,10 +224,34 @@ sh packaging/evaluation/bootstrap.sh \
   -state "$PWD/.zpr-evaluation-dp" -visa-service -data-plane
 ```
 
+To include the protected DNS service, enable it when creating the install:
+
+```sh
+sh packaging/evaluation/bootstrap.sh \
+  -state "$PWD/.zpr-evaluation-dns" -visa-service -data-plane -protected-dns
+```
+
+`-protected-dns` is frozen with the install and requires a new state directory
+to change. It creates a distinct `zpr-dns` adapter identity and per-install
+bootstrap/TSIG keys, adds the TCP/53 service and authenticated-device policy to
+the initial data-plane policy, configures Visa Service RFC 2136 updates, and
+runs authoritative-only BIND on `fd5a:5052::53`. BIND is not published on a
+host or underlay port; recursion is disabled and zone transfers are refused
+except to a read-only TSIG viewer key (`dp-dns-viewer.key`) over a loopback-only
+relay (`-dns-transfer-port`, default 15353) that feeds the Control Room DNS
+records page. Startup does
+not report ready until Visa lists the DNS adapter and direct TCP queries from
+the Visa Service's isolated ZPR namespace return both the DNS service address
+and Visa Service's dynamically published adapter record over ZPR. This
+exercises the protected query and Visa-to-BIND TSIG update paths, but not every
+client identity or policy allow/deny case.
+
 - **Build:** `build.sh` compiles `ph`, `ph-cli` (`zpr-core`), `vs` and
   `vs-admin` (this worktree) and `zplc` (`zpr-compiler`) for Linux in a builder
   image. The sibling checkouts are mounted read-only, and `ZPR_WORKSPACE`
-  overrides their parent. The cargo cache and target live under
+  overrides their parent. `ZPR_CORE_DIR` overrides only `zpr-core`, for
+  example to build a zpr-core fix branch from its own worktree; tag such
+  builds separately with `-tag`. The cargo cache and target live under
   `.evaluation-build/data-plane/`. `-data-plane-image` (default
   `zpr-evaluation-data-plane:local`) is runtime-only, like `-vs-binary`. It is
   never pulled.
@@ -236,6 +267,10 @@ sh packaging/evaluation/bootstrap.sh \
   - an RSA policy-signing key;
   - the policy source `dp-policy.zpl` and `dp-policy.zplc`. They admit only the
     node and `vs.zpr`, plus ping between them.
+- With `-protected-dns`, the install additionally creates a `zpr-dns`
+  certificate/bootstrap identity, a private publisher TSIG key, and a DNS
+  service declaration. The policy permits authenticated ZPR devices to query
+  TCP/53; the Visa publisher uses the separate TSIG key for authorized updates.
 - **Policy:** on first start, the container compiles the policy with `zplc` into
   `data-plane/vs-policy.bin2` and installs it into Valkey once, recorded in
   `vs-policy.installed`. Later starts keep the stored policy, as in
@@ -246,10 +281,16 @@ sh packaging/evaluation/bootstrap.sh \
   operator secrets or the VS admin API key.
 - **Network:** a per-install Docker network,
   `zpr-evaluation-<install-id>-data-plane`, which endpoint containers join. Inside the container, namespace `zpr-vs` holds Valkey, the VS and the
-  `vs.zpr` adapter; the node runs in the root namespace. Snapshot delivery is
-  relayed to the host's loopback delivery port.
+  `vs.zpr` adapter; the node runs in the root namespace. With `-protected-dns`,
+  the DNS adapter and authoritative BIND run in a separate `zpr-dns` namespace
+  with an underlay veth to the docking node, keeping DNS replies on that
+  adapter's ZPR tunnel. Snapshot delivery is relayed to the host's loopback
+  delivery port.
 - **Readiness:** the VS admin API must be healthy *and* list both `node` and
-  `vs.zpr` as admitted actors. `logs/data-plane.log` holds every component's
+  `vs.zpr` as admitted actors. With `-protected-dns`, it must also list
+  `zpr-dns` and pass TCP DNS queries for the service address and the Visa
+  adapter's dynamic record from the Visa Service namespace over its ZPR tunnel.
+  `logs/data-plane.log` holds every component's
   log, and any component exit stops the install. Ctrl-C removes the container,
   every other container on the install network (including endpoints) and the
   network; state is retained.
@@ -493,8 +534,16 @@ memory/2 CPU cap; data-disk capacity monitoring remains an operator responsibili
 OpenObserve TLS plus authenticated query/unauthenticated denial, verified OIDC
 identity, Control-Service mTLS route and Control Room HTTPS. The supervisor also
 checks dependent services and sends bounded lifecycle heartbeats while running.
-Readiness includes **ordinary LDAP registration/read and acknowledged, queryable
-lifecycle log ingestion**, not a functioning upstream Visa/Policy installation. Missing upstreams remain visibly unavailable. No service
+Readiness includes **ordinary LDAP registration/read, a byte-for-byte readback
+of the initial policy on first start when `-visa-service` is enabled, and
+acknowledged/queryable lifecycle logging retained through an OpenObserve
+container restart**. The baseline policy allow/deny traffic checks remain part
+of the explicit data-plane/endpoint acceptance flow; startup does not claim
+those checks passed. This is still not the complete system-install baseline,
+and does not qualify production services. Later restarts validate the current
+Visa policy bundle without requiring it to remain identical to the initial
+policy, preserving operator-installed policy changes. Missing upstreams remain
+visibly unavailable. No service
 uses a Docker socket, simulation manifest, profile, session or workload.
 
 Keep this command in the foreground. **Ctrl-C** stops its native operator
@@ -678,15 +727,13 @@ credential is never sent to browsers or returned through source APIs.
   persistent logging with lifecycle ingestion and authorized Control Room queries.
   Arbitrary application/stdout collection is deliberately not enabled: upstream
   output may contain credentials. Only allowlisted launcher metadata is ingested.
-- **Admin recovery design/task (not implemented):** a local CLI reset command
-  must prove local state ownership and acquire this lifecycle lock, generate a
-  unique one-time password into a new `0600` file (never stdout/arguments/logs),
-  update the IdP's supported credential interface atomically, invalidate existing
-  sessions, and require password replacement on the next successful login.
-  It must cover OpenObserve's independent administrator and preserve provider
-  data, with expiry/replay/rollback tests. Dex's static password mode has no
-  forced-change/one-time guarantee; editing a hash/file is **not** an acceptable
-  recovery implementation. Do not delete persistent state as a password reset.
+- **Bundled login recovery:** the evaluation-only stopped-host reset is
+  implemented and tested; it rotates Dex's static password, client secret and
+  subject while preserving provider data. Delivery is a one-time disclosure,
+  not enforced one-time use. Dex does not enforce password replacement or expiry,
+  already-issued JWTs remain valid until expiry, and OpenObserve's independent
+  administrator is not reset. These limits block production recovery; editing a
+  hash/file or deleting persistent state is not an acceptable recovery method.
 - **B4:** Control-Service owns durable **per-source** change-watcher checkpoints,
   source IDs, resync/failure state and private metadata retention, independently
   of Simulator. B1 does not start syncrepl/accesslog watchers or claim cache
@@ -770,6 +817,29 @@ Both `go test -race ./cmd/zpr-lab-bootstrap -run Recovery -count=1` and the full
 bootstrap package race suite pass with the default macOS `TMPDIR`. The partial
 replacement test proves Dex configuration changed and the pending marker blocks
 startup, rather than confusing an earlier path-validation refusal with a reset.
+
+### Working-network evaluation acceptance (2026-10-27)
+
+A fresh evaluation state was started on the macOS/arm64 engineering host with
+`-visa-service -data-plane -protected-dns -data-plane-endpoints 3`. Startup
+verified the Visa Service, node and adapters, the protected DNS query and
+dynamic Visa adapter record through the ZPR tunnel, plus B1-B3 readiness. The
+separate Simulator companion registered the three evaluation endpoints.
+
+Live endpoint-to-endpoint probes verified TCP/7007 and UDP/7008 return their
+echo payloads, while the listening but unpublished TCP/7009 and UDP/7010
+services return no reply. From an admitted endpoint, TCP DNS queries resolved
+`dns.svc.zpr` to `fd5a:5052::53` and
+`vs.zpr.adapters.svc.zpr` to `fd5a:5052::1`. The disposable B1-B3 test also
+passed two starts, retained identity/data, TLS/mTLS checks, scoped source
+registration/read, admin-only logging, lifecycle ingestion and cleanup.
+
+This verifies the evaluation network path, not a released package: it ran on the
+existing macOS/arm64 engineering host, not a clean supported Ubuntu host. The
+endpoints use evaluation bootstrap-key admission (X15), not production
+enrollment; Policy-Service is not configured. Signing, clean-host packaging,
+production provider qualification and the remaining production BOM gates stay
+open.
 
 ## Optional add-later synthetic companion (B5)
 

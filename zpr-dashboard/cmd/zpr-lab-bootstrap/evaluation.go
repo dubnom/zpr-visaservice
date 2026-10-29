@@ -49,9 +49,17 @@ type evaluationConfig struct {
 	ValkeyPort  int  `json:"valkey_port,omitempty"`
 	// Control-Service pinned snapshot delivery listener for the loopback VS.
 	SnapshotDeliveryPort int `json:"snapshot_delivery_port,omitempty"`
+	// Loopback port that relays the protected DNS zone transfer (TSIG viewer
+	// key only) to Control-Service for the DNS records page; zero when absent.
+	DNSTransferPort int `json:"dns_transfer_port,omitempty"`
+	// DeliveryHost is the data-plane Docker network gateway on Linux, where
+	// containers cannot reach a host loopback listener; empty means loopback.
+	DeliveryHost string `json:"-"`
 	// DataPlane hosts the VS, Valkey, a node and the vs.zpr adapter in a Linux
 	// container instead of the native loopback VS (VSAPI/Valkey stay internal).
 	DataPlane bool `json:"data_plane,omitempty"`
+	// ProtectedDNS runs an authoritative-only BIND service behind a ZPR adapter.
+	ProtectedDNS bool `json:"protected_dns,omitempty"`
 	// DataPlaneEndpoints admits endpoint-01..N by per-install bootstrap keys
 	// (shortcut X15); the Simulator runs them from data-plane-endpoints.json.
 	DataPlaneEndpoints int `json:"data_plane_endpoints,omitempty"`
@@ -130,7 +138,9 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&config.VSAPIPort, "vs-api-port", 15002, "with -visa-service: loopback Visa Service VSAPI port")
 	flags.IntVar(&config.ValkeyPort, "valkey-port", 16379, "with -visa-service: loopback private Valkey port")
 	flags.IntVar(&config.SnapshotDeliveryPort, "snapshot-delivery-port", 18793, "with -visa-service: loopback Control-Service subject snapshot delivery mTLS port; 0 disables the subject-link publication cycle (installs created before it existed)")
+	flags.IntVar(&config.DNSTransferPort, "dns-transfer-port", 15353, "with -protected-dns: loopback port relaying the read-only DNS zone transfer used by the Control Room DNS records page")
 	flags.BoolVar(&config.DataPlane, "data-plane", false, "with -visa-service: run the VS with Valkey, one node and the vs.zpr adapter in a privileged Linux data-plane container (build: packaging/evaluation/data-plane/build.sh)")
+	flags.BoolVar(&config.ProtectedDNS, "protected-dns", false, "with -data-plane: run authoritative BIND behind an admitted ZPR DNS adapter and verify a protected TCP query")
 	flags.IntVar(&config.DataPlaneEndpoints, "data-plane-endpoints", 0, fmt.Sprintf("with -data-plane: admit endpoint-01..N (0 or %d-%d) by per-install bootstrap keys for Simulator endpoints (EVALUATION ONLY shortcut X15)", evaluationDataPlaneMinEndpoints, evaluationDataPlaneMaxEndpoints))
 	flags.Func("node-location", "with -data-plane: LATITUDE,LONGITUDE of the data-plane node for the Control Room map", func(value string) error {
 		location, err := parseEvaluationNodeLocation(value)
@@ -179,6 +189,9 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		config.VSAdminPort, config.VSAPIPort, config.ValkeyPort, config.SnapshotDeliveryPort = 0, 0, 0, 0
+	}
+	if !config.ProtectedDNS {
+		config.DNSTransferPort = 0
 	}
 	if config.DataPlane {
 		if nativeOnly {
@@ -266,6 +279,9 @@ func (config evaluationConfig) validate() error {
 	if config.DataPlane && (!config.VisaService || config.VSAPIPort != 0 || config.ValkeyPort != 0) {
 		return errors.New("data plane requires -visa-service and keeps VSAPI/Valkey ports inside the container")
 	}
+	if config.ProtectedDNS && !config.DataPlane {
+		return errors.New("protected DNS requires -data-plane")
+	}
 	if config.DataPlaneEndpoints != 0 && (!config.DataPlane || config.DataPlaneEndpoints < evaluationDataPlaneMinEndpoints || config.DataPlaneEndpoints > evaluationDataPlaneMaxEndpoints) {
 		return fmt.Errorf("data-plane endpoints require -data-plane and must be 0 or %d-%d", evaluationDataPlaneMinEndpoints, evaluationDataPlaneMaxEndpoints)
 	}
@@ -302,6 +318,9 @@ func (config evaluationConfig) ports() []int {
 	}
 	if config.subjectLinks() {
 		ports = append(ports, config.SnapshotDeliveryPort)
+	}
+	if config.ProtectedDNS && config.DNSTransferPort != 0 {
+		ports = append(ports, config.DNSTransferPort)
 	}
 	return ports
 }
@@ -374,6 +393,9 @@ func prepareEvaluation(output string, config evaluationConfig, now time.Time) (e
 	}
 	if config.DataPlane {
 		dirs = append(dirs, "data-plane")
+		if config.ProtectedDNS {
+			dirs = append(dirs, filepath.Join("data-plane", "dns"))
+		}
 	}
 	for _, name := range dirs {
 		if err := root.Mkdir(name, 0o700); err != nil {

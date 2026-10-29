@@ -81,6 +81,89 @@ func TestEvaluationDataPlaneProtectedRender(t *testing.T) {
 	}
 }
 
+func TestEvaluationProtectedDNSRender(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "install")
+	config := testEvaluationDataPlaneConfig()
+	config.ProtectedDNS = true
+	inventory, err := prepareEvaluation(state, config, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range evaluationProtectedDNSFiles {
+		info, err := os.Stat(filepath.Join(state, name))
+		if err != nil || info.Mode().Perm() != 0o600 || inventory.Files[name] == "" {
+			t.Fatalf("%s is not a protected inventory file", name)
+		}
+	}
+	read := func(name string) string {
+		data, err := os.ReadFile(filepath.Join(state, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	policy, compiler := read("dp-policy.zpl"), read("dp-policy.zplc")
+	for _, want := range []string{
+		"device.zpr.adapter.cn:'zpr-dns'",
+		"zpr.addr:'" + evaluationProtectedDNSAddress + "'",
+		"define VisaDnsPublisher as an adapter with zpr.adapter.cn:'vs.zpr'",
+		"provide ZprDNS at dns.svc.zpr over TCP 53",
+		"allow AuthenticatedZprDevice",
+		"allow VisaDnsPublisher",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Fatalf("protected DNS policy missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		`"zpr-dns" = "dp-dns-auth.pub"`,
+		`[services.ZprDNS]`,
+		`[protocols.dns_tcp]`,
+	} {
+		if !strings.Contains(compiler, want) {
+			t.Fatalf("protected DNS compiler config missing %q", want)
+		}
+	}
+	endpointPolicy, endpointCompiler := renderEvaluationDataPlanePolicy(2, evaluationDataPlaneTopology(evaluationInventory{Config: config}), true)
+	for _, want := range []string{"Endpoint01", "AuthenticatedZprDevice", "VisaDnsPublisher",
+		"provide ZprDNS at dns.svc.zpr over TCP 53"} {
+		if !strings.Contains(endpointPolicy, want) {
+			t.Fatalf("protected DNS endpoint policy missing %q", want)
+		}
+	}
+	for _, want := range []string{`"endpoint-01" = "dp-endpoint-01-auth.pub"`, `"zpr-dns" = "dp-dns-auth.pub"`, `[services.ZprDNS]`} {
+		if !strings.Contains(endpointCompiler, want) {
+			t.Fatalf("protected DNS endpoint compiler config missing %q", want)
+		}
+	}
+	visa := read("vs.toml")
+	for _, want := range []string{
+		`server = "` + evaluationProtectedDNSAddress + `"`,
+		`zone = "svc.zpr."`,
+		`tsig_key_file = "` + filepath.Join(state, "dp-dns-publisher.key") + `"`,
+		`adapter_state_file = "` + filepath.Join(state, "data-plane", "dns", "adapters.json") + `"`,
+		`nsupdate_bin = "/usr/bin/nsupdate"`,
+	} {
+		if !strings.Contains(visa, want) {
+			t.Fatalf("Visa DNS update config missing %q", want)
+		}
+	}
+	key := read("dp-dns-publisher.key")
+	if !strings.Contains(key, `key "zpr-vs-publisher"`) || !strings.Contains(key, "hmac-sha256") {
+		t.Fatal("publisher key is not a BIND-format HMAC-SHA256 key")
+	}
+	if secret := parseTSIG(t, "zpr-vs-publisher", []byte(key)); len(secret) == 0 {
+		t.Fatal("publisher TSIG secret is empty")
+	}
+	if !strings.Contains(read("dp-dns-named.conf"), `listen-on-v6 port 53 { `+evaluationProtectedDNSAddress+`; };`) ||
+		!strings.Contains(read("dp-dns-named.conf"), `allow-transfer { none; };`) {
+		t.Fatal("BIND config must bind only to the protected address and disable zone transfer")
+	}
+	if info, err := os.Stat(filepath.Join(state, "data-plane", "dns")); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatal("protected DNS state directory is not private")
+	}
+}
+
 func TestEvaluationDataPlaneIdentities(t *testing.T) {
 	files := map[string][]byte{}
 	now := time.Now()
@@ -251,6 +334,13 @@ func TestEvaluationDataPlaneMountsAreMinimal(t *testing.T) {
 	if command := evaluationDataPlaneInitCommand(inventory, state); !strings.HasPrefix(command, "docker exec "+name+" ip netns exec zpr-vs vs --initialize-subject-snapshot -c ") {
 		t.Fatalf("init command: %s", command)
 	}
+	inventory.Config.ProtectedDNS = true
+	dnsArgs := strings.Join(evaluationDataPlaneArguments(state, inventory, "image", false), "\n")
+	for _, want := range []string{"ZPR_DP_PROTECTED_DNS=1", "--mount\ntype=bind,source=" + filepath.Join(state, "dp-dns-publisher.key")} {
+		if !strings.Contains(dnsArgs, want) {
+			t.Fatalf("protected DNS data-plane arguments missing %q", want)
+		}
+	}
 }
 
 func TestEvaluationDataPlaneActorsAdmitted(t *testing.T) {
@@ -262,6 +352,50 @@ func TestEvaluationDataPlaneActorsAdmitted(t *testing.T) {
 	} {
 		if evaluationDataPlaneActorsAdmitted([]byte(body)) != want {
 			t.Fatalf("%s: want %v", body, want)
+		}
+	}
+}
+
+func TestEvaluationProtectedDNSAnswerMatches(t *testing.T) {
+	for _, test := range []struct {
+		answer string
+		want   bool
+	}{
+		{evaluationProtectedDNSAddress + "\n", true},
+		{"fd5a:5052::54\n", false},
+		{"", false},
+		{"not-an-address\n", false},
+	} {
+		if got := evaluationProtectedDNSAnswerMatches([]byte(test.answer), evaluationProtectedDNSAddress); got != test.want {
+			t.Errorf("evaluationProtectedDNSAnswerMatches(%q) = %v, want %v", test.answer, got, test.want)
+		}
+	}
+}
+
+func TestEvaluationProtectedDNSQueryUsesVisaNetworkNamespace(t *testing.T) {
+	want := []string{"ip", "netns", "exec", "zpr-vs", "dig", "+tcp", "+time=2", "+tries=1", "+short",
+		"AAAA", "@" + evaluationProtectedDNSAddress, "dns.svc.zpr."}
+	if got := evaluationProtectedDNSQueryArguments("dns.svc.zpr."); !slices.Equal(got, want) {
+		t.Fatalf("evaluationProtectedDNSQueryArguments() = %v, want %v", got, want)
+	}
+}
+
+func TestEvaluationProtectedDNSRuntimeSetup(t *testing.T) {
+	script, err := os.ReadFile(filepath.Join("..", "..", "packaging", "evaluation", "data-plane", "data-plane.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`ip -n zpr-vs -6 route add "$dns_zpr/128" dev tun0`,
+		`ip netns add zpr-dns`,
+		`ip -n zpr-dns -6 addr add "$dns_zpr/128" dev tun0`,
+		`ip -n zpr-dns -6 route add fd5a:5052::/32 dev tun0`,
+		"mkdir -p /run/named",
+		"chown bind:bind /run/named",
+		"ip netns exec zpr-dns /usr/sbin/named",
+	} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("protected DNS runtime setup missing %q", want)
 		}
 	}
 }
@@ -359,7 +493,7 @@ func TestEvaluationDataPlaneEndpoints(t *testing.T) {
 	if slices.ContainsFunc(evaluationDataPlaneRequired(plain), func(name string) bool { return strings.Contains(name, "endpoint") || strings.Contains(name, "client") }) {
 		t.Fatal("installs without endpoints must keep the D1 file set")
 	}
-	if policy, compiler := renderEvaluationDataPlanePolicy(0, evaluationDataPlaneTopology(evaluationInventory{})); policy != evaluationDataPlanePolicy || compiler != evaluationDataPlaneCompilerConfig {
+	if policy, compiler := renderEvaluationDataPlanePolicy(0, evaluationDataPlaneTopology(evaluationInventory{}), false); policy != evaluationDataPlanePolicy || compiler != evaluationDataPlaneCompilerConfig {
 		t.Fatal("zero endpoints must render the D1 policy unchanged")
 	}
 }

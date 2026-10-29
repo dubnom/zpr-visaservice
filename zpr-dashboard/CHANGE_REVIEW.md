@@ -24,8 +24,10 @@ frontend refactor.
   transaction; an audit failure rolls back the decision. Terminal decisions
   cannot be rewritten. Submit a new revision/request for further changes.
 - Revalidation on approval: changed source/revision or observed domain context
-  rejects approval. A different issuer/subject must approve by default.
-- Explicit single-operator self-approval opt-in, never implied by a global grant.
+  rejects approval. Submit and approve are always two separate steps. A single
+  operator may do both; approval by the proposer is allowed but recorded as
+  `self_review` on the event, shown in the UI and logged as an `AUDIT WARNING`
+  because it is less secure than an independent review.
 - Unknown mutation outcomes require queue reconciliation; the browser never
   automatically retries submission or review decisions. Session loss clears
   source details. Failed reads retain last-good data with a stale warning.
@@ -42,8 +44,9 @@ application or an external-network policy.
 
 Opening the same protected store also initializes separate subject-link review
 tables. Internal APIs persist immutable device/LDAP-entryUUID proposals and
-transactional independent review decisions, with exact digest/version/registry
-revision matching. There is no self-approval override for these records.
+transactional review decisions, with exact digest/version/registry
+revision matching. A proposer may approve their own record; the event is
+flagged `self_review` like generic reviews.
 `review-approved` means review evidence only, not an active subject binding.
 
 These records cannot enter the existing policy/gateway queue or authorize a
@@ -148,9 +151,10 @@ Every operation requires an explicit organization within the verified grant;
 mutations require the existing same-origin session/CSRF proof. Display names
 and email are labels, never identities. No new privileges are seeded automatically.
 
-Set `"allow_self_approval": true` only when deliberately configuring
-single-operator operation. The decision still records the same named author/
-reviewer and reason. Restart to change configuration/grants; no hot reload.
+`allow_self_approval` is obsolete: it is accepted and ignored. Single-operator
+approval is always allowed and flagged in the audit. The decision still records
+the named author/reviewer and reason. Restart to change configuration/grants;
+no hot reload.
 
 The stack launcher passes the configuration and narrow persistent database
 directory mounts only when `ZPR_CHANGE_REVIEW_CONFIG_FILE` is explicitly set.
@@ -164,7 +168,7 @@ All routes use `/api/change-review/` in Control Room:
 
 | Method | Route | Contract |
 | --- | --- | --- |
-| GET | `capabilities?organization=...` | Self-approval setting, application disabled |
+| GET | `capabilities?organization=...` | Application disabled |
 | GET | `requests?organization=...&offset=0` | Up to 50 records, `next_offset` or -1 |
 | GET | `requests/{id}?organization=...` | Exact immutable proposal and audit |
 | POST | `requests` | Organization, kind, target, saved revision, reason |
