@@ -6,6 +6,8 @@ static/ansi_up.LICENSE
 static/ansi_up.js
 static/app.css
 static/app.js
+static/approvals.html
+static/approvals.js
 static/assertions.css
 static/assertions.js
 static/assistant-core.js

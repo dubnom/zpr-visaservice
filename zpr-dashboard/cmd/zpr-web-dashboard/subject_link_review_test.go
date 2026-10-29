@@ -597,3 +597,18 @@ func TestSubjectReviewApprovalIsAuditedAndSelfApprovalIsFlagged(t *testing.T) {
 		}
 	}
 }
+
+func TestSubjectReviewQueueListsOrganizationReviews(t *testing.T) {
+	f := subjectReviewHTTP(t)
+	record := subjectReviewRecord(t, subjectReviewResponse(t, f.api,
+		f.request(t, "POST", subjectReviewPrefix+"proposals", "submit", "author", subjectReviewJSON(t, f.input)), 200))
+	response := subjectReviewResponse(t, f.api,
+		f.request(t, "GET", subjectReviewPrefix+"queue?organization_id=production", "", "reviewer", nil), 200)
+	var queue struct {
+		Reviews []struct{ ID, State string } `json:"reviews"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &queue); err != nil || len(queue.Reviews) != 1 ||
+		queue.Reviews[0].ID != record.ID || queue.Reviews[0].State == "" {
+		t.Fatal("unexpected queue", response.Body.String())
+	}
+}

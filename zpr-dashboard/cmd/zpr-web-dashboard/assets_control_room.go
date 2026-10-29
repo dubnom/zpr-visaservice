@@ -6,7 +6,7 @@ import "embed"
 // New files in static must not become production assets implicitly.
 //
 //go:embed static/ansi_up.LICENSE static/ansi_up.js static/app.css static/app.js
-//go:embed static/assertions.css static/assertions.js static/assistant-core.js static/budget-authority.html
+//go:embed static/approvals.html static/approvals.js static/assertions.css static/assertions.js static/assistant-core.js static/budget-authority.html
 //go:embed static/budget-authority.js static/change-review.css static/change-review.html static/change-review.js
 //go:embed static/code-editor.css static/code-editor.js static/colored-log.js static/config-editor.js
 //go:embed static/config-form.js static/control-room-shell.js static/control-room-typography.css static/diagnostics.css static/diagnostics.js

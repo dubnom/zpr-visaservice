@@ -242,6 +242,15 @@ func (api *subjectReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var record changereview.SubjectLinkReview
 	switch request.permission {
 	case "subject-link.read":
+		if request.id == changereview.SubjectLinkQueueID {
+			var queue []changereview.SubjectLinkReview
+			if queue, err = api.store.ListSubjectLinks(r.Context(), request.organization); err != nil {
+				subjectReviewError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"reviews": queue})
+			return
+		}
 		record, err = api.store.GetSubjectLink(r.Context(), request.organization, request.id)
 	case "subject-link.propose":
 		input := request.submission

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Approvals - ZPR Control Room</title>
+  <link rel="stylesheet" href="/change-review.css?v=3">
+  <script src="/control-room-shell.js" defer></script>
+  <script src="/operator-request.js" defer></script>
+  <script src="/approvals.js" defer></script>
+  <script src="/operator-login.js" defer></script>
+</head>
+<body>
+  <header><a href="/">Control Room</a><h1>Approvals</h1></header>
+  <main>
+    <section class="operator-login" aria-label="Operator session">
+      <h2 class="operator-login-title" id="operator-login-title">Sign in</h2>
+      <p class="operator-login-description" id="operator-login-description">Named-user permissions are required for each organization and operation.</p>
+      <p id="operator-login-status"></p>
+      <form id="operator-login-form" method="post" action="/auth/operator/login"><button type="submit">Sign in</button></form>
+      <button id="operator-logout" type="button" hidden>Sign out</button>
+      <p id="operator-scope" hidden></p>
+    </section>
+    <p class="boundary">Approving records a review decision only. It does not activate a binding, deliver a snapshot or change enforcement.</p>
+    <p id="status" role="status" aria-live="polite">Sign in to begin.</p>
+    <fieldset id="approvals-workspace" disabled>
+      <legend>Organization</legend>
+      <label>Organization <input id="approvals-organization" list="approvals-organizations" required maxlength="128" autocomplete="off"></label>
+      <datalist id="approvals-organizations"></datalist>
+      <button id="approvals-refresh" type="button">Refresh</button>
+      <label>Filter
+        <select id="approvals-filter">
+          <option value="waiting">Waiting for approval</option>
+          <option value="all">All requests</option>
+        </select>
+      </label>
+      <label>Note recorded with an approval <input id="approvals-reason" maxlength="1024" value="Approved from the Approvals page" autocomplete="off"></label>
+      <h2>Subject links</h2>
+      <p id="approvals-empty" hidden>Nothing to show.</p>
+      <ul id="approvals-list" class="approvals-list"></ul>
+    </fieldset>
+    <details id="approvals-manual">
+      <summary>Manual tools</summary>
+      <p>Expert pages for building requests by hand. They are being replaced by automatic setup from the Simulator.</p>
+      <ul>
+        <li><a href="/subject-links.html">Subject-link requests and registrations</a></li>
+        <li><a href="/subject-link-publications.html">Subject-link publication</a></li>
+        <li><a href="/budget-authority.html">Budget authority</a></li>
+      </ul>
+    </details>
+  </main>
+</body>
+</html>

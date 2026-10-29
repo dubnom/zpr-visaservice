@@ -2,6 +2,8 @@ ansi_up.LICENSE
 ansi_up.js
 app.css
 app.js
+approvals.html
+approvals.js
 assertions.css
 assertions.js
 assistant-core.js

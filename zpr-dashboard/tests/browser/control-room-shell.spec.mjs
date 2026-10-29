@@ -6,13 +6,14 @@ import { fileURLToPath } from "node:url";
 const origin = "https://control-room.example.test";
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const pages = [
-  ["budget-authority.html", "Budget Authority"],
-  ["subject-links.html", "Subject-Link Review"],
-  ["subject-link-publications.html", "Subject-Link Publication"],
+  ["approvals.html", "Approvals"],
+  ["budget-authority.html", null],
+  ["subject-links.html", null],
+  ["subject-link-publications.html", null],
 ];
 
 for (const [file, label] of pages) {
-  test(`${label} uses the Control Room navigation`, async ({ page, context }) => {
+  test(`${label ?? file} uses the Control Room navigation`, async ({ page, context }) => {
     await context.route("**/*", async route => {
       const url = new URL(route.request().url());
       if (url.origin !== origin) return route.abort();
@@ -32,10 +33,14 @@ for (const [file, label] of pages) {
     await page.goto(`${origin}/${file}`);
     const nav = page.locator("nav.primary-nav");
     await expect(nav).toHaveCount(1);
-    await expect(nav.locator("a.nav-link.active")).toHaveText(label);
-    await expect(nav.locator("a.nav-link.active")).toHaveAttribute("aria-current", "page");
+    if (label) {
+      await expect(nav.locator("a.nav-link.active")).toHaveText(label);
+      await expect(nav.locator("a.nav-link.active")).toHaveAttribute("aria-current", "page");
+    } else {
+      await expect(nav.locator("a.nav-link.active")).toHaveCount(0);
+    }
     await expect(nav.locator("a.nav-link").first()).toHaveAttribute("href", "/#map");
-    const advanced = nav.locator('.nav-group[aria-labelledby="nav-advanced-label"]');
-    await expect(advanced.locator("a")).toHaveText(["Budget Authority", "Subject-Link Review", "Subject-Link Publication"]);
+    await expect(nav.locator('a[href="/approvals.html"]')).toHaveCount(1);
+    await expect(nav.locator("a.nav-link", { hasText: /Budget Authority|Subject-Link/ })).toHaveCount(0);
   });
 }

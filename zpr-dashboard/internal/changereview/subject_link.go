@@ -295,6 +295,46 @@ func (s *Store) GetSubjectLink(ctx context.Context, org, id string) (SubjectLink
 	return record, tx.Commit()
 }
 
+// SubjectLinkQueueID is reserved: it addresses the review list, never a record.
+const SubjectLinkQueueID = "queue"
+
+// ListSubjectLinks returns the newest reviews for one organization.
+func (s *Store) ListSubjectLinks(ctx context.Context, org string) ([]SubjectLinkReview, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, "SELECT id FROM subject_link_reviews WHERE organization=? ORDER BY rowid DESC LIMIT 100", org)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	records := make([]SubjectLinkReview, 0, len(ids))
+	for _, id := range ids {
+		record, err := readSubjectLink(ctx, tx, org, id)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, tx.Commit()
+}
+
 func appendSubjectLinkEvent(ctx context.Context, tx *sql.Tx, id string, event Event) error {
 	data, err := json.Marshal(event)
 	if err != nil {
