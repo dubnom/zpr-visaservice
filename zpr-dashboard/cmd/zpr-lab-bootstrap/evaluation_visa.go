@@ -156,6 +156,15 @@ file_ts_dir = %s
 
 // resolve checks executables before any port is reserved or container started.
 func (options evaluationRuntimeOptions) resolve(config evaluationConfig) (evaluationRuntimeOptions, error) {
+	if options.ControlRoomBinary != "" {
+		if !filepath.IsAbs(options.ControlRoomBinary) {
+			return options, errors.New("-control-room-binary must be an absolute path")
+		}
+		info, err := os.Lstat(options.ControlRoomBinary)
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Mode().Perm()&0o111 == 0 {
+			return options, errors.New("-control-room-binary must be a nonempty regular executable file, not a symlink")
+		}
+	}
 	if !config.VisaService {
 		return options, nil
 	}

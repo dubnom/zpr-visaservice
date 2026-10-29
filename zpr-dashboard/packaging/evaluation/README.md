@@ -1,5 +1,67 @@
 # Local evaluation bootstrap (B1–B3)
 
+## Offline Linux/amd64 engineering package
+
+The evaluation stack can also be built into a source-independent archive.
+This is the ZPR-side engineering package, **not yet the integrated ZPR +
+Simulator demo**. It includes a prebuilt bootstrap, production-tagged
+Control Room/Control-Service, the privileged data-plane image, and the exact
+LDAP, logging and OIDC images. It does not contain installation secrets:
+credentials and identities are generated into the private target state.
+The host needs Linux x86-64, Docker Engine with Compose v2, `sha256sum`, and
+enough disk for the images and persistent state. No Go/Rust toolchain,
+source checkout, image pull, or build is needed at installation.
+
+On the build host, with dependencies cached and all four Linux/amd64 images
+already loaded:
+
+```sh
+sh packaging/evaluation/package.sh demo-20261029 /absolute/new-output-directory
+```
+
+`ZPR_EVALUATION_PACKAGE_DATA_PLANE_IMAGE`, `ZPR_EVALUATION_PACKAGE_LDAP_IMAGE`,
+`ZPR_EVALUATION_PACKAGE_LOGGING_IMAGE`, and
+`ZPR_EVALUATION_PACKAGE_OIDC_IMAGE` may select different locally loaded images.
+The builder records immutable image IDs, source revision/dirty status, toolchain
+version and payload checksums. A failed build retains an `INCOMPLETE` marker;
+do not distribute its output. Successful archives are unsigned engineering
+artifacts, not production releases. Validate the archive SHA-256 against a
+separately trusted checksum before extracting it into a new private directory.
+Then, from the extracted package:
+
+```sh
+./demo.sh verify
+./demo.sh load
+./demo.sh start /absolute/new-private-state
+```
+
+`start` runs in the foreground. Ctrl-C stops this installation and retains its
+state. Restart with the identical state path and configuration flags; never
+delete retained state to resolve startup problems. Generated credentials are
+delivered through the existing evaluation workflow. Trust only `ca.pem` on
+the browser computer, never copy CA keys or the whole state directory.
+The default Room URL is `https://localhost:18787`. The `-browser-ip` option
+below permits explicit private-network browser access on a **new** installation.
+When testing alongside another installation, supply distinct ports at first
+start using the flags documented below.
+
+The package enables Visa Service, the data plane, protected DNS and three
+bootstrap-admitted endpoints. Endpoint admission is an evaluation shortcut,
+not human authentication or successful subject-link publication. Control Room
+includes one Approvals navigation entry; its current queue handles subject-link
+approval only, not rejection or budget requests. Simulator-driven organization
+setup, complete scenario acceptance, a matching refreshed Simulator archive,
+and clean-host qualification remain separate work. Stopping or omitting
+Simulator must not stop these operator services.
+
+The source launcher also accepts
+`-control-room-binary /absolute/prebuilt/zpr-control-room` to skip its Go build.
+That file must be a nonempty regular executable, not a symlink. The option is
+runtime-only, like `-vs-binary`, and does not rotate installation identity.
+Without it the existing source-build behavior is unchanged.
+
+## Source launcher
+
 **EVALUATION ONLY — NOT PRODUCTION SUPPORTED.** This is a foreground,
 single-host engineering evaluation launcher, not the production appliance BOM,
 a complete Visa Service installation, or a Simulator launcher.

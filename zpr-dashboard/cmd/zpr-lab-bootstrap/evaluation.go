@@ -101,6 +101,7 @@ func parseEvaluationNodeLocation(value string) (*evaluationNodeLocation, error) 
 
 // Runtime-only executables are not frozen: upgrading them keeps install identity.
 type evaluationRuntimeOptions struct {
+	ControlRoomBinary string
 	VisaServiceBinary string
 	ValkeyServer      string
 	DataPlaneImage    string
@@ -161,6 +162,7 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		return nil
 	})
 	runtime := evaluationRuntimeOptions{}
+	flags.StringVar(&runtime.ControlRoomBinary, "control-room-binary", "", "absolute path of a prebuilt production Control Room/Control-Service executable; skips the source build")
 	flags.StringVar(&runtime.DataPlaneImage, "data-plane-image", evaluationDataPlaneImage, "with -data-plane: local data-plane image")
 	flags.StringVar(&runtime.VisaServiceBinary, "vs-binary", "", "with -visa-service: absolute path of a built vs executable (cargo build -p vs)")
 	flags.StringVar(&runtime.ValkeyServer, "valkey-server", "valkey-server", "with -visa-service: valkey-server executable name or absolute path")

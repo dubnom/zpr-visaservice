@@ -91,6 +91,21 @@ type evaluationProcess struct {
 	log     *os.File
 }
 
+func prepareEvaluationOperator(ctx context.Context, state string, runtime evaluationRuntimeOptions, out io.Writer) (string, error) {
+	if runtime.ControlRoomBinary != "" {
+		fmt.Fprintln(out, "Using prebuilt production Control Room/Control-Service package (no source build).")
+		return runtime.ControlRoomBinary, nil
+	}
+	fmt.Fprintln(out, "Building current production Control Room/Control-Service package (Simulator assets excluded)…")
+	binary := filepath.Join(state, "build", "zpr-control-room")
+	build := exec.CommandContext(ctx, "go", "build", "-trimpath", "-tags", "production", "-o", binary, "./cmd/zpr-web-dashboard")
+	build.Stdout, build.Stderr = io.Discard, io.Discard
+	if err := build.Run(); err != nil {
+		return "", errors.New("production package build failed; run packaging/control-room/build.sh separately for build diagnostics")
+	}
+	return binary, nil
+}
+
 func startEvaluation(state string, inventory evaluationInventory, runtime evaluationRuntimeOptions, out io.Writer) error {
 	lock, err := lockEvaluation(state)
 	if err != nil {
@@ -150,12 +165,9 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		}
 	}
 	defer closePorts()
-	fmt.Fprintln(out, "Building current production Control Room/Control-Service package (Simulator assets excluded)…")
-	binary := filepath.Join(state, "build", "zpr-control-room")
-	build := exec.CommandContext(ctx, "go", "build", "-trimpath", "-tags", "production", "-o", binary, "./cmd/zpr-web-dashboard")
-	build.Stdout, build.Stderr = io.Discard, io.Discard
-	if err := build.Run(); err != nil {
-		return errors.New("production package build failed; run packaging/control-room/build.sh separately for build diagnostics")
+	binary, err := prepareEvaluationOperator(ctx, state, runtime, out)
+	if err != nil {
+		return err
 	}
 	closePorts()
 	processes := []*evaluationProcess{}
