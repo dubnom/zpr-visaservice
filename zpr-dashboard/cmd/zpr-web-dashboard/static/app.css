@@ -662,16 +662,18 @@ h1 { margin-bottom: 6px; font-size: 28px; line-height: 1.15; letter-spacing: 0; 
 .graph-link.service-link { stroke: var(--service-trusted-rest-border); stroke-width: 1.5; }
 .legend-service-link { width: 14px !important; height: 0; border-top: 2px solid var(--service-trusted-rest-border); }
 #graph-world .graph-visa-count rect { fill: var(--accent-primary); stroke: var(--graph-marker-outline); stroke-width: 1.5; filter: none; }
-#graph-world .graph-visa-count.empty rect { fill: var(--graph-marker-surface); stroke: var(--accent-primary); }
+#graph-world .graph-visa-count.empty rect { fill: transparent; stroke: none; }
 #graph-world .graph-visa-count[role="button"] rect { pointer-events: all; cursor: context-menu; }
 #graph-world .graph-visa-count[role="button"]:focus-visible rect { stroke: var(--graph-count-focus); stroke-width: 3; }
+#graph-world .graph-visa-count.empty[role="button"]:focus-visible rect { stroke: none; }
 #graph-world .graph-denial-count rect { fill: var(--graph-denial-count); }
-#graph-world .graph-denial-count.empty rect { fill: var(--graph-marker-surface); stroke: var(--graph-denial-count); }
+#graph-world .graph-denial-count.empty rect { fill: transparent; stroke: none; }
 .graph-dark #graph-world .graph-denial-count:not(.empty) rect { fill: var(--graph-denial-count); stroke: var(--graph-dark-denial-count); }
-.graph-dark #graph-world .graph-denial-count.empty rect { stroke: var(--graph-dark-denial-empty); }
+.graph-dark #graph-world .graph-denial-count.empty rect { stroke: none; }
 #graph-world .graph-visa-count text { fill: var(--graph-marker-text); stroke: none; font: 700 10px var(--mono); text-anchor: middle; pointer-events: none; }
 #graph-world .graph-visa-count[data-count-pulse] rect { stroke: var(--graph-grant); stroke-width: 3; filter: drop-shadow(0 0 5px var(--graph-grant)); }
 #graph-world .graph-denial-count[data-count-pulse] rect { stroke: var(--graph-deny); filter: drop-shadow(0 0 5px var(--graph-deny)); }
+#graph-world .graph-visa-count.empty[data-count-pulse] rect { stroke: none; filter: none; }
 .graph-node { fill: var(--graph-node-surface); stroke: var(--graph-node-border); stroke-width: 2; }
 .graph-node.synced { fill: var(--surface-selected); stroke: var(--graph-node-synced); }
 .graph-adapter { fill: var(--graph-adapter-surface); stroke: var(--graph-adapter-border); stroke-width: 1.5; }

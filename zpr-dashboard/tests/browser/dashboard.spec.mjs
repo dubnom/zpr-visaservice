@@ -23,6 +23,23 @@ function resultGutter(page, sourceID) {
   return page.locator(`.code-editor-host[data-source="${sourceID}"] .cm-result-gutter`);
 }
 
+function actorMapCount(page, actorCN, denial = false) {
+  return page.locator(`#graph-number-layer .graph-visa-count[data-count-actor="${actorCN}"]${denial ? ".graph-denial-count" : ""}`);
+}
+
+function serviceMapCount(page, serviceName) {
+  return page.locator(`#graph-number-layer .graph-visa-count[data-count-service="${serviceName}"]`);
+}
+
+async function expectNoMapCountDrawing(badge) {
+  const hitArea = badge.locator("rect");
+  await expect(hitArea).toHaveAttribute("class", "graph-count-hit-area");
+  await expect(hitArea).not.toHaveAttribute("rx", "9");
+  await expect(hitArea).toHaveCSS("fill", "rgba(0, 0, 0, 0)");
+  await expect(hitArea).toHaveCSS("stroke", "none");
+  await expect(badge.locator("text")).toHaveCount(0);
+}
+
 // CodeMirror shows clickable clones of the hidden legacy gutter buttons; clones keep the "Line N" titles.
 function gutterMarker(page, sourceID, line, selector = "button") {
   const markers = page.locator(`.code-editor-host[data-source="${sourceID}"] .cm-result-gutter`).locator(selector);
@@ -8334,7 +8351,7 @@ test("GUI visa count opens complete current adapter and service inventories", as
   await page.route("**/api/simulator/**", route => route.abort());
   await page.goto(appURL + "/#map");
   await page.locator("#pause-poll").click();
-  const clientCount = page.locator('.graph-vertex[data-inspect-actor="client"] .graph-visa-count');
+  const clientCount = actorMapCount(page, "client");
   await expect(clientCount).toHaveAttribute("aria-label", "16 active visas");
   await clientCount.click({ button: "right" });
   const inspector = page.locator("#component-inspector");
@@ -8357,14 +8374,14 @@ test("GUI visa count opens complete current adapter and service inventories", as
   await expect(page.locator("#inspector-kind")).toHaveText("ACTIVE VISAS");
   await expect(inspector.locator(".detail-item")).toHaveCount(16);
   await page.locator("#inspector-close").click();
-  const httpsCount = page.locator('.graph-service-badge[data-inspect-service="HTTPS"] .graph-visa-count');
+  const httpsCount = serviceMapCount(page, "HTTPS");
   await httpsCount.focus();
   await page.keyboard.press("Enter");
   await expect(page.locator("#inspector-kind")).toHaveText("ACTIVE VISAS");
   await expect(page.locator("#inspector-title")).toHaveText("HTTPS");
   await expect(inspector.locator(".detail-item")).toHaveCount(16);
   await page.locator("#inspector-close").click();
-  const httpCount = page.locator('.graph-service-badge[data-inspect-service="HTTP"] .graph-visa-count');
+  const httpCount = serviceMapCount(page, "HTTP");
   await httpCount.click();
   await expect(inspector).toContainText("No current visas.");
   await expect(inspector.locator(".detail-item")).toHaveCount(0);
@@ -8539,13 +8556,31 @@ test("GUI Map count badges overlap upper-right glyph boundaries", async ({ page,
     { service_name: "Visa", actor_cn: "vs", zpr_addr: "fd00::2", service_kind: "Visa", service_endpoints: "TCP/5002" },
     { service_name: "Gateway", actor_cn: "gateway", zpr_addr: "fd00::3", service_kind: "Gateway", service_endpoints: "TCP/443" },
   ];
-  api.snapshot.active_visas = [];
+  const expires = Date.now() / 1000 + 3600;
+  api.snapshot.active_visas = [
+    { id: 1, expires, source_addr: "fd00::10", dest_addr: "fd00::1", dest_port: 443, proto: "TCP" },
+    { id: 2, expires, source_addr: "fd00::10", dest_addr: "fd00::2", dest_port: 5002, proto: "TCP" },
+    { id: 3, expires, source_addr: "fd00::10", dest_addr: "fd00::3", dest_port: 443, proto: "TCP" },
+  ];
   await page.goto(appURL + "/#map");
   await expect(page.locator(".graph-visa")).toHaveCount(1);
-  const anchors = await page.locator("[data-topology-component]").evaluateAll(elements => elements.map(element => {
-    const badge = element.querySelector(".graph-visa-count rect");
+  const drawingOrder = await page.evaluate(() => {
+    const world = document.querySelector("#graph-world");
+    const children = [...world.children];
+    return [
+      children.indexOf(world.querySelector(".graph-edge")),
+      children.indexOf(world.querySelector(".graph-vertex.node")),
+      children.indexOf(world.querySelector(".graph-vertex.adapter")),
+      children.indexOf(world.querySelector("#graph-number-layer")),
+    ];
+  });
+  expect(drawingOrder[0]).toBeLessThan(drawingOrder[1]);
+  expect(drawingOrder[1]).toBeLessThan(drawingOrder[2]);
+  expect(drawingOrder[2]).toBeLessThan(drawingOrder[3]);
+  const anchors = await page.locator("#graph-number-layer .graph-visa-count rect").evaluateAll(badges => badges.map(badge => {
+    const element = [...document.querySelectorAll("[data-topology-component]")]
+      .find(component => component.dataset.topologyComponent === badge.parentElement.dataset.countOwner);
     const glyph = element.querySelector(":scope > .graph-node, :scope > .graph-adapter, :scope > .graph-visa, :scope > .graph-gateway, :scope > rect");
-    if (!badge || !glyph) return null;
     const bounds = badge.getBBox();
     const shape = glyph.getBBox();
     const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
@@ -8592,15 +8627,17 @@ test("GUI Map shows complete active visa counts and solid component links", asyn
   api.snapshot.recent_visas = api.snapshot.active_visas.slice(0, 10);
   await page.goto(appURL + "/#map");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
-  const clientCount = page.locator('[data-inspect-actor="client"] .graph-visa-count');
-  const serverCount = page.locator('[data-inspect-actor="server"] .graph-visa-count');
-  const serviceCount = page.locator('[data-inspect-service="API"] .graph-visa-count');
+  const clientCount = actorMapCount(page, "client");
+  const serverCount = actorMapCount(page, "server");
+  const serviceCount = serviceMapCount(page, "API");
   await expect(clientCount).toHaveAttribute("aria-label", "14 active visas");
   await expect(clientCount.locator("text")).toHaveText("14");
   await expect(serverCount).toHaveAttribute("aria-label", "13 active visas");
   await expect(serviceCount).toHaveAttribute("aria-label", "13 active visas");
-  await expect(page.locator('[data-inspect-service="Other"] .graph-visa-count')).toHaveAttribute("aria-label", "0 active visas");
-  await expect(page.locator('.graph-vertex[data-inspect-actor="node"] .graph-denial-count')).toHaveAttribute("aria-label", "Buffered denial count unavailable");
+  await expect(serviceMapCount(page, "Other")).toHaveAttribute("aria-label", "0 active visas");
+  await expect(actorMapCount(page, "node", true)).toHaveAttribute("aria-label", "Buffered denial count unavailable");
+  await expectNoMapCountDrawing(serviceMapCount(page, "Other"));
+  await expectNoMapCountDrawing(actorMapCount(page, "node", true));
   for (const line of await page.locator(".graph-link").all()) await expect(line).toHaveCSS("stroke-dasharray", "none");
   await expect(page.locator(".legend-service-link")).toHaveCSS("border-top-style", "solid");
   const fitted = await page.evaluate(() => {
@@ -8623,10 +8660,11 @@ test("GUI Map shows complete active visa counts and solid component links", asyn
   api.snapshot.active_visas = null;
   await page.locator("#refresh-now").click();
   await expect(clientCount).toHaveAttribute("aria-label", "Active visa count unavailable");
-  await expect(serviceCount.locator("text")).toHaveText("?");
+  await expectNoMapCountDrawing(serviceCount);
   api.snapshot.active_visas = [];
   await page.locator("#refresh-now").click();
   await expect(clientCount).toHaveAttribute("aria-label", "0 active visas");
+  await expectNoMapCountDrawing(clientCount);
 });
 
 for (const reducedMotion of ["no-preference", "reduce"]) {
@@ -8641,11 +8679,10 @@ test(`GUI Map denial badges and count changes pulse without replay (${reducedMot
   await page.goto(appURL + "/#map");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   const node = page.locator('.graph-vertex[data-inspect-actor="node"]');
-  const nodeCount = node.locator(".graph-denial-count");
+  const nodeCount = actorMapCount(page, "node", true);
   await expect(nodeCount).toHaveAttribute("aria-label", "0 buffered denials");
   await expect(nodeCount.locator("text")).toHaveCount(0);
-  await expect(nodeCount.locator("rect")).toHaveCSS("fill", "rgb(255, 255, 255)");
-  await expect(nodeCount.locator("rect")).toHaveCSS("stroke", "rgb(161, 44, 44)");
+  await expectNoMapCountDrawing(nodeCount);
   await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
   api.snapshot.actors[0].node_details.buffered_denials = 3;
   api.snapshot.active_visas = [{ id: 1, expires: Math.floor(Date.now() / 1000) + 3600, source_addr: "fd00::2", dest_addr: "fd00::1", dest_port: 443, proto: "TCP" }];
@@ -8653,7 +8690,7 @@ test(`GUI Map denial badges and count changes pulse without replay (${reducedMot
   await expect(nodeCount).toHaveAttribute("data-count-pulse", "true");
   await expect(nodeCount.locator("text")).toHaveText("3");
   await expect(nodeCount.locator("rect")).toHaveCSS("fill", "rgb(161, 44, 44)");
-  await expect(page.locator('[data-inspect-service="API"] .graph-visa-count')).toHaveAttribute("data-count-pulse", "true");
+  await expect(serviceMapCount(page, "API")).toHaveAttribute("data-count-pulse", "true");
   const pulseGeometry = await nodeCount.evaluate(async el => {
     const animation = el.getAnimations()[0];
     const base = el.getBBox();
@@ -8682,11 +8719,13 @@ test(`GUI Map denial badges and count changes pulse without replay (${reducedMot
   await page.locator("#refresh-now").click();
   await expect(nodeCount).toHaveAttribute("data-count-pulse", "true");
   await expect(nodeCount.locator("text")).toHaveCount(0);
+  await expectNoMapCountDrawing(nodeCount);
   if (reducedMotion !== "reduce") await expect.poll(() => nodeCount.evaluate(el => Number(el.getAttribute("transform")?.match(/scale\(([^)]+)/)?.[1]))).toBeGreaterThan(1.6);
   await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
   api.snapshot.actors[0].node_details.buffered_denials = null;
   await page.locator("#refresh-now").click();
   await expect(nodeCount).toHaveAttribute("aria-label", "Buffered denial count unavailable");
+  await expectNoMapCountDrawing(nodeCount);
   await expect(page.locator("[data-count-pulse]")).toHaveCount(0);
   await node.click();
   await expect(page.locator("#inspector-body")).toContainText("Local denial occurrences");
@@ -9255,7 +9294,7 @@ test("Forward and reverse visas are grouped as pairs on the Visas page and Map v
 
   await page.goto(appURL + "/#map");
   await page.locator("#pause-poll").click();
-  await page.locator('.graph-vertex[data-inspect-actor="client"] .graph-visa-count').click();
+  await actorMapCount(page, "client").click();
   const inspector = page.locator("#inspector-body");
   await expect(inspector.locator(".visa-pair")).toHaveCount(3);
   await expect(inspector.locator(".visa-pair.paired")).toHaveCount(1);
@@ -9295,14 +9334,14 @@ test("GUI Map legend items highlight their component type and right-click matche
   await client.locator(".graph-adapter, circle, rect").first().click({ button: "right", force: true });
   await expect(page.locator("#topology-stage")).toHaveClass(/graph-visa-focused/);
   await expect(page.locator("#component-inspector")).not.toHaveClass(/open/);
-  await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
+  await actorMapCount(page, "client").dispatchEvent("contextmenu", { bubbles: true });
   await expect(page.locator("#topology-stage")).not.toHaveClass(/graph-visa-focused/);
-  await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
+  await actorMapCount(page, "client").dispatchEvent("contextmenu", { bubbles: true });
   await expect(page.locator("#topology-stage")).toHaveClass(/graph-visa-focused/);
   await expect(page.locator('.graph-vertex[data-inspect-actor="client"]')).toHaveClass(/visa-focus/);
   await expect(page.locator('.graph-service-badge[data-inspect-service="API"]')).toHaveCSS("opacity", "1");
   await expect(page.locator("#component-inspector")).not.toHaveClass(/open/);
-  await client.locator(".graph-visa-count").click();
+  await actorMapCount(page, "client").click();
   await expect(page.locator("#component-inspector")).toHaveClass(/open/);
   await page.locator("#inspector-close").click();
   await expect(page.locator("#topology-stage")).toHaveClass(/graph-visa-focused/);
@@ -9341,15 +9380,15 @@ test("GUI Map Clear highlight and Esc remove highlighting; the info panel is ind
   await expect(clear).toBeHidden();
 
   const client = page.locator('.graph-vertex[data-inspect-actor="client"]');
-  await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
+  await actorMapCount(page, "client").dispatchEvent("contextmenu", { bubbles: true });
   await expect(stage).toHaveClass(/graph-visa-focused/);
   await expect(clear).toBeVisible();
   await expect(page.locator("#component-inspector")).not.toHaveClass(/open/);
-  await client.locator(".graph-visa-count").click();
+  await actorMapCount(page, "client").click();
   await expect(page.locator("#component-inspector")).toHaveClass(/open/);
   await page.locator("#inspector-close").click();
   await expect(stage).toHaveClass(/graph-visa-focused/);
-  await client.locator(".graph-visa-count").click();
+  await actorMapCount(page, "client").click();
   await page.keyboard.press("Escape");
   await expect(page.locator("#component-inspector")).not.toHaveClass(/open/);
   await expect(stage).toHaveClass(/graph-visa-focused/);
@@ -9357,7 +9396,7 @@ test("GUI Map Clear highlight and Esc remove highlighting; the info panel is ind
   await expect(stage).not.toHaveClass(/graph-visa-focused/);
   await expect(clear).toBeHidden();
 
-  await client.locator(".graph-visa-count").dispatchEvent("contextmenu", { bubbles: true });
+  await actorMapCount(page, "client").dispatchEvent("contextmenu", { bubbles: true });
   await page.locator("#map-legend-key summary").click();
   await page.locator('[data-legend-kind="service"]').click();
   await clear.click();
@@ -10466,7 +10505,7 @@ test("GUI text editors start unwrapped with a checkbox and keep gutter rows alig
   }
 });
 
-test("GUI Map zero visa badges are white-filled and retain accessible counts", async ({ page, appURL, api }) => {
+test("GUI Map count badges omit ovals and numbers for zero or unavailable counts", async ({ page, appURL, api }) => {
   // Unattached adapters are listed in Detached rather than drawn, so attach them to a node.
   const hub = { cn: "hub", node: true, zpr_addr: "fd00::ff", node_details: { adapters: ["client"], in_sync: true } };
   api.snapshot.actors = [hub, { cn: "client", node: false, zpr_addr: "fd00::1" }];
@@ -10475,24 +10514,27 @@ test("GUI Map zero visa badges are white-filled and retain accessible counts", a
   await page.goto(appURL + "/#map");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   for (const selector of ['[data-inspect-actor="client"]', '[data-inspect-service="API"]']) {
-    const badge = page.locator(`${selector} .graph-visa-count`);
+    const badge = selector.includes("data-inspect-service")
+      ? serviceMapCount(page, "API")
+      : actorMapCount(page, "client");
     await expect(badge).toHaveAttribute("aria-label", "0 active visas");
     await expect(badge.locator("title")).toHaveText("0 active visas");
-    await expect(badge.locator("text")).toHaveCount(0);
-    await expect(badge.locator("rect")).toHaveCSS("fill", "rgb(255, 255, 255)");
-    await expect(badge.locator("rect")).toHaveCSS("stroke", "rgb(23, 77, 61)");
-    await expect(badge.locator("rect")).toHaveAttribute("width", "22");
+    await expectNoMapCountDrawing(badge);
   }
   api.snapshot.active_visas = [{ id: 1, expires: Math.floor(Date.now() / 1000) + 3600, source_addr: "fd00::2", dest_addr: "fd00::1", proto: "TCP", dest_port: 443 }];
   await page.locator("#refresh-now").click();
   for (const selector of ['[data-inspect-actor="client"]', '[data-inspect-service="API"]']) {
-    const badge = page.locator(`${selector} .graph-visa-count`);
+    const badge = selector.includes("data-inspect-service")
+      ? serviceMapCount(page, "API")
+      : actorMapCount(page, "client");
     await expect(badge.locator("text")).toHaveText("1");
     await expect(badge.locator("rect")).toHaveCSS("fill", "rgb(23, 77, 61)");
   }
   api.snapshot.active_visas = null;
   await page.locator("#refresh-now").click();
-  await expect(page.locator('[data-inspect-actor="client"] .graph-visa-count text')).toHaveText("?");
+  const unavailableBadge = actorMapCount(page, "client");
+  await expect(unavailableBadge).toHaveAttribute("aria-label", "Active visa count unavailable");
+  await expectNoMapCountDrawing(unavailableBadge);
 });
 
 for (const reducedMotion of ["no-preference", "reduce"]) {
@@ -10901,7 +10943,7 @@ test("GUI Map buffered denial badge opens node denial details on right-click", a
   ];
   await page.goto(appURL + "/#map");
   await page.getByRole("button", { name: "Pause", exact: true }).click();
-  const badge = page.locator('.graph-vertex[data-inspect-actor="node"] .graph-denial-count');
+  const badge = actorMapCount(page, "node", true);
   await expect(badge).toHaveAttribute("role", "button");
   await badge.click({ button: "right" });
   const inspector = page.locator("#inspector-body");
