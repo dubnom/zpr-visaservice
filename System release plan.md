@@ -10,6 +10,16 @@ current system, authorize deployment, or claim an installer exists.
 
 ## Current execution priority: demo, not production
 
+See the [forward-work portfolio](../ZPR_PORTFOLIO.md) for a summarized,
+cross-track priority/dependency index. This release plan retains ownership of
+production acceptance gates; the specific demo contract owns limited-demo
+acceptance. Neither track's completion implies the other's.
+
+The dated [release-readiness assessment](RELEASE_READINESS_ASSESSMENT.md)
+separates available engineering/evaluation/demo evidence from outstanding
+production qualification and flags conflicting historical platform summaries.
+It is an inventory, not new deployment or release acceptance.
+
 On 2026-10-17 the user clarified that the immediate objective is working ZPR
 and Simulator demo packages. Demo-only shortcuts are acceptable if their limits
 and required production fixes are recorded. The selected target is a pair of
@@ -882,6 +892,12 @@ See the [same-host identity instructions](zpr-dashboard/packaging/simulator/READ
 
 ## Non-negotiable boundaries
 
+- **OPA-1 operator access (user direction 2026-10-29):** shipped operator tools
+  retain protected loopback setup/recovery and policy-controlled ZPR access.
+  An explicitly switchable operator browser gateway is a separate ingress;
+  disabling it must terminate its access without disabling loopback or ZPR.
+  See the [operator access plan and blocking acceptance matrix](OPERATOR_ACCESS_PLAN.md).
+  Implementation and release qualification remain open.
 - Control Room and Control-Service operate independently of Simulator. They
   never read simulation manifests, profiles, sessions or workloads. The server
   installation does not install or require Simulator.
@@ -906,7 +922,7 @@ convert recommendations into requirements.
 | --- | --- |
 | Host support | **Approved:** Ubuntu 24.04 LTS, x86-64 dedicated server/VM. Resources, supported virtualization and minimum privileges remain open |
 | Deployment format | **Approved:** container appliance, Docker Engine/Compose v2, pinned images and signed installer. Exact runtime versions remain to qualify |
-| Access model | **Approved:** direct HTTPS on a selected private management IP and company hostname, corporate network/VPN only; required OIDC, no reverse proxy/public exposure. Runtime opt-in implemented; firewall/routing verification and container-network/installer integration remain open |
+| Access model | **Updated user direction 2026-10-29:** protected loopback for bootstrap/recovery, permanently configured policy-controlled ZPR access, and independently switchable operator browser gateway. This supersedes the earlier direct-private-management-only/no-reverse-proxy restriction for operator access; it does not authorize public Internet exposure. Gateway placement, authenticated local recovery, HTTPS origins and session shutdown remain to implement/qualify under [OPA-1](OPERATOR_ACCESS_PLAN.md) |
 | Initial endpoint | Complete and certify one platform; current Mac pilot priority remains unchanged unless explicitly reprioritized |
 | Identity sources | **Updated approval (2026-10-17):** installer choice of existing company providers or bundled production services for operator OIDC login and device/actor authentication with trusted attributes. Bundled services are independent of Simulator, not demo identities. Provider qualification, protocols/mappings, credentials and first-admin recovery remain open |
 | Logging | **Approved (2026-10-17):** installer choice of an existing logging integration or bundled collection, persistent storage and authorized querying. Backend qualification, retention/resource bounds, access controls, backup and failure behavior remain implementation work |
@@ -1085,6 +1101,15 @@ using only release artifacts and company inputs, with Simulator unavailable.
 
 ### M3. Complete useful production operation
 
+- [ ] Complete **CFG-1**, the [ZPR Config lifecycle gate](CONFIGURATION_LIFECYCLE_STATUS.md):
+  distinguish configuration from policy; identify supported consumers/targets;
+  implement exact-revision apply/reload/restart, effective-state readback,
+  drift/partial-failure status and explicit recovery/rollback. Saved Config
+  drafts and guarded policy upload do not satisfy this requirement.
+- [ ] Complete **OPA-1**: protect loopback setup/recovery, provide direct ZPR
+  access to each shipped operator tool, and implement authorized operator-gateway
+  enable/disable with confirmed session termination and independent path status.
+  Include bootstrap policy, per-tool permissions and local outage recovery.
 - [ ] Complete one platform's enrollment through trusted credential issuance,
   privileged runtime handoff, live adapter admission and revocation.
 - [ ] Finish platform signing/distribution requirements; do not bypass OS trust
@@ -1173,6 +1198,9 @@ invalidates earlier artifact-specific acceptance.
 
 ### R2. Run engineering qualification
 
+- [ ] Run **OPA-1** ingress/authorization and lifecycle tests, including browser
+  identity protections, listener bypass checks, long-lived gateway sessions,
+  concurrent commands and unknown outcomes. Retain per-application results.
 - [ ] Run required Rust/Go tests, formatting/lints, protocol/integration tests
   and supported desktop/tablet operator checks for the release components.
 - [ ] Test authorization, organization isolation, configuration revisions,
@@ -1188,6 +1216,12 @@ invalidates earlier artifact-specific acceptance.
 
 ### R3. Certify fresh-company installation
 
+- [ ] Pass **CFG-1** for each declared supported ZPR Config target: edit/save,
+  authorized production apply and independent effective-state/behavior readback,
+  with Simulator unavailable. Do not substitute policy-install evidence.
+- [ ] Pass **OPA-1** fresh bootstrap and gateway-off acceptance: protected local
+  setup before fabric availability, real allowed/denied ZPR operator access,
+  verified gateway session shutdown and continued loopback/ZPR operation.
 - [ ] Start from a disposable fresh supported host outside the development
   workspace. Download and verify the exact staged signed artifacts.
 - [ ] Use a new company identity, keys and administrator; no pre-existing runtime
@@ -1204,6 +1238,11 @@ invalidates earlier artifact-specific acceptance.
 
 ### R4. Certify upgrade and recovery
 
+- [ ] Pass **CFG-1** interruption, lost-response, restart, drift/partial-failure
+  and rollback/restore cases, preserving valid authority and OPA-1 recovery.
+- [ ] Pass **OPA-1** restart/upgrade/restore and outage recovery: gateway-off
+  persists, old state cannot silently reopen ingress, and authorized protected
+  loopback recovery works without ZPR, gateway or normal IdP availability.
 - [ ] Install each declared upgrade origin and create representative state,
   including policy revisions, enrolled identities and operator grants.
 - [ ] Take and verify a consistent backup, upgrade using the signed candidate

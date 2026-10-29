@@ -8,6 +8,12 @@ and tailored reports, plus a separate read-only import of operator-supplied
 assertion-settings exports. Its UI remains independent of Control Room and
 Simulator, and does not require either service to run.
 
+The [Control Room Audit plan](ENTITY_HISTORY_PLAN.md) proposes scoped entity
+history, policy evolution and read-only potential-access analysis. It starts
+with production evidence/API inventories and a correlated visa timeline.
+It describes future production-evidence integration, not the standalone
+sample-based application's current capabilities or a durable-audit guarantee.
+
 For external attribute-provider authors and deployment operators, see the
 [trusted-source integration guide](TRUSTED_SOURCE_INTEGRATION.md): lookup
 protocol, independent policy/transport configuration, failure semantics,
@@ -16,6 +22,12 @@ operational controls and integration qualification.
 The [envelope and realm specification](ENVELOPE_REALM_SPEC.md) records deferred
 identity, administrative grant, parent-composition and delegated-source-access
 requirements. It is not implemented envelope support.
+The [worked envelope/realm cases](ENVELOPE_REALM_EXAMPLES.md) exercise the
+requirements and identify remaining design decisions.
+
+For an evidence-based separation of engineering artifacts, evaluation, demo and
+production gates, see the [release-readiness assessment](RELEASE_READINESS_ASSESSMENT.md).
+It records source inspection, not newly executed release qualification.
 
 For the B1 **evaluation-only**, Simulator-independent local operator/LDAP/logging
 bootstrap, see [the one-command evaluation runbook](zpr-dashboard/packaging/evaluation/README.md).
