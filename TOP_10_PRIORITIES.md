@@ -1,5 +1,10 @@
 # Top 10 ZPR Priorities
 
+**Historical snapshot:** for current cross-track prioritization, use the
+[ZPR forward-work portfolio](../../ZPR_PORTFOLIO.md), reconciled 2026-10-29.
+It separates demo delivery, production readiness, shared work and future design.
+The list below is retained as October 16 context, not the current global queue.
+
 Snapshot: 2026-10-16. Listed in suggested priority order, not as an approved
 execution schedule. This summary does not replace the detailed acceptance
 criteria in the linked work plans.
