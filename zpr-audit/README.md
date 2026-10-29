@@ -10,6 +10,12 @@ adapter can read a configured production Policy-Service directly; static hosting
 and package inclusion alone do not enable this connection. No real policy
 evaluation or broad historical event coverage is implemented.
 
+The integration boundary regression blocks every non-Audit browser request while
+importing synthetic current/baseline exports, comparing settings, downloading a
+report and rendering it for print. It also checks that runtime observations are
+excluded. This is automated boundary evidence, not a successful production export
+or operator acceptance.
+
 The local development UI is served from `public/`; see [Run](#run). Imported
 assertion settings remain operator-supplied data and are not submitted to a
 service by Audit.
