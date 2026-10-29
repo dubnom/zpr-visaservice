@@ -20,6 +20,7 @@ type controlRoomSecurity struct {
 	allowedPeer net.IP
 	auth        *operatorauth.Auth
 	management  bool
+	direct      bool
 }
 
 type operatorWebConfig struct {
@@ -27,6 +28,7 @@ type operatorWebConfig struct {
 	configPath, secretPath, caPath         string
 	trustedPeerIP                          string
 	managementIP, organization             string
+	directIP                               string
 	budgetApprovalAccess                   *systemconfig.BudgetApprovalAccess
 }
 
@@ -42,6 +44,7 @@ func controlRoomWebConfig() operatorWebConfig {
 		caPath:               os.Getenv("ZPR_OPERATOR_OIDC_CA_FILE"),
 		trustedPeerIP:        os.Getenv("ZPR_CONTROL_ROOM_OPERATOR_TRUSTED_PEER_IP"),
 		managementIP:         os.Getenv("ZPR_CONTROL_ROOM_MANAGEMENT_IP"),
+		directIP:             os.Getenv("ZPR_CONTROL_ROOM_DIRECT_IP"),
 		organization:         os.Getenv("ZPR_CONTROL_ROOM_ORGANIZATION_ID"),
 		budgetApprovalAccess: configuredBudgetApprovalAccess(),
 	}
@@ -84,6 +87,7 @@ func configuredSimulatorSecurity(ctx context.Context, listen string) (*controlRo
 		secretPath:    os.Getenv("ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE"),
 		caPath:        os.Getenv("ZPR_SIMULATOR_OPERATOR_OIDC_CA_FILE"),
 		trustedPeerIP: os.Getenv("ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP"),
+		directIP:      os.Getenv("ZPR_SIMULATOR_OPERATOR_DIRECT_IP"),
 	}
 	return loadOperatorWebSecurity(ctx, listen, config, newOperatorAuthFactory(config.caPath))
 }
@@ -100,18 +104,19 @@ func loadOperatorWebSecurity(ctx context.Context, listen string, config operator
 		ConfigPath: config.configPath, SecretPath: config.secretPath, CAPath: config.caPath,
 		TrustedPeerIP: config.trustedPeerIP, ManagementIP: config.managementIP, Organization: config.organization,
 		BudgetApprovalAccess: config.budgetApprovalAccess,
+		DirectIP:             config.directIP,
 	}, newAuth)
 	if err != nil {
 		return nil, err
 	}
 	return &controlRoomSecurity{
 		origin: security.Origin, tls: security.TLS, allowedPeer: security.AllowedPeer,
-		auth: security.Auth, management: security.Management,
+		auth: security.Auth, management: security.Management, direct: security.Direct,
 	}, nil
 }
 
 func (s *controlRoomSecurity) boundary() *operatorweb.Security {
-	return &operatorweb.Security{Origin: s.origin, TLS: s.tls, AllowedPeer: s.allowedPeer, Auth: s.auth, Management: s.management}
+	return &operatorweb.Security{Origin: s.origin, TLS: s.tls, AllowedPeer: s.allowedPeer, Auth: s.auth, Management: s.management, Direct: s.direct}
 }
 
 func (s *controlRoomSecurity) close() {

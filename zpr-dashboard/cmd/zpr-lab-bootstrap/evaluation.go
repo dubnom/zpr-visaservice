@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -28,6 +29,7 @@ const evaluationDexImage = "ghcr.io/dexidp/dex@sha256:5d0656fce7d453c0e3b2706abf
 const evaluationLogImage = "public.ecr.aws/zinclabs/openobserve@sha256:d4a878fac1f6c56003764f7f2a1625668917388f167e222c8c810de3f54c56ba"
 
 type evaluationConfig struct {
+	BrowserIP   string `json:"browser_ip,omitempty"`
 	DexImage    string `json:"oidc_image"`
 	DexPlatform string `json:"oidc_platform"`
 	OIDCPort    int    `json:"oidc_port"`
@@ -56,13 +58,14 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	passwordFile := flags.String("password-file", "", "reset only: exclusively create a private 0600 password delivery file instead of terminal output")
 	renderOnly := flags.Bool("render-only", false, "render/validate protected files only; no builds, Docker or services")
 	config := evaluationConfig{}
+	flags.StringVar(&config.BrowserIP, "browser-ip", "", "optional explicit private IPv4 address for browser HTTPS and OIDC; localhost redirects to this address")
 	flags.StringVar(&config.LDAPImage, "ldap-image", evaluationLDAPImage, "current packaged OpenLDAP immutable image")
 	flags.StringVar(&config.LogImage, "logging-image", evaluationLogImage, "current packaged OpenObserve immutable image")
 	flags.StringVar(&config.LogPlatform, "logging-platform", "linux/arm64", "platform of the current packaged OpenObserve image (linux/amd64 requires a matching image override)")
 	flags.StringVar(&config.DexImage, "oidc-image", evaluationDexImage, "current packaged Dex immutable image")
 	flags.StringVar(&config.DexPlatform, "oidc-platform", "linux/arm64", "platform of the current packaged Dex image")
-	flags.IntVar(&config.OIDCPort, "oidc-port", 15556, "loopback named-operator OIDC HTTPS port")
-	flags.IntVar(&config.RoomPort, "room-port", 18787, "loopback Control Room HTTPS port")
+	flags.IntVar(&config.OIDCPort, "oidc-port", 15556, "named-operator OIDC HTTPS port")
+	flags.IntVar(&config.RoomPort, "room-port", 18787, "Control Room HTTPS port")
 	flags.IntVar(&config.ServicePort, "service-port", 18790, "loopback Control-Service mTLS port")
 	flags.IntVar(&config.LDAPPort, "ldap-port", 11636, "loopback starter LDAPS port")
 	flags.IntVar(&config.LogPort, "logging-port", 15080, "loopback OpenObserve HTTPS port")
@@ -119,6 +122,12 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 }
 
 func (config evaluationConfig) validate() error {
+	if config.BrowserIP != "" {
+		ip := net.ParseIP(config.BrowserIP)
+		if ip == nil || ip.To4() == nil || !ip.IsPrivate() || ip.String() != config.BrowserIP {
+			return errors.New("browser-ip must be an explicit canonical private IPv4 address, not a wildcard, loopback address or hostname")
+		}
+	}
 	if !immutableImage.MatchString(config.DexImage) || !immutableImage.MatchString(config.LDAPImage) || !immutableImage.MatchString(config.LogImage) {
 		return errors.New("evaluation images must be immutable image IDs or repository@sha256 digests")
 	}
@@ -136,6 +145,25 @@ func (config evaluationConfig) validate() error {
 		ports[port] = true
 	}
 	return nil
+}
+
+func (config evaluationConfig) browserHost() string {
+	if config.BrowserIP != "" {
+		return config.BrowserIP
+	}
+	return "localhost"
+}
+
+func (config evaluationConfig) browserOrigin(port int) string {
+	return fmt.Sprintf("https://%s:%d", config.browserHost(), port)
+}
+
+func (config evaluationConfig) roomListen() string {
+	host := config.BrowserIP
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, fmt.Sprint(config.RoomPort))
 }
 
 func prepareEvaluation(output string, config evaluationConfig, now time.Time) (evaluationInventory, error) {
@@ -245,7 +273,7 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 		return inventory, errors.New("invalid install identity")
 	}
 	if !reflect.DeepEqual(inventory.Config, config) {
-		return inventory, errors.New("existing install configuration differs; reuse original image/port flags or choose a NEW state directory")
+		return inventory, errors.New("existing install configuration differs; reuse original image/port/browser-ip flags or choose a NEW state directory; do not edit protected inventory to change an issuer")
 	}
 	for _, name := range []string{"assertion-sources.json", "adapter-logs.json"} {
 		info, err := os.Lstat(filepath.Join(output, name))
@@ -283,14 +311,18 @@ func generateEvaluation(state string, config evaluationConfig, now time.Time) (m
 		return nil, inventory, err
 	}
 	inventory.InstallID = hex.EncodeToString(random)
-	ca, key, caPEM, caKey, err := certificateWithOrganization("ZPR evaluation-only CA", "localhost", "ZPR EVALUATION ONLY", now, nil, nil, x509.ExtKeyUsageServerAuth)
+	var addresses []net.IP
+	if config.BrowserIP != "" {
+		addresses = []net.IP{net.ParseIP(config.BrowserIP)}
+	}
+	ca, key, caPEM, caKey, err := certificateWithOrganization("ZPR evaluation-only CA", "localhost", "ZPR EVALUATION ONLY", now, nil, nil, x509.ExtKeyUsageServerAuth, addresses...)
 	if err != nil {
 		return nil, inventory, err
 	}
 	defer key.D.SetInt64(0)
 	files["ca.pem"], files["ca-key.pem"] = caPEM, caKey
 	for name, usage := range map[string]x509.ExtKeyUsage{"server": x509.ExtKeyUsageServerAuth, "client": x509.ExtKeyUsageClientAuth} {
-		_, leafKey, leaf, secret, err := certificateWithOrganization("ZPR evaluation-only "+name, "localhost", "ZPR EVALUATION ONLY", now, ca, key, usage)
+		_, leafKey, leaf, secret, err := certificateWithOrganization("ZPR evaluation-only "+name, "localhost", "ZPR EVALUATION ONLY", now, ca, key, usage, addresses...)
 		if err != nil {
 			return nil, inventory, err
 		}
@@ -413,12 +445,12 @@ ZO_LOG_LEVEL=warn
 		return nil, inventory, errors.New("cannot protect bootstrap administrator credential")
 	}
 	dexConfig := map[string]any{
-		"issuer":           fmt.Sprintf("https://localhost:%d", config.OIDCPort),
+		"issuer":           config.browserOrigin(config.OIDCPort),
 		"storage":          map[string]any{"type": "sqlite3", "config": map[string]string{"file": "/var/lib/dex/dex.db"}},
 		"web":              map[string]string{"https": "0.0.0.0:5556", "tlsCert": "/etc/zpr/evaluation/server-chain.pem", "tlsKey": "/etc/zpr/evaluation/server-key.pem"},
 		"oauth2":           map[string]any{"responseTypes": []string{"code"}, "passwordConnector": "local"},
 		"enablePasswordDB": true,
-		"staticClients":    []map[string]any{{"id": "zpr-control-room", "name": "ZPR Evaluation Control Room", "secret": string(files["oidc-room-client.secret"]), "redirectURIs": []string{fmt.Sprintf("https://localhost:%d/auth/operator/callback", config.RoomPort)}}},
+		"staticClients":    []map[string]any{{"id": "zpr-control-room", "name": "ZPR Evaluation Control Room", "secret": string(files["oidc-room-client.secret"]), "redirectURIs": []string{config.browserOrigin(config.RoomPort) + "/auth/operator/callback"}}},
 		"staticPasswords":  []map[string]string{{"email": "admin@evaluation.invalid", "hash": string(hash), "username": "Evaluation Administrator", "userID": inventory.InstallID}},
 		"logger":           map[string]string{"level": "error", "format": "json"},
 	}
@@ -428,6 +460,9 @@ ZO_LOG_LEVEL=warn
 	}
 	files["dex.json"] = append(data, '\n')
 	dex := service(config.DexImage, "oidc-state", "/var/lib/dex", config.OIDCPort, 5556, "server-chain.pem", "server-key.pem", "dex.json")
+	if config.BrowserIP != "" {
+		dex["ports"] = []string{fmt.Sprintf("127.0.0.1:%d:5556", config.OIDCPort), fmt.Sprintf("%s:%d:5556", config.BrowserIP, config.OIDCPort)}
+	}
 	dex["platform"] = config.DexPlatform
 	dex["entrypoint"] = []string{"dex", "serve", "/etc/zpr/evaluation/dex.json"}
 	compose := map[string]any{"name": "zpr-evaluation-" + inventory.InstallID, "services": map[string]any{"ldap": ldap, "logging": logging, "oidc": dex}}
@@ -437,6 +472,9 @@ ZO_LOG_LEVEL=warn
 	}
 	files["compose.json"] = append(data, '\n')
 	files["EVALUATION.txt"] = []byte(evaluationBanner + "\nOpenObserve AGPL-3.0 accepted for evaluation; 7-day retention; admin-only loopback access.\nRegistration and lifecycle logging use ordinary production contracts. No policy enforcement or production install is claimed.\n")
+	if config.BrowserIP != "" {
+		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte("Browser HTTPS/OIDC explicitly enabled at "+config.BrowserIP+"; restrict access with your VPN/firewall. Localhost Room redirects to the canonical network origin.\n")...)
+	}
 	registration := evaluationSourceRegistration(state, inventory)
 	data, err = json.MarshalIndent(registration, "", "  ")
 	if err != nil {

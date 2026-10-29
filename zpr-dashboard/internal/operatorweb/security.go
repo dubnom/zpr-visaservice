@@ -27,6 +27,7 @@ type Config struct {
 	ConfigPath, SecretPath, CAPath         string
 	TrustedPeerIP                          string
 	ManagementIP, Organization             string
+	DirectIP                               string
 	BudgetApprovalAccess                   *systemconfig.BudgetApprovalAccess
 }
 
@@ -36,6 +37,7 @@ type Security struct {
 	AllowedPeer net.IP
 	Auth        *operatorauth.Auth
 	Management  bool
+	Direct      bool
 }
 
 type AuthFactory func(context.Context, operatorauth.Config, string) (*operatorauth.Auth, error)
@@ -67,6 +69,17 @@ func Load(ctx context.Context, listen string, config Config, newAuth AuthFactory
 	caPath := strings.TrimSpace(config.CAPath)
 	trustedPeerRaw := strings.TrimSpace(config.TrustedPeerIP)
 	management := config.ManagementIP != ""
+	direct := config.DirectIP != ""
+	if direct {
+		ip := net.ParseIP(config.DirectIP)
+		if ip == nil || ip.To4() == nil || !ip.IsPrivate() || ip.String() != config.DirectIP ||
+			trustedPeerRaw != "" || management {
+			return nil, errors.New("direct network HTTPS requires one explicit private IPv4 address, without management/proxy settings")
+		}
+		if configPath == "" || secretPath == "" {
+			return nil, errors.New("direct network HTTPS requires named-user OIDC configuration and secret")
+		}
+	}
 	if management {
 		if config.Application != "Control Room" || trustedPeerRaw != "" {
 			return nil, errors.New("management HTTPS is Control Room only and cannot use a trusted proxy peer")
@@ -88,7 +101,7 @@ func Load(ctx context.Context, listen string, config Config, newAuth AuthFactory
 	if caPath != "" && (configPath == "" || secretPath == "") {
 		return nil, errors.New("operator OIDC CA configuration requires OIDC config and secret")
 	}
-	if certPath == "" && keyPath == "" && origin == "" && configPath == "" && secretPath == "" && caPath == "" && trustedPeerRaw == "" && !management {
+	if certPath == "" && keyPath == "" && origin == "" && configPath == "" && secretPath == "" && caPath == "" && trustedPeerRaw == "" && !management && !direct {
 		return &Security{}, nil
 	}
 	if certPath == "" || keyPath == "" || origin == "" {
@@ -111,6 +124,10 @@ func Load(ctx context.Context, listen string, config Config, newAuth AuthFactory
 	if management {
 		if err != nil || host != config.ManagementIP || port == "0" || originPort != port {
 			return nil, errors.New("management HTTPS requires the explicit management IP listener on the exact origin port")
+		}
+	} else if direct {
+		if err != nil || host != config.DirectIP || u.Hostname() != config.DirectIP || port == "0" || originPort != port {
+			return nil, errors.New("direct network HTTPS requires the configured private IP for listener and origin on the same fixed port")
 		}
 	} else if err != nil || (!loopbackListener && !proxyListener) || port == "0" || originPort != port ||
 		(u.Hostname() != "localhost" && (originIP == nil || !originIP.IsLoopback())) {
@@ -147,7 +164,7 @@ func Load(ctx context.Context, listen string, config Config, newAuth AuthFactory
 	}
 	security := &Security{Origin: origin, AllowedPeer: trustedPeer, TLS: &tls.Config{
 		MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate},
-	}, Management: management}
+	}, Management: management, Direct: direct}
 	if configPath == "" && secretPath == "" {
 		return security, nil
 	}
@@ -194,8 +211,8 @@ func Load(ctx context.Context, listen string, config Config, newAuth AuthFactory
 	if err != nil {
 		return nil, err
 	}
-	if management && auth == nil {
-		return nil, errors.New("management HTTPS requires initialized named-user OIDC authorization")
+	if (management || direct) && auth == nil {
+		return nil, errors.New("network HTTPS requires initialized named-user OIDC authorization")
 	}
 	security.Auth = auth
 	return security, nil
@@ -216,8 +233,8 @@ func (s *Security) Protect(next http.Handler, writeError ErrorWriter) http.Handl
 		remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 		ip := net.ParseIP(remoteHost)
 		remoteAllowed := ip != nil && (ip.IsLoopback() || s.AllowedPeer != nil && ip.Equal(s.AllowedPeer) ||
-			s.Management && ip.IsGlobalUnicast())
-		if s.Management && (s.Auth == nil ||
+			(s.Management || s.Direct) && ip.IsGlobalUnicast())
+		if (s.Management || s.Direct) && (s.Auth == nil ||
 			(r.Header.Get("Origin") != "" && r.Header.Get("Origin") != s.Origin) ||
 			r.Header.Get("Forwarded") != "" || r.Header.Get("X-Forwarded-Host") != "" ||
 			r.Header.Get("X-Forwarded-Proto") != "" || r.Header.Get("X-Forwarded-For") != "") {

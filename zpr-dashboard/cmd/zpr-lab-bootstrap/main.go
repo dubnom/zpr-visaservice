@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -335,7 +336,7 @@ func certificateWithUsage(commonName, hostname string, now time.Time, parent *x5
 	return certificateWithOrganization(commonName, hostname, "ZPR simulator lab only", now, parent, signer, usage)
 }
 
-func certificateWithOrganization(commonName, hostname, organization string, now time.Time, parent *x509.Certificate, signer *ecdsa.PrivateKey, usage x509.ExtKeyUsage) (*x509.Certificate, *ecdsa.PrivateKey, []byte, []byte, error) {
+func certificateWithOrganization(commonName, hostname, organization string, now time.Time, parent *x509.Certificate, signer *ecdsa.PrivateKey, usage x509.ExtKeyUsage, addresses ...net.IP) (*x509.Certificate, *ecdsa.PrivateKey, []byte, []byte, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -358,6 +359,9 @@ func certificateWithOrganization(commonName, hostname, organization string, now 
 		template.NotAfter = now.Add(365 * 24 * time.Hour)
 		// Limit DNS trust to this installation's lab suffix or exact loopback host.
 		template.PermittedDNSDomainsCritical = true
+		for _, address := range addresses {
+			template.PermittedIPRanges = append(template.PermittedIPRanges, &net.IPNet{IP: address.To4(), Mask: net.CIDRMask(32, 32)})
+		}
 		if hostname == "localhost" {
 			template.PermittedDNSDomains = []string{hostname}
 		} else {
@@ -366,6 +370,7 @@ func certificateWithOrganization(commonName, hostname, organization string, now 
 		parent, signer = template, key
 	} else {
 		template.DNSNames = []string{hostname}
+		template.IPAddresses = addresses
 		template.ExtKeyUsage = []x509.ExtKeyUsage{usage}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, parent, &key.PublicKey, signer)
