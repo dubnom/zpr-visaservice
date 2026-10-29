@@ -664,7 +664,7 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 	if inventory.Config.SimulatorPort != 0 {
 		simulator := operatorauth.Config{
 			Version: 1, Issuer: issuer, ClientID: "zpr-simulator",
-			RedirectURL: inventory.Config.browserOrigin(inventory.Config.SimulatorPort) + "/auth/operator/callback",
+			RedirectURL:            inventory.Config.browserOrigin(inventory.Config.SimulatorPort) + "/auth/operator/callback",
 			SessionLifetimeSeconds: 3600,
 			Grants: []operatorauth.Grant{{
 				Issuer: issuer, Subject: admin.Subject, Organizations: []string{organization},
