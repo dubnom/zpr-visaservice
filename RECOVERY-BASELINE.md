@@ -960,10 +960,12 @@ receipts in `validation/peer-reset-development-20261023`.
 ### Limited preview goal and rights-review status
 
 The next product goal is an invite-only, self-hosted Linux ARM64 download for
-only explicitly tested workflows; optional AI is disabled and out of scope.
-This does not assert five-organization/seventeen-scenario completion. No
-participant distribution, public download, website change, or promotion has
-been authorized or performed. The exact staged gates are in the external
+only explicitly tested workflows. Claude assistance may be an opt-in using
+each tester's own key only after the optional-AI acceptance gate passes; core
+workflows must remain usable when AI is skipped or unconfigured. This does not
+assert five-organization/seventeen-scenario completion. No participant
+distribution, public download, website change, or promotion has been authorized
+or performed. The exact staged gates are in the external
 `COMPILED-DOWNLOAD-PLAN.md`.
 
 Initial component inventory for the current archive
@@ -973,19 +975,80 @@ retained under `validation/limited-preview-license-review-20261023` and is
 
 - 526 Rust ARM64 normal/build dependency package versions; 31 declared license
   expressions; four crates have no Cargo license field, though their exact
-  source roots have Apache-2.0 license files. MPL-2.0 packages are present and
-  their notice/source obligations need review.
-- 20 Go module versions linked into the four release binaries. Twenty-eight
-  license/notice files exist in the local module cache, but none of these Go
-  dependency notices are in the compiled archive. Offline module-graph listing
-  also encounters a missing go.sum entry for `gopkg.in/check.v1`.
+  source roots have Apache-2.0 license files, staged and mapped by source
+  revision pending package-level review. License-text discovery mapped all
+  526 package versions: 522 from local exact source roots and four from
+  repository root files at the exact commits recorded in the crate archives.
+  The 294 unique texts and 918 package/file references are hash-indexed in the
+  private evidence directory; this source-file inventory is not legal
+  clearance. MPL-2.0 packages are present and their notice/source obligations
+  need review. Exact-source ARM64 package-level Cargo trees confirm `colored`
+  3.0.0 in `zplc`, `colored` 3.1.1 in `ph`, `vs`, `vs-admin`, and `zpt`, and
+  `option-ext` in `ph-cli`. `vsapikey` is a binary target in package `vs`; its
+  target-specific linker closure is not established. An exact Linux ARM64
+  `cargo check --locked --offline --bin vsapikey` attempt stopped because
+  `aws-lc-sys` could not find `aarch64-linux-gnu-gcc`; this is not closure
+  evidence and must be repeated in a suitable Linux ARM64 build environment.
+  The archive still lacks required participant-facing notices and any
+  required source materials. A separate private source candidate has been
+  assembled from the exact lockfile-checksum-verified `.crate` archives for
+  `colored` 3.0.0/3.1.1 and `option-ext` 0.2.0, preserving their packaged
+  sources and MPL-2.0 notices. It is not part of the runtime archive or
+  participant-available; source-delivery instructions, complete notices,
+  covered-scope review, and legal review remain open.
+- 20 Go module versions linked into the four release binaries. A recursive
+  scan of those exact module source roots found 37 conventional license/notice
+  files (30 unique content hashes); all 37 are staged and hash-verified in the
+  private inventory, nine beyond the earlier top-level collection. The
+  additional files include the pinned SQLite module's detailed third-party
+  scope notice and additional memory/libc notices. Its scope table separates
+  linked, test-only, module-graph-only, and repository-only components, and
+  places MPL-2.0 `hashicorp/golang-lru` in its module-graph-only section. The
+  dashboard is the only release binary with `modernc.org/sqlite`; source
+  imports include the driver and `lib`, but no optional `vec` or `vfs` imports
+  were found. A Linux ARM64 `go list -deps` query resolves only the driver's
+  `sqlite`, `lib`, and `vtab` packages; `hashicorp/golang-lru`, `vec`, and
+  `vfs` are absent. This is package dependency evidence, not a linker map or
+  legal clearance; the filename scan is not proof of complete notice coverage.
+  None of the Go notices are in the compiled archive. Follow-up resolved the
+  82-module graph offline in a disposable copy, with normal checksum verification and no
+  source `go.mod`/`go.sum` changes; the graph receipt is retained in the
+  license-review evidence directory. Hash-verified source indexes help
+  navigate the staged files; they are not a license classification.
 - 129 installed OS packages (37 retained `.deb` inputs); each maps to a
-  `/usr/share/doc/<package>/copyright` path in the image, including shared
-  notices and symlinks. The pinned Ubuntu base and package notices still need
-  review and bundling.
+  `/usr/share/doc/<package>/copyright` path in the exact image. The private
+  staged set has 129 package mappings and 92 distinct notice contents, including
+  one symlinked shared notice. Exact parsing of nonempty literal Debian
+  `License:` field values yields 230 distinct identifiers across 117
+  machine-readable package copyright files, with 2,442 license stanzas
+  indexed. Twelve package copyright files have no parseable `License:` field
+  and remain on the manual-review list. The corrected token-boundary triage
+  flags 97 package records with GPL/LGPL/MPL/AGPL/GFDL or content-license
+  labels.
+  These labels are unnormalized triage data, not legal conclusions. The exact
+  text of the eight distinct legacy notices covering the 12 records has now
+  been reviewed and summarized privately, including GCC runtime-exception,
+  glibc library-versus-utility, and library-versus-tool/documentation
+  distinctions for several packages. Exact installed-file scope and the
+  remaining Ubuntu base/legal review stay open. The exact
+  Ubuntu base layer has 92 installed packages; all 92 resolve to copyright
+  content matching the staged runtime notice set, including three shared-doc
+  symlink paths. Ubuntu's `/etc/legal` directs readers to per-package copyright
+  files; base-image redistribution terms and participant notice bundling still
+  need review. The exact base layer's 17 `/usr/share/common-licenses` entries
+  (14 files, three symlinks) are now staged with hashes. Of 15 literal
+  common-license references in package notices, 13 resolve exactly; `gpgv`
+  names absent `GPL-2.0` while `GPL-2` exists, and `gzip` names absent `GFDL-3`
+  while `GFDL-1.3` exists. No alias equivalence is assumed; those references
+  and base redistribution terms remain open for review.
 - The archive currently includes only four project/frontend notice files, not
-  the full Go/Rust/OS third-party notice set. Demo asset provenance is also
-  unresolved.
+  the full Go/Rust/OS third-party notice set. All 53 bundled demo assets now
+  match files in the hash-verified `zpr-visaservice` source archive at commit
+  `4ebc2c00d0506f897f7f461fe8c1bcdc0c5681fc`, and its root Apache license
+  matches the archive's `PROJECT-LICENSE`. The five relevant source READMEs
+  are not included in the archive and do not establish provenance/ownership
+  for every named organization, person, and directory record; that review
+  remains open.
 
 The rights-review task remains active. No release rights are inferred from
 build success, package metadata, or the presence of a license file alone.

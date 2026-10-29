@@ -10,8 +10,10 @@ The immediate product goal is a small invite-only downloadable Linux ARM64
 technical preview, with the broader five-organization/seventeen-scenario
 release still later. A preview is not exempt from rights review, fresh
 identities, clean-host install, exact tested workflow claims, safe teardown,
-or separate approval for participant distribution. The selected preview scope
-is tested workflows only; AI is out of scope.
+or separate approval for participant distribution. Only explicitly tested
+workflows may be claimed. Claude assistance may be enabled only as an opt-in
+using the tester's own key after the Optional AI gate passes; core preview
+workflows must remain usable without it.
 
 | Gate | Prerequisite | Required proof | Does not establish |
 |---|---|---|---|
@@ -34,7 +36,7 @@ is tested workflows only; AI is out of scope.
 | Adapter/peer/lifecycle | Fresh trust and explicit launch contract | Least required device/caps/network configuration; real Noise trust, Visa/service admission, allowed/denied forwarding, restart/revocation and durable state | All demo scenarios |
 | Production operator bootstrap | Independent service contracts | Operator configuration from production providers; Control Room/Service pass with Simulator unavailable | Simulator organization provisioning |
 | First-run setup | Supported platform/prerequisites and fresh service bootstrap | Loopback one-time token, fresh admin/trust, explicit errors, safe resume/non-overwrite, authenticated/CSRF-protected later settings | Optional AI enabled automatically |
-| Optional AI | Secure setup/configuration | Configure/skip, visible send-data caveat, user key/cost notice, generic connectivity-test payload only, server-side secret storage/replace/remove; core works disabled | Permission to send private policies automatically |
+| Optional AI | Secure setup/configuration | Configure/skip, visible provider/data-use and user-cost notice before entry/use, generic connectivity-test payload only, owner-only key storage with no key in args/env output/logs/browser responses, replace/remove, and no-key core operation | Permission to send private policies automatically |
 | Full demo acceptance | Runtime, adapters, setup and fresh seeds | Five organizations, all seventeen original scenarios, browser acceptance, restart/restore, no source/compiler/external image download after prerequisites | Publication authorization |
 | Distribution review | Full component/license inventory | Redistribution rights/notices/SBOM review; static/manual secret review; measured download/rootfs/import/peak install disk against agreed budget | Promotion or upload approval |
 | Promotion/publication | All release gates and explicit approval | Reviewed Git target and exact accepted artifact; approved destination/version/checksum; verified published bytes | Permission to publish private backup |

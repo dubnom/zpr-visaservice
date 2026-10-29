@@ -9,9 +9,17 @@ The next product milestone is a separate invite-only, downloadable Linux ARM64
 technical preview. This artifact has not passed the preview's clean-host setup,
 redistribution, participant documentation, or named-workflow gates and must
 not be handed to participants as an installer. The preview scope is only
-explicitly tested workflows, with AI disabled/out of scope; this is not the
-completed five-organization/seventeen-scenario release. See the staged-delivery
-section in the [compiled download plan](../../../../COMPILED-DOWNLOAD-PLAN.md).
+explicitly tested workflows. Claude assistance may be offered as an opt-in with
+each tester's own key only after its setup/disclosure/secret-handling gate
+passes; core workflows must remain usable with AI skipped or unconfigured.
+This is not the completed five-organization/seventeen-scenario release. See the
+staged-delivery section in the [compiled download plan](../../../../COMPILED-DOWNLOAD-PLAN.md).
+
+The current engineering archive does not provide participant-ready Claude key
+setup. Source contains a no-echo terminal configuration script for the recovery
+workspace, but it is not included in this archive and assumes that workspace's
+runtime paths. Do not ask participants to use it; a relocatable clean-host setup
+path and its disclosure/data-flow tests are still required.
 
 The project-level [zpr-compiled-release skill](../../../.github/skills/zpr-compiled-release/SKILL.md)
 guides reproduction and resumption of this workflow, with safety boundaries,

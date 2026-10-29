@@ -16,11 +16,12 @@ complete demo, a supported installer, or an approved public release.
 The current delivery goal is the staged, invite-only, downloadable Linux ARM64
 technical preview in the compiled download plan. Treat it as a separate narrow
 acceptance target; the full five-organization/seventeen-scenario product remains
-the later broad-release goal. The selected preview scope is only explicitly
-tested workflows, with AI disabled/out of scope. Preview participant handoff
-requires an exact artifact, redistribution review, second-clean-host acceptance,
-participant instructions, and separate approval. Do not upload or publish while
-preparing it.
+the later broad-release goal. Only explicitly tested workflows may be claimed.
+Claude assistance may be optionally enabled with each tester's own key only
+after the optional-AI gate passes; otherwise it remains disabled, and core
+workflows must not depend on it. Preview participant handoff requires an exact
+artifact, redistribution review, second-clean-host acceptance, participant
+instructions, and separate approval. Do not upload or publish while preparing it.
 
 This skill belongs to the Visa Service repository. Resolve its root relative to
 this file (`../../..`), not from an assumed terminal directory. Read repository
@@ -63,7 +64,8 @@ authoritative even when a remote termination arrives during local cleanup.
   its APIs or read simulation manifests/profiles/sessions/workloads. Simulator
   may exercise independent production operator contracts, not the reverse.
 - No automatic AI calls containing private policies, directory data or secrets.
-  AI remains optional, with installer-supplied credentials and disclosure.
+  AI remains optional, with user-supplied credentials, explicit disclosure, and
+  verified secret handling. Never include a real provider key in evidence.
 - Use explicit Docker context and independently confirmed daemon identity on
   every operation. Never change the default context or infer isolation from a
   name/ID alone. Do not pass the host Docker socket into build/test containers.
