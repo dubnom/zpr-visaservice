@@ -60,6 +60,13 @@ That file must be a nonempty regular executable, not a symlink. The option is
 runtime-only, like `-vs-binary`, and does not rotate installation identity.
 Without it the existing source-build behavior is unchanged.
 
+On graceful data-plane shutdown, writable state is returned to the owner of
+the mounted `vs.toml` file. The container's parent state directory is
+Docker-created and is not evidence of host ownership. Older images could
+leave `data-plane/` and `valkey-state/` root-owned and prevent a non-root
+restart; use an image containing the corrected shutdown script. Do not repair
+unrelated installations or rotate credentials to work around that failure.
+
 ## Source launcher
 
 **EVALUATION ONLY — NOT PRODUCTION SUPPORTED.** This is a foreground,

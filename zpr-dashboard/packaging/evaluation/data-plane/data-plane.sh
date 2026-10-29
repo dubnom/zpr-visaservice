@@ -42,10 +42,13 @@ stop() {
 	sleep 1
 	ip netns delete zpr-vs 2>/dev/null || true
 	ip netns delete zpr-dns 2>/dev/null || true
-	# Linux bind mounts keep root ownership; the launcher rejects state it does not own.
-	owner=$(stat -c %u:%g "$state" 2>/dev/null || true)
-	if [ -n "$owner" ]; then
-		chown -R "$owner" "$state/valkey-state" "$plane" 2>/dev/null || true
+	# The parent is synthesized by Docker; only the mounted file has host ownership.
+	if owner=$(stat -c %u:%g "$state/vs.toml"); then
+		if ! chown -R "$owner" "$state/valkey-state" "$plane"; then
+			log "WARNING: cannot restore writable state ownership; inspect it before restarting" >&2
+		fi
+	else
+		log "WARNING: cannot determine host state owner from mounted vs.toml" >&2
 	fi
 }
 trap 'stop; exit 0' INT TERM

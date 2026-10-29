@@ -65,7 +65,10 @@ chmod 700 "$package/demo.sh" "$package/client.sh"
     sha256sum --check --strict SHA256SUMS
 )
 archive=zpr-evaluation-$release-linux-amd64.tar.gz
-tar -czf "$output/$archive" -C "$output" "zpr-evaluation-$release"
+case "$(uname -s)" in
+    Darwin) COPYFILE_DISABLE=1 tar --no-xattrs -czf "$output/$archive" -C "$output" "zpr-evaluation-$release" ;;
+    *) tar -czf "$output/$archive" -C "$output" "zpr-evaluation-$release" ;;
+esac
 (cd "$output" && sha256sum "$archive" > "$archive.sha256")
 rm "$output/INCOMPLETE"
 printf 'Built %s\nSource-independent ZPR evaluation only; Simulator integration and scenario acceptance are separate.\n' "$output/$archive"
