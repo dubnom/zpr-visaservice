@@ -586,6 +586,10 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "start" || action == "stop" {
+		if _, err := simulatorSetupMode(); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
 		if output, handled, err := simulatorRetainedMachineAction(ctx, manifest, machineID, action); handled || err != nil {
@@ -599,6 +603,10 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 				simulatorMachineCommands.clear(machineID)
 			}
 			writeJSON(w, http.StatusOK, map[string]string{"state": output})
+			return
+		}
+		if err := requireLegacySimulatorMachineRuntime(); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
 		command, commandErr := simulatorMachineLifecycleCommand(manifest, machineID, action)
@@ -1027,6 +1035,13 @@ func (sessions *simulatorSessionRegistry) snapshot(machineIDs []string) map[stri
 
 func handleSimulatorAction(w http.ResponseWriter, r *http.Request) {
 	action := r.PathValue("action")
+	switch action {
+	case "start", "stop", "restart", "start-agents", "stop-agents":
+		if err := requireLegacySimulatorSetup(); err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+	}
 	var output string
 	manifest, manifestErr := readSimulatorManifest()
 	if manifestErr != nil && strings.HasSuffix(action, "-component") {

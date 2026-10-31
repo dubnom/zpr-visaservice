@@ -979,11 +979,47 @@ sh scripts/activate-organization.sh preflight-ordinary-client
 Expected exit is **1** with explicit `U01-*` blockers, before helpers, locks,
 profile/runtime reads, compiler, Docker or network calls. Setting
 `SIMULATION_SETUP_MODE=ordinary-client` also blocks any invocation of this legacy
-launcher before side effects. Unknown modes and malformed preflight arguments
-exit 2. The absent/empty default and explicit `legacy-launcher` mode preserve the
-old setup behavior; they are not ordinary-client acceptance. This guard does not
-cover other Simulator entrypoints or authorize live operations. Test it offline
-with `sh scripts/test-ordinary-client-preflight.sh` (17 cases).
+launcher before side effects. Set the same variable on the Simulator web process
+to reject activation and Restore immediately with `U01-ACTIVATION`, before
+starting either activation lifecycle. The web API and internal command path
+also reject legacy packaged `approve-and-provision` and `verify`; the latter can
+change trusted attributes. Global legacy stack/agent start/stop, stack restart,
+and unbound legacy machine start/stop are blocked. Scenario preflight reports
+the machine fallback before approval. Existing packaged-machine status and
+start/stop remain available; status can update local inventory/locks and issue
+readiness traffic. The paired evaluation Simulator launcher forwards this
+explicit setting to the child; an invalid setting prevents its
+preparation, and the setting must be repeated on restart. Unknown modes fail
+closed for these guarded mutations; malformed shell preflight arguments exit 2.
+The absent/empty default and explicit `legacy-launcher` mode preserve the old
+setup behavior; they are not
+ordinary-client acceptance. These guards do not cover every Simulator
+entrypoint, independently started lifecycle, or all installed package
+configurations, including scripts invoked separately, and do not authorize live
+operations. Test the launcher offline with
+`sh scripts/test-ordinary-client-preflight.sh` (17 cases).
+
+The source scenario workflow binds each in-memory, one-use plan permit to the
+authenticated operator's issuer and subject, or to the separate
+authentication-disabled local mode. Named plan approval and run admission both
+require `scenario.run` and `approval.self` in the requested organization and
+recheck the current session before issuing or consuming a permit. The session
+contains a login-time grant snapshot; this is not dynamic grant revocation.
+After the current plan, budget and session are rechecked, the same named
+operator (or explicit local mode) can recover an unconsumed in-memory permit for
+the exact organization, scenario and plan digest. Another operator cannot
+recover it and remains blocked while that scope is pending. Permits and their
+actor binding are not durable production Audit evidence. Approval responses
+carry the random one-use permit and its domain-separated SHA-256 reference;
+run snapshots expose only the reference. Deploy matching UI and backend
+versions. After an ambiguous run response, the UI makes one bounded read of
+the current organization scenario catalog and accepts only the matching
+reference, plan, organization, scenario and run namespace. It does not retry
+the run. No match or an unavailable catalog remains unknown, not evidence that
+the run did not start. Only the current in-memory run is available; replacement,
+reset or restart can remove it, so this is not durable reconciliation.
+See the [Simulator plan](../SIMULATOR_AS_ZPR_CLIENT_PLAN.md#active-turn-key-delivery-plan-2026-10-30)
+for remaining live and package acceptance.
 
 ## Migration discovery CLI
 
@@ -3813,9 +3849,18 @@ go test -race ./internal/operatordelegation ./internal/enrollment ./internal/ope
 go test -race ./cmd/zpr-web-dashboard -run 'Operator|Delegation|ControlRoom|Enrollment'
 ```
 
-### Independent budget authority (provisional; not production-ready)
+<a id="independent-budget-authority-provisional-not-production-ready"></a>
 
-Control-Service can host a Simulator-independent budget authority backed by an
+### Independent operation approval service (provisional; not production-ready)
+
+The historical heading "Independent budget authority" refers to this same
+service. User-facing terminology is **operation approval** or **authorization
+evidence**, not a financial budget or resource allowance. For compatibility,
+existing `budget.*` permissions/events, `/api/budget-authority/*` routes,
+`ZPR_BUDGET_*` settings, package names and JSON fields are unchanged.
+Actual resource limits and output/processing budgets retain their meaning.
+
+Control-Service can host a Simulator-independent operation approval service backed by an
 explicit SQLite file. It is **disabled by default**: without
 `ZPR_BUDGET_AUTHORITY_DB_PATH`, the authority returns unavailable (HTTP 503);
 there is no in-memory fallback, seeded approval, or automatic grant. When
@@ -3841,7 +3886,8 @@ configuration's audience must exactly equal `ZPR_CONTROL_SERVICE_URL`;
 `ZPR_OPERATOR_DELEGATION_AUDIENCE`, when set, must match it too.
 
 The only implemented mutations are explicit approval and revocation; these are
-API routes, not an approval UI. Add `budget.approve` for the intended exact
+available through the Operation Approvals page at `/budget-authority.html`.
+Add the legacy permission `budget.approve` for the intended exact
 organization to both the named-user OIDC grant and the independent
 Control-Service delegation grant. Control Room requires a same-origin OIDC
 session and CSRF proof, then signs a short-lived request. Control-Service
@@ -3852,7 +3898,11 @@ operations; missing signer/trust disables mutations.
 - `POST /api/budget-authority/approvals` (Control Room) accepts strict JSON
   with `scope` (`organization_id`, `scenario_id`, `plan_digest`), the explicit
   `decision: "approved"`, and an `expires_at` timestamp in the future and no
-  more than one hour away. Unknown fields and trailing JSON are rejected.
+  more than one hour away. Optional `require_self_approval: true` requires
+  `approval.self` alongside `budget.approve` in the same current named session
+  and the independent backend grant; it is bound into the signed request.
+  Omitting it preserves the ordinary approval contract. Unknown fields and
+  trailing JSON are rejected.
 - `POST /api/budget-authority/approvals/{approval_id}/revoke` (Control Room)
   accepts only `organization_id`; the caller must still have `budget.approve`
   for that organization.
@@ -3869,6 +3919,14 @@ revoked, expired, mismatched, or stale evidence. The consumer allows at most
 five seconds between `checked_at` and its check. This is current-at-check-time
 authorization, not atomic protection against a revocation after the source
 check.
+
+Simulator's automatic bounded operation approval sets the explicit self-approval
+requirement and binds the delegation to the operator who initiated its request.
+Both services must understand the new field; an older strict-JSON backend rejects
+it instead of silently accepting it. The field expresses the caller's intent,
+not proof that requester and approver were the same person: this approval contract
+does not yet record a distinct requester, and ordinary approvals can still omit
+the field. It therefore does not complete observed-self-approval Audit coverage.
 
 Production use remains blocked pending an assigned authority owner and final
 organization approver roster, certificate trust and rotation procedures,

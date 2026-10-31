@@ -19,6 +19,7 @@ import (
 
 	"neboagency.com/zpr-dashborad/internal/gateway"
 	evaluationruntime "neboagency.com/zpr-dashborad/internal/simulator/evaluation"
+	"neboagency.com/zpr-dashborad/internal/simulator/setupmode"
 )
 
 const defaultSimulatorOrganizationID = "northstar"
@@ -193,6 +194,23 @@ func handleSimulatorOrganizationRestoreBase(w http.ResponseWriter, r *http.Reque
 }
 
 func handleSimulatorOrganizationOperation(w http.ResponseWriter, r *http.Request, restoreBase bool) {
+	mode, err := setupmode.Parse(os.Getenv(setupmode.Environment))
+	if err != nil {
+		writeWorkspaceError(w, http.StatusServiceUnavailable,
+			"Invalid SIMULATION_SETUP_MODE; expected legacy-launcher or ordinary-client. No setup was started.")
+		return
+	}
+	switch mode {
+	case setupmode.LegacyLauncher:
+	case setupmode.OrdinaryClient:
+		writeWorkspaceError(w, http.StatusServiceUnavailable,
+			"Organization activation and Restore are blocked in ordinary-client mode until independent setup contracts are available (U01-ACTIVATION). No setup was started.")
+		return
+	default:
+		writeWorkspaceError(w, http.StatusServiceUnavailable,
+			"Simulator setup mode is unsupported. No setup was started.")
+		return
+	}
 	organizationID := r.PathValue("organization")
 	if _, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID); err != nil {
 		writeWorkspaceError(w, http.StatusNotFound, "unknown organization")

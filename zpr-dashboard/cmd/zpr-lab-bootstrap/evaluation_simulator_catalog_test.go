@@ -44,7 +44,7 @@ func TestEvaluationSimulatorFullCatalog(t *testing.T) {
 	if output, err := exec.Command("sh", filepath.Join("..", "..", "packaging", "evaluation", "stage-catalog.sh"), catalog).CombinedOutput(); err != nil {
 		t.Fatalf("stage actual packaged catalog: %v: %s", err, output)
 	}
-	env := []string{"ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE=original", "SIMULATION_MANIFEST=original", "SIMULATION_PREGEN_DIR=/unavailable/old-runtime", "UNCHANGED=value"}
+	env := []string{"ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE=original", "SIMULATION_MANIFEST=original", "SIMULATION_PREGEN_DIR=/unavailable/old-runtime", "SIMULATION_SETUP_MODE=ordinary-client", "UNCHANGED=value"}
 	for range 2 {
 		got, err := prepareEvaluationSimulatorCatalog(evaluation, state, catalog, slices.Clone(env))
 		if err != nil {
@@ -52,6 +52,7 @@ func TestEvaluationSimulatorFullCatalog(t *testing.T) {
 		}
 		if !slices.Contains(got, "ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE="+filepath.Join(state, "catalog-oidc.json")) ||
 			!slices.Contains(got, "UNCHANGED=value") ||
+			!slices.Contains(got, "SIMULATION_SETUP_MODE=ordinary-client") ||
 			!slices.Contains(got, "SIMULATION_MANIFEST="+filepath.Join(state, "catalog-manifest.json")) ||
 			!slices.Contains(got, "SIMULATION_PREGEN_DIR="+filepath.Join(state, "organizations", "northstar")) ||
 			slices.Contains(got, "SIMULATION_PREGEN_DIR=/unavailable/old-runtime") {

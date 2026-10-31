@@ -608,9 +608,19 @@ function renderHistory(){
 }
 function renderLiveHistoryEvents(events,append){
  const html=events.map(event=>{
-  const timestamp=escapeHTML(event.occurred_at);
-  const actor=escapeHTML(event.actor_issuer+' / '+event.actor_subject);
-  return '<div class="event"><time datetime="'+timestamp+'">'+timestamp+'</time><strong>'+escapeHTML(event.action)+' · '+escapeHTML(event.outcome)+'</strong><p>Actor: '+actor+'<br>Target: '+escapeHTML(event.target)+'<br>Source: '+escapeHTML(event.source)+' · Event: '+escapeHTML(event.id)+'</p></div>';
+  const value=field=>typeof field==='string'&&field.trim()?escapeHTML(field):'Not provided';
+  const timestamp=value(event.occurred_at);
+  const actor=value(event.actor_issuer)+' / '+value(event.actor_subject);
+  const organization=value(event.organization_id);
+  const correlation=typeof event.correlation_id==='string'&&event.correlation_id
+   ?' · Correlation: '+escapeHTML(event.correlation_id):'';
+  let warning='';
+  if(event.source==='control-service'&&event.action==='budget.approval.create'&&event.outcome==='self-approval-requested'){
+   warning='<div class="audit-warning" role="note"><strong>Potential self-approval authority · advisory</strong><p>This operation approval request carried the approval.self permission. The event does not establish a self-approved operation, a successful decision, or a current grant.</p><p>Organization: '+organization+' · Role: unknown · Exact approval or revision: unknown.</p></div>';
+  }else if(event.source==='control-service'&&event.action==='subject-link.approve'&&event.outcome==='approved-single-operator'){
+   warning='<div class="audit-warning" role="note"><strong>Observed single-operator review · advisory</strong><p>Control-Service reported that the proposer approved this subject-link review. This is review evidence, not publication or enforcement. The event may reflect a retry, so its time may not be the original approval time.</p><p>Organization: '+organization+' · Role: unknown · Revision: unknown.</p></div>';
+  }
+  return '<div class="event"><time datetime="'+timestamp+'">'+timestamp+'</time><strong>'+value(event.action)+' · '+value(event.outcome)+'</strong><p>Actor: '+actor+'<br>Target: '+value(event.target)+'<br>Source: '+value(event.source)+' · Event: '+value(event.id)+correlation+'</p>'+warning+'</div>';
  }).join('');
  $('live-history-events').insertAdjacentHTML(append?'beforeend':'afterbegin',html);
 }

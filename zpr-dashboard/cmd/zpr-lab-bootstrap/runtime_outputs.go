@@ -109,7 +109,7 @@ func prepareRuntimeOutputFiles(
 		"ldap_image_reference":           identityInventory.IdentityServices.Deployment.LDAPImage,
 		"dex_image_reference":            identityInventory.IdentityServices.Deployment.DexImage,
 		"operator_identity_verification": "caller-confirmed against a successful named IdP login; offline generator did not contact the provider",
-		"simulator_operator_permissions": []string{"organization.read", "scenario.read", "scenario.run"},
+		"simulator_operator_permissions": []string{"organization.read", "scenario.read", "scenario.run", "approval.self"},
 		"generated_at":                   now.UTC().Truncate(time.Second),
 	}, "", "  ")
 	if err != nil {
@@ -555,13 +555,15 @@ func renderRuntimeOutputs(
 		Organizations: []string{input.OrganizationID},
 		Permissions:   []string{"monitor.read", "budget.approve"},
 	}
+	delegationGrant := grant
+	delegationGrant.Permissions = append(append([]string(nil), grant.Permissions...), "approval.self")
 	delegationTrust := operatordelegation.Config{
 		Version: 1, Audience: input.ControlServiceOrigin,
 		Keys: []operatordelegation.TrustedKey{{
 			KeyID: signerKeyID, PublicKey: base64.RawURLEncoding.EncodeToString(signerPublic),
 			CertificateSHA256: hex.EncodeToString(certificatePin[:]),
 		}},
-		Grants: []operatorauth.Grant{grant},
+		Grants: []operatorauth.Grant{delegationGrant},
 	}
 	if err := delegationTrust.Validate(); err != nil {
 		return fmt.Errorf("invalid generated Control-Service delegation trust: %w", err)
@@ -635,7 +637,7 @@ func renderRuntimeOutputs(
 	simulatorGrant := operatorauth.Grant{
 		Issuer: input.OperatorIssuer, Subject: input.OperatorSubject,
 		Organizations: []string{input.OrganizationID},
-		Permissions:   []string{"organization.read", "scenario.read", "scenario.run"},
+		Permissions:   []string{"organization.read", "scenario.read", "scenario.run", "approval.self"},
 	}
 	simulatorOIDCConfig := operatorauth.Config{
 		Version: 1, Issuer: input.OperatorIssuer, ClientID: "zpr-simulator",

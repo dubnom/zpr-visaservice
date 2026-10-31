@@ -9,6 +9,7 @@
 #print-empty{display:none}
 textarea{font:inherit;padding:10px;border:1px solid var(--border);border-radius:5px;resize:vertical;max-width:100%;color:var(--ink);background:var(--panel)}
 .review-notes{white-space:pre-wrap;overflow-wrap:anywhere}
+.audit-warning{margin-top:8px;padding:10px 12px;border-left:3px solid var(--amber);background:var(--amber-bg);color:var(--amber);overflow-wrap:anywhere}
 .tabs{flex-wrap:wrap}
 #assertion-list{flex-direction:column}
 #assertion-list button{text-align:left;overflow-wrap:anywhere}

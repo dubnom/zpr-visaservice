@@ -103,7 +103,41 @@ export function registerOrganizationBrowserTests(test, expect) {
     await expect(confirmation).not.toBeVisible();
     await expect(page.locator(".organization-active-status")).toHaveText("Active");
     expect(api.organizations.active_id).toBe("beta");
-    expect(mutations).toHaveLength(1);
+    expect(mutations.map(url => new URL(url).pathname)).toEqual([
+      "/api/simulator/organizations/beta/activate",
+    ]);
+  });
+
+  test("Organization ordinary-client guard reports activation and Restore without changing selection", async ({ page, appURL, api }) => {
+    const mutations = [];
+    page.on("request", request => {
+      if (request.method() !== "GET" && request.url().includes("/api/simulator/")) {
+        mutations.push(new URL(request.url()).pathname);
+      }
+    });
+    const message = "Organization activation and Restore are blocked in ordinary-client mode (U01-ACTIVATION). No setup was started.";
+    for (const action of ["activate", "restore-base"]) {
+      api.handlers.set(`/api/simulator/organizations/beta/${action}`, route =>
+        route.fulfill({ status: 503, json: { error: message } }));
+    }
+    await page.goto(appURL + "/organizations.html");
+    await selectBundled(page, "beta");
+    await page.locator('[data-activate-organization="beta"]').click();
+    await page.getByRole("dialog", { name: "Switch organization?", exact: true })
+      .getByRole("button", { name: "Switch organization", exact: true }).click();
+    await expect(page.locator("#organization-error")).toHaveText(message);
+    await expect(page.locator('[data-activate-organization="beta"]')).toBeEnabled();
+    expect(api.organizations.active_id).toBe("alpha");
+
+    const menu = await openFiles(page);
+    await menu.getByRole("menuitem", { name: "Restore", exact: true }).click();
+    await page.locator("[data-confirm-organization-restore]").click();
+    await expect(page.locator("#organization-error")).toHaveText(message);
+    expect(api.organizations.active_id).toBe("alpha");
+    expect(mutations).toEqual([
+      "/api/simulator/organizations/beta/activate",
+      "/api/simulator/organizations/beta/restore-base",
+    ]);
   });
 
   test("Organization browser File menu uses shared keyboard controls and creation workflow", async ({ page, appURL, api }) => {

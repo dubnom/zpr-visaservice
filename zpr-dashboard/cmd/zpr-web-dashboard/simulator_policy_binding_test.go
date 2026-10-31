@@ -46,12 +46,12 @@ func TestSimulatorOrganizationPolicyBindingReadback(t *testing.T) {
 					if failure == "nil" {
 						resolver = nil
 					}
-					plan := simulatorRuntimePlan{OrganizationID: id, Blockers: []string{"policy resolution is required", "scenario topology is missing", "approved budget evidence is absent"}}
+					plan := simulatorRuntimePlan{OrganizationID: id, Blockers: []string{"policy resolution is required", "scenario topology is missing", "approved authorization evidence is absent"}}
 					resolveSimulatorPolicyBinding(context.Background(), &plan, organization, resolver)
 					if (plan.PolicyStatus == "resolved") != (failure == "") {
 						t.Fatalf("policy status: %+v", plan)
 					}
-					if plan.Status != simulatorRuntimePlanBlocked || !hasSimulatorRuntimePlanBlocker(plan, "scenario topology is missing") || !hasSimulatorRuntimePlanBlocker(plan, "approved budget evidence is absent") {
+					if plan.Status != simulatorRuntimePlanBlocked || !hasSimulatorRuntimePlanBlocker(plan, "scenario topology is missing") || !hasSimulatorRuntimePlanBlocker(plan, "approved authorization evidence is absent") {
 						t.Fatal("policy readback weakened other gates", plan)
 					}
 					first := append([]string(nil), plan.Blockers...)

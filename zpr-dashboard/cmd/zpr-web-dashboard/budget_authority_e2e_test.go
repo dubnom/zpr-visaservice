@@ -29,18 +29,26 @@ import (
 )
 
 type budgetAuthorityE2E struct {
-	store        *budgetauthority.Store
-	signer       *operatordelegation.Signer
-	identity     operatorauth.Identity
-	client       *http.Client
-	server       *httptest.Server
-	resolver     *budgetauthority.HTTPResolver
-	scope        budgetauthority.Scope
-	now          time.Time
-	currentCalls atomic.Int32
+	store         *budgetauthority.Store
+	signer        *operatordelegation.Signer
+	identity      operatorauth.Identity
+	client        *http.Client
+	server        *httptest.Server
+	resolver      *budgetauthority.HTTPResolver
+	certPath      string
+	keyPath       string
+	caPath        string
+	scope         budgetauthority.Scope
+	now           time.Time
+	currentCalls  atomic.Int32
+	operatorCalls atomic.Int32
 }
 
 func newBudgetAuthorityE2E(t *testing.T, scope budgetauthority.Scope, now time.Time) *budgetAuthorityE2E {
+	return newBudgetAuthorityE2EWithPermissions(t, scope, now, []string{"budget.approve"})
+}
+
+func newBudgetAuthorityE2EWithPermissions(t *testing.T, scope budgetauthority.Scope, now time.Time, permissions []string) *budgetAuthorityE2E {
 	t.Helper()
 	store, err := budgetauthority.Open(filepath.Join(t.TempDir(), "authority.db"))
 	if err != nil {
@@ -72,7 +80,7 @@ func newBudgetAuthorityE2E(t *testing.T, scope budgetauthority.Scope, now time.T
 	const audience = "https://budget-authority.synthetic.invalid"
 	identity := operatorauth.Identity{
 		Issuer: "https://operator.synthetic.invalid", Subject: "synthetic-budget-operator",
-		Organizations: []string{scope.OrganizationID}, Permissions: []string{"budget.approve"},
+		Organizations: []string{scope.OrganizationID}, Permissions: permissions,
 	}
 	verifier, err := operatordelegation.NewVerifier(operatordelegation.Config{
 		Version: 1, Audience: audience,
@@ -96,6 +104,7 @@ func newBudgetAuthorityE2E(t *testing.T, scope budgetauthority.Scope, now time.T
 	}
 	fixture := &budgetAuthorityE2E{
 		store: store, signer: signer, identity: identity, scope: scope, now: now,
+		certPath: certPath, keyPath: keyPath, caPath: caPath,
 	}
 	handler := budgetauthority.NewHandler(store, verifier, func() time.Time { return now })
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -142,6 +151,7 @@ func newBudgetAuthorityE2E(t *testing.T, scope budgetauthority.Scope, now time.T
 			handler.Current(w, r)
 			return
 		}
+		fixture.operatorCalls.Add(1)
 		handler.Operator(w, r)
 	}))
 	server.TLS = &tls.Config{
@@ -302,7 +312,7 @@ func TestBudgetAuthorityE2E(t *testing.T) {
 			beforeCalls := fixture.currentCalls.Load()
 			var executed atomic.Int32
 			err = manager.startApprovedVersionedContext(
-				context.Background(), scenario, manifest, organization,
+				simulatorScenarioTestLocalContext(context.Background()), scenario, manifest, organization,
 				func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error) {
 					executed.Add(1)
 					return "synthetic in-memory step only", nil

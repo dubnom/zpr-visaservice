@@ -147,8 +147,11 @@ func simulatorScenarioProvisioningActionWithRunner(
 	machineID, action string,
 	run simulatorProvisionRunner,
 ) (string, error) {
-	if action != "start" && action != "stop" && action != "verify" {
+	if action != "status" && action != "start" && action != "stop" && action != "verify" {
 		return "", errors.New("unsupported packaged scenario lifecycle action")
+	}
+	if err := validateSimulatorProvisioningMode(action); err != nil {
+		return "", err
 	}
 	container, packaged, err := simulatorScenarioMachineContainerName(manifest, machineID)
 	if err != nil {
@@ -198,7 +201,24 @@ func newSimulatorProvisionHandler() http.Handler {
 	}
 }
 
+func validateSimulatorProvisioningMode(action string) error {
+	if action == "status" {
+		return nil
+	}
+	switch action {
+	case "approve-and-provision":
+		return requireLegacySimulatorSetup()
+	case "verify":
+		return requireLegacySimulatorMode("legacy packaged verification can change trusted attributes and is blocked in ordinary-client mode (U01-SOURCES)")
+	}
+	_, err := simulatorSetupMode()
+	return err
+}
+
 func runSimulatorProvisionCommand(ctx context.Context, script, action, organization, machine string) ([]byte, error) {
+	if err := validateSimulatorProvisioningMode(action); err != nil {
+		return nil, err
+	}
 	command := exec.CommandContext(ctx, "python3", script, action, organization, machine)
 	command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
 	command.WaitDelay = 20 * time.Second
@@ -228,6 +248,10 @@ func (h *simulatorProvisionHandler) ServeHTTP(w http.ResponseWriter, r *http.Req
 		(action == "approve-and-provision" || action == "start" || action == "stop" || action == "verify"):
 	default:
 		http.Error(w, "unsupported provisioning operation", http.StatusNotFound)
+		return
+	}
+	if err := validateSimulatorProvisioningMode(action); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	if r.URL.RawQuery != "" {

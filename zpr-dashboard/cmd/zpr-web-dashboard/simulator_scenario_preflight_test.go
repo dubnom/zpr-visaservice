@@ -19,13 +19,27 @@ import (
 type simulatorScenarioPlanTestAuthorizer struct {
 	organization string
 	permission   string
+	permissions  []string
 	err          error
 }
 
 func (a *simulatorScenarioPlanTestAuthorizer) Authorize(_ *http.Request, organization, permission string) (operatorauth.Identity, error) {
 	a.organization = organization
 	a.permission = permission
-	return operatorauth.Identity{}, a.err
+	a.permissions = append(a.permissions, permission)
+	if a.err != nil {
+		return operatorauth.Identity{}, a.err
+	}
+	identity := simulatorScenarioPlanTestIdentity(organization)
+	identity.Permissions = []string{permission}
+	return identity, nil
+}
+
+func simulatorScenarioPlanTestIdentity(organization string) operatorauth.Identity {
+	return operatorauth.Identity{
+		Issuer: "https://issuer.example", Subject: "operator-17",
+		Organizations: []string{organization},
+	}
 }
 
 func simulatorScenarioPlanTestPlan(organizationID, scenarioID string) simulatorRuntimePlan {
@@ -64,7 +78,7 @@ func makeSimulatorScenarioPlanHTTPRequest(method, path string, value any) *http.
 	content, _ := json.Marshal(value)
 	request := httptest.NewRequest(method, "http://127.0.0.1:8788"+path, bytes.NewReader(content))
 	request.RemoteAddr = "127.0.0.1:1234"
-	return request
+	return request.WithContext(simulatorScenarioTestLocalContext(request.Context()))
 }
 
 func TestSimulatorScenarioPlanPermissionMap(t *testing.T) {
@@ -167,6 +181,15 @@ func TestCurrentScenarioPlanUsesRequestedOrganization(t *testing.T) {
 	t.Setenv("SIMULATION_ACTIVE_ORGANIZATION_FILE", filepath.Join(tempDir, "active-organization.txt"))
 	t.Setenv("SIMULATION_ORGANIZATIONS_DIR", filepath.Join("..", "..", "packaging", "demo-runtime", "organizations"))
 	t.Setenv("SIMULATION_SCENARIOS_DIR", filepath.Join("examples", "scenarios"))
+	content, err := os.ReadFile(filepath.Join("examples", "scenarios", "machine-policy-deny.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var published simulatorScenario
+	if err := json.Unmarshal(content, &published); err != nil {
+		t.Fatal(err)
+	}
+	setSimulatorPublishedWorkspaceFixture(t, tempDir, published)
 
 	loadedManifest, err := readSimulatorManifest()
 	if err != nil {

@@ -30,6 +30,7 @@ const scenarios = [
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const digest = `sha256:${"a".repeat(64)}`;
 const authorizationScopeDigest = `sha256:${"b".repeat(64)}`;
+const approvalReference = `sha256:${"c".repeat(64)}`;
 
 function plan(scenarioID, overrides = {}) {
   return {
@@ -58,7 +59,7 @@ function unavailableBudget(scenarioID, overrides = {}, organizationID = organiza
     organization_id: organizationID,
     scenario_id: scenarioID,
     authorization_scope_digest: authorizationScopeDigest,
-    blockers: ["current approved budget evidence is unavailable or invalid"],
+    blockers: ["current approved authorization evidence is unavailable or invalid"],
     ...overrides,
   };
 }
@@ -77,14 +78,24 @@ async function setup(page, context, options = {}) {
     preflightPaths: [],
     scenarioCatalogPaths: [],
     approvalRequests: [],
+    budgetApprovalRequests: [],
     runRequests: [],
     catalogReads: 0,
     catalogRunIDs: [],
     runSnapshot: null,
     releaseRun: null,
+    releasePreflight: null,
     authorityGranted: false,
     budgetAuthorityRequests: [],
+    organizationLifecycleRequests: [],
   };
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() !== "GET" &&
+        /^\/api\/simulator\/organizations\/[^/]+\/(?:activate|restore-base)$/.test(path)) {
+      state.organizationLifecycleRequests.push({ method: request.method(), path });
+    }
+  });
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -118,6 +129,9 @@ async function setup(page, context, options = {}) {
       const catalogOrganizationID = scopedScenarioCatalog
         ? decodeURIComponent(scopedScenarioCatalog[1])
         : fixtureOrganization.id;
+      if (options.reconciliationCatalogStatus && state.runRequests.length) {
+        return route.fulfill({ status: options.reconciliationCatalogStatus, json: { error: "Scenario status unavailable." } });
+      }
       const catalogOrganization = fixtureOrganizations.find(item => item.id === catalogOrganizationID);
       const catalogScenarios = fixtureScenariosByOrganization[catalogOrganizationID] || [];
       if (scopedScenarioCatalog) state.scenarioCatalogPaths.push(url.pathname);
@@ -142,6 +156,9 @@ async function setup(page, context, options = {}) {
       const body = request.postDataJSON();
       state.preflightRequests.push({ method: request.method(), body });
       state.preflightPaths.push(url.pathname);
+      if (options.deferInitialPreflight && state.preflightRequests.length === 1) {
+        await new Promise(resolve => { state.releasePreflight = resolve; });
+      }
       if (options.firstGrant && !state.authorityGranted) {
         return route.fulfill({
           status: 503,
@@ -175,12 +192,18 @@ async function setup(page, context, options = {}) {
         json: {
           approved: true,
           approval_id: "approval-1",
+          approval_reference: approvalReference,
           organization_id: body.organization_id,
           scenario_id: body.scenario_id,
           plan_digest: body.plan_digest,
           machine_ids: ["machine-03"],
         },
       });
+    }
+    if (/^\/api\/simulator\/organizations\/[^/]+\/scenario-plans\/budget-approval$/.test(url.pathname) &&
+        options.budgetApprovalResponse) {
+      state.budgetApprovalRequests.push({ method: request.method(), body: request.postDataJSON() });
+      return route.fulfill(options.budgetApprovalResponse);
     }
     if (url.pathname.startsWith("/api/budget-authority/")) {
       state.budgetAuthorityRequests.push({ method: request.method(), path: url.pathname });
@@ -210,11 +233,13 @@ async function setup(page, context, options = {}) {
           organization_id: runOrganizationID,
           scenario_id: runScenarioID,
           plan_digest: body.plan_digest,
+          approval_reference: approvalReference,
           state: "running",
           steps: [],
         };
       const status = options.runHTTPStatus ?? 202;
-      if (status >= 200 && status < 300) state.runSnapshot = response;
+      if ((status >= 200 && status < 300) || options.recordRunBeforeError) state.runSnapshot = response;
+      if (options.abortRunResponse) return route.abort();
       return route.fulfill({
         status,
         json: options.runErrorResponse || response,
@@ -246,58 +271,50 @@ async function setup(page, context, options = {}) {
   await page.goto(`${origin}/scenarios.html#simulate`);
   const organizationSelect = page.locator("#scenario-plan-organization");
   await expect(organizationSelect).toHaveValue(activeOrganizationID);
-  if (activeOrganizationID !== fixtureOrganization.id) {
+  if (options.autoSelectScenario !== false && activeOrganizationID !== fixtureOrganization.id) {
     await organizationSelect.selectOption(fixtureOrganization.id);
   }
-  await expect(page.locator(`#scenario-plan-scenario option[value="${selectedScenarioID}"]`)).toHaveCount(1);
-  await page.locator("#scenario-plan-scenario").selectOption(selectedScenarioID);
-  await expect(page.getByRole("button", { name: "Preview plan", exact: true })).toBeEnabled();
+  if (options.autoSelectScenario !== false) {
+    await expect(page.locator(`#scenario-plan-scenario option[value="${selectedScenarioID}"]`)).toHaveCount(1);
+    await page.locator("#scenario-plan-scenario").selectOption(selectedScenarioID);
+    await expect(page.locator("#scenario-plan-scenario")).toHaveValue(selectedScenarioID);
+  }
   return state;
 }
 
 async function previewPlan(page) {
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
   await Promise.race([
     page.locator("#scenario-plan-preview").waitFor({ state: "visible" }),
-    page.locator("#scenario-plan-budget-handoff").waitFor({ state: "visible" }),
     page.locator("#scenario-plan-error").waitFor({ state: "visible" }),
   ]);
 }
 
-async function confirmApproval(page) {
-  await page.locator("#scenario-plan-approve").click();
-  const dialog = page.locator("#scenario-plan-approval-dialog");
-  await expect(dialog).toBeVisible();
-  const confirmation = dialog.locator("#scenario-plan-explicit-confirm");
-  const confirmButton = dialog.locator("#scenario-plan-confirm-approval");
-  await expect(confirmButton).toBeDisabled();
-  await confirmation.check();
-  await expect(confirmButton).toBeEnabled();
-  await confirmButton.click();
-  return dialog;
+async function waitForSelfApproval(page) {
+  await expect(page.locator("#scenario-plan-approval-status")).toContainText("Approval recorded");
+  await expect(page.locator("#scenario-plan-approval-dialog")).toHaveCount(0);
 }
 
-async function approveSelectedPlan(page) {
+async function waitForAutomaticRun(page) {
   await previewPlan(page);
   const workflowStatus = page.locator("#scenario-plan-workflow-status");
   await expect(workflowStatus).toHaveAttribute("role", "status");
   await expect(workflowStatus).toHaveAttribute("aria-live", "polite");
   await expect(workflowStatus).toHaveAttribute("aria-atomic", "true");
-  await expect(workflowStatus).toContainText("Preflight plan-only; authorization approved");
-  await expect(workflowStatus).not.toContainText("budget");
-  await confirmApproval(page);
+  await waitForSelfApproval(page);
   const approvalStatus = page.locator("#scenario-plan-approval-status");
   await expect(approvalStatus).toHaveAttribute("role", "status");
   await expect(approvalStatus).toHaveAttribute("aria-live", "polite");
   await expect(approvalStatus).toHaveAttribute("aria-atomic", "true");
   await expect(approvalStatus).toContainText("Approval recorded");
+  await expect(approvalStatus).toContainText(approvalReference);
+  await expect(approvalStatus).not.toContainText("approval-1");
   await expect(page.locator("#scenario-plan-run")).toBeVisible();
-  await expect(page.locator("#scenario-plan-run-button")).toBeEnabled();
+  await expect(page.locator("#scenario-plan-run-id")).not.toBeEmpty();
 }
 
-test("normal simulation hides technical details while preserving explicit approval and run", async ({ page, context }) => {
+test("scenario selection hides technical details while automatically approving and running", async ({ page, context }) => {
   const state = await setup(page, context);
-  await previewPlan(page);
+  await waitForAutomaticRun(page);
   await expect(page.locator("#scenario-plan-preview")).toBeVisible();
   await expect(page.locator("#scenario-plan-summary")).toContainText("Authorization status");
   await expect(page.locator("#scenario-plan-summary")).not.toContainText("Manifest");
@@ -308,13 +325,17 @@ test("normal simulation hides technical details while preserving explicit approv
   await expect(page.getByRole("link", { name: "Demo world", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Machine provisioning", exact: true })).toHaveCount(0);
   await expect(page.locator("#scenario-plan-blockers")).toBeVisible();
-  expect(state.runRequests).toEqual([]);
-  await confirmApproval(page);
   await expect(page.locator("#scenario-plan-approval-status")).toContainText("Approval recorded");
-  await expect(page.locator("#scenario-plan-run-button")).toBeEnabled();
-  expect(state.runRequests).toEqual([]);
-  await page.locator("#scenario-plan-run-button").click();
-  await expect.poll(() => state.runRequests.length).toBe(1);
+  await expect(page.locator("#scenario-plan-run-state")).toHaveText("running");
+  expect(state.approvalRequests).toEqual([{
+    method: "POST",
+    body: {
+      organization_id: organization.id,
+      scenario_id: "sample-flow",
+      plan_digest: digest,
+      approved: true,
+    },
+  }]);
   expect(state.runRequests[0]).toEqual({
     method: "POST",
     path: "/api/simulator/organizations/alpha/scenarios/sample-flow/run",
@@ -325,21 +346,86 @@ test("normal simulation hides technical details while preserving explicit approv
   await expect(page.locator("#scenario-plan-run-namespace")).toBeHidden();
 });
 
-test("unavailable budget response previews only a validated scope and keeps approval and run disabled", async ({ page, context }) => {
+test("organization selection is passive; scenario selection runs without activating or resetting it", async ({ page, context }) => {
+  const betaOrganization = { id: "beta", name: "Beta Labs" };
+  const betaScenario = {
+    id: "beta-flow",
+    name: "Beta flow",
+    description: "A scoped browser fixture.",
+    organization_id: betaOrganization.id,
+    current_revision: 1,
+    published_revision: 1,
+    steps: [{ action: "delay", timeout_seconds: 1 }],
+    cleanup: [],
+  };
+  const state = await setup(page, context, {
+    organization: betaOrganization,
+    organizations: [organization, betaOrganization],
+    activeOrganizationID: organization.id,
+    scenarios: [betaScenario],
+    scenariosByOrganization: {
+      [organization.id]: [],
+      [betaOrganization.id]: [betaScenario],
+    },
+    autoSelectScenario: false,
+  });
+
+  const organizationSelect = page.locator("#scenario-plan-organization");
+  await organizationSelect.selectOption(betaOrganization.id);
+  await expect(page.locator(`#scenario-plan-scenario option[value="${betaScenario.id}"]`)).toHaveCount(1);
+  expect(state.preflightRequests).toEqual([]);
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+  expect(state.organizationLifecycleRequests).toEqual([]);
+
+  await page.locator("#scenario-plan-scenario").selectOption(betaScenario.id);
+  await waitForAutomaticRun(page);
+  expect(state.preflightRequests).toEqual([{
+    method: "POST",
+    body: { organization_id: betaOrganization.id, scenario_id: betaScenario.id },
+  }]);
+  expect(state.runRequests[0].path)
+    .toBe(`/api/simulator/organizations/${betaOrganization.id}/scenarios/${betaScenario.id}/run`);
+  expect(state.organizationLifecycleRequests).toEqual([]);
+});
+
+test("unpublishing a selected scenario invalidates a delayed preflight without approval or run", async ({ page, context }) => {
+  const selected = { ...scenarios[0] };
+  const state = await setup(page, context, {
+    scenarios: [selected], autoSelectScenario: false, deferInitialPreflight: true,
+  });
+  await page.locator("#scenario-plan-scenario").selectOption(selected.id);
+  await expect.poll(() => state.preflightRequests.length).toBe(1);
+  selected.published_revision = 0;
+  await expect(page.locator(`#scenario-plan-scenario option[value="${selected.id}"]`)).toHaveCount(0);
+  await expect(page.locator("#scenario-plan-workflow-status")).toContainText("no longer published");
+  const response = page.waitForResponse(request =>
+    new URL(request.url()).pathname.endsWith("/scenario-plans/preflight"));
+  state.releasePreflight();
+  await response;
+  await page.waitForTimeout(100);
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+});
+
+test("unavailable published workspace reports its error instead of a budget-evidence error", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    preflightStatus: 503,
+    preflightErrorResponse: { error: "published scenario workspace is unavailable; load the scenario catalog first" },
+  });
+  await expect(page.locator("#scenario-plan-error")).toContainText("published scenario workspace is unavailable");
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+  expect(state.budgetApprovalRequests).toEqual([]);
+});
+
+test("unavailable budget evidence reports a blocker and prevents approval or run", async ({ page, context }) => {
   const state = await setup(page, context, { firstGrant: true });
   await previewPlan(page);
-  const handoff = page.locator("#scenario-plan-budget-handoff");
-  await expect(handoff).toBeVisible();
-  await expect(handoff).toContainText("does not establish that evidence is absent");
-  await expect(page.locator("#scenario-plan-handoff-organization")).toHaveText(organization.id);
-  await expect(page.locator("#scenario-plan-handoff-scenario")).toHaveText("sample-flow");
-  await expect(page.locator("#scenario-plan-handoff-digest")).toHaveText(authorizationScopeDigest);
-  await expect(page.locator("#scenario-plan-handoff-blockers")).toContainText(
-    "current approved budget evidence is unavailable or invalid",
-  );
+  await expect(page.locator("#scenario-plan-error")).toContainText("Authorization is unavailable");
+  await expect(page.locator("#scenario-plan-authorization-blocker-list"))
+    .toContainText("current approved authorization evidence is unavailable or invalid");
   await expect(page.locator("#scenario-plan-preview")).toBeHidden();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
   expect(state.preflightRequests).toEqual([{
     method: "POST",
     body: { organization_id: organization.id, scenario_id: "sample-flow" },
@@ -349,7 +435,29 @@ test("unavailable budget response previews only a validated scope and keeps appr
   expect(state.budgetAuthorityRequests).toEqual([]);
 });
 
-test("Northstar scoped 503 preflight shows its exact scope and blockers without enabling approval or run", async ({ page, context }) => {
+test("backend self-approval denial is actionable and does not retry or run", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    firstGrant: true,
+    unavailableBudgetResponse: body => unavailableBudget(body.scenario_id, { budget_approval_available: true }),
+    budgetApprovalResponse: {
+      status: 403,
+      json: {
+        error: "Budget self-approval requires a current named operator session and both budget.approve and approval.self in the independent backend grant.",
+      },
+    },
+  });
+  await expect(page.locator("#scenario-plan-error")).toContainText("budget.approve and approval.self");
+  expect(state.budgetApprovalRequests).toEqual([{
+    method: "POST",
+    body: { organization_id: organization.id, scenario_id: "sample-flow" },
+  }]);
+  expect(state.approvalRequests).toEqual([]);
+  expect(state.runRequests).toEqual([]);
+  await page.waitForTimeout(300);
+  expect(state.budgetApprovalRequests).toHaveLength(1);
+});
+
+test("Northstar scoped 503 preflight reports blockers without approving or running", async ({ page, context }) => {
   const demoOrganization = { id: "demo", name: "Demo" };
   const northstarOrganization = { id: "northstar", name: "Northstar" };
   const northstarScenario = {
@@ -399,16 +507,10 @@ test("Northstar scoped 503 preflight shows its exact scope and blockers without 
   await expect(page.locator("#scenario-plan-scenario")).toHaveValue(northstarScenario.id);
   await previewPlan(page);
 
-  const handoff = page.locator("#scenario-plan-budget-handoff");
-  await expect(handoff).toBeVisible();
-  await expect(page.locator("#scenario-plan-handoff-organization")).toHaveText(northstarOrganization.id);
-  await expect(page.locator("#scenario-plan-handoff-scenario")).toHaveText(northstarScenario.id);
-  await expect(page.locator("#scenario-plan-handoff-digest")).toHaveText(authorizationScopeDigest);
-  await expect(page.locator("#scenario-plan-handoff-blockers li")).toHaveText(northstarBlockers);
-  await expect(handoff).not.toContainText(/csrf|token/i);
-  await expect(page.locator("#scenario-plan-error")).toBeHidden();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-error")).toContainText("Authorization is unavailable");
+  await expect(page.locator("#scenario-plan-authorization-blocker-list li"))
+    .toHaveText(northstarBlockers);
+  await expect(page.locator("#scenario-plan-error")).not.toContainText(/csrf|token/i);
 
   expect(state.scenarioCatalogPaths).toContain(
     `/api/simulator/organizations/${northstarOrganization.id}/scenarios`,
@@ -428,7 +530,7 @@ test("Northstar scoped 503 preflight shows its exact scope and blockers without 
   expect(state.budgetAuthorityRequests).toEqual([]);
 });
 
-test("malformed authorization-scope digest is never shown or copied for a grant handoff", async ({ page, context }) => {
+test("malformed authorization-scope digest is never exposed or used for automatic authorization", async ({ page, context }) => {
   const state = await setup(page, context, {
     firstGrant: true,
     unavailableBudgetResponse: body => unavailableBudget(body.scenario_id, {
@@ -436,50 +538,29 @@ test("malformed authorization-scope digest is never shown or copied for a grant 
     }),
   });
   await previewPlan(page);
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
   await expect(page.locator("#scenario-plan-error")).toContainText("invalid or mismatched");
-  await expect(page.locator("#scenario-plan-handoff-digest")).toBeEmpty();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
   expect(state.approvalRequests).toEqual([]);
   expect(state.runRequests).toEqual([]);
   expect(state.budgetAuthorityRequests).toEqual([]);
 });
 
-test("first grant handoff requires an external authenticated grant and refreshed preflight before local approval and run", async ({ page, context }) => {
+test("first-grant scope blocks safely, then selecting it after external authorization automatically runs", async ({ page, context }) => {
   const state = await setup(page, context, { firstGrant: true });
   await previewPlan(page);
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
-  await page.locator("#scenario-plan-copy-handoff").click();
-  await expect(page.locator("#scenario-plan-copy-status")).toContainText("Manually enter it");
-  const copiedScope = JSON.parse(await page.evaluate(() => window.__copiedGrantScope));
-  expect(copiedScope).toEqual({
-    organization_id: organization.id,
-    scenario_id: "sample-flow",
-    authorization_scope_digest: authorizationScopeDigest,
-  });
+  await expect(page.locator("#scenario-plan-error")).toContainText("Authorization is unavailable");
   expect(state.approvalRequests).toEqual([]);
   expect(state.runRequests).toEqual([]);
   expect(state.preflightRequests).toHaveLength(1);
 
-  // The grant is an external Control Room action; this fixture records only its completion.
   state.authorityGranted = true;
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
-  await expect(page.locator("#scenario-plan-preview")).toBeVisible();
+  await page.reload();
+  await page.locator("#scenario-plan-scenario").selectOption("sample-flow");
+  await waitForAutomaticRun(page);
   await expect(page.locator("#scenario-plan-summary")).toContainText("Authorization status");
   await expect(page.locator("#scenario-plan-summary")).toContainText("approved");
   await expect(page.locator("#scenario-plan-summary")).not.toContainText("Budget status");
   await expect(page.locator("#scenario-plan-summary")).not.toContainText(authorizationScopeDigest);
-  await expect(page.locator("#scenario-plan-approve")).toBeEnabled();
   expect(state.preflightRequests).toHaveLength(2);
-  expect(state.approvalRequests).toEqual([]);
-  expect(state.runRequests).toEqual([]);
-
-  await confirmApproval(page);
-  await expect(page.locator("#scenario-plan-approval-status")).toContainText("Approval recorded");
-  await expect(page.locator("#scenario-plan-run-button")).toBeEnabled();
   expect(state.approvalRequests).toEqual([{
     method: "POST",
     body: {
@@ -489,7 +570,6 @@ test("first grant handoff requires an external authenticated grant and refreshed
       approved: true,
     },
   }]);
-  await page.locator("#scenario-plan-run-button").click();
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
   await expect(page.locator("#scenario-plan-run-id")).toBeHidden();
   expect(state.runRequests).toEqual([{
@@ -497,13 +577,7 @@ test("first grant handoff requires an external authenticated grant and refreshed
     path: "/api/simulator/organizations/alpha/scenarios/sample-flow/run",
     body: { approval_id: "approval-1", plan_digest: digest },
   }]);
-  await page.locator("#scenario-plan-run-button").evaluate(button =>
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true })),
-  );
   expect(state.runRequests).toHaveLength(1);
-  await page.locator("#scenario-plan-approve").evaluate(button =>
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true })),
-  );
   expect(state.approvalRequests).toHaveLength(1);
   expect(state.budgetAuthorityRequests).toEqual([]);
 });
@@ -516,11 +590,8 @@ test("malformed or mismatched unavailable-budget response is not presented as a 
     }),
   });
   await previewPlan(page);
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
   await expect(page.locator("#scenario-plan-error")).toBeVisible();
   await expect(page.locator("#scenario-plan-error")).toContainText("invalid or mismatched");
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
   expect(state.approvalRequests).toEqual([]);
   expect(state.runRequests).toEqual([]);
   expect(state.budgetAuthorityRequests).toEqual([]);
@@ -532,38 +603,32 @@ test("preflight server errors remain errors and do not imply absent budget evide
     preflightErrorResponse: { error: "Budget authority resolver timed out." },
   });
   await previewPlan(page);
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
   await expect(page.locator("#scenario-plan-error")).toBeVisible();
   await expect(page.locator("#scenario-plan-error")).toContainText("Budget authority resolver timed out.");
   await expect(page.locator("#scenario-plan-error")).not.toContainText("evidence is absent");
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
   expect(state.approvalRequests).toEqual([]);
   expect(state.runRequests).toEqual([]);
   expect(state.budgetAuthorityRequests).toEqual([]);
 });
 
-test("changing scenario invalidates the unavailable budget-scope handoff", async ({ page, context }) => {
+test("changing scenario clears an unavailable-scope error and checks only the new selection", async ({ page, context }) => {
   const state = await setup(page, context, { firstGrant: true });
   await previewPlan(page);
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeVisible();
+  await expect(page.locator("#scenario-plan-error")).toBeVisible();
   await page.locator("#scenario-plan-scenario").selectOption("second-flow");
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
-  await expect(page.locator("#scenario-plan-handoff-digest")).toBeEmpty();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-error")).toBeVisible();
+  expect(state.preflightRequests.map(item => item.body.scenario_id)).toEqual([
+    "sample-flow", "second-flow",
+  ]);
   expect(state.approvalRequests).toEqual([]);
   expect(state.runRequests).toEqual([]);
   expect(state.budgetAuthorityRequests).toEqual([]);
 });
 
-test("scenario-plan approval requires explicit confirmation and sends the returned digest", async ({ page, context }) => {
+test("scenario selection records named self-approval with the returned digest and runs", async ({ page, context }) => {
   const state = await setup(page, context);
-  await previewPlan(page);
-  await expect(page.locator("#scenario-plan-approve")).toBeEnabled();
-
-  const dialog = await confirmApproval(page);
-  await expect(dialog).toBeHidden();
+  await waitForAutomaticRun(page);
+  await expect(page.locator("#scenario-plan-approval-dialog")).toHaveCount(0);
   expect(state.approvalRequests).toEqual([{
     method: "POST",
     body: {
@@ -574,65 +639,19 @@ test("scenario-plan approval requires explicit confirmation and sends the return
     },
   }]);
   await expect(page.locator("#scenario-plan-approval-status")).toContainText("Approval recorded");
-  expect(state.runRequests).toEqual([]);
+  expect(state.runRequests).toHaveLength(1);
 });
 
-test("approval confirmation dialog is named, keyboard-operable, and restores focus", async ({ page, context }) => {
-  await setup(page, context);
-  await previewPlan(page);
-  const approveButton = page.locator("#scenario-plan-approve");
-  await approveButton.click();
-
-  const dialog = page.getByRole("dialog", { name: "Explicitly approve scenario plan" });
-  await expect(dialog).toBeVisible();
-  await expect.poll(() => page.evaluate(() => document.activeElement.id))
-    .toBe("scenario-plan-approval-title");
-  await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
-  await expect.poll(() => page.evaluate(() => document.activeElement.id))
-    .toBe("scenario-plan-approve");
-
-  await approveButton.click();
-  await expect(dialog).toBeVisible();
-  await page.keyboard.press("Tab");
-  await expect.poll(() => page.evaluate(() => document.activeElement.id))
-    .toBe("scenario-plan-approval-close-icon");
-  await page.keyboard.press("Tab");
-  await expect.poll(() => page.evaluate(() => document.activeElement.id))
-    .toBe("scenario-plan-explicit-confirm");
-  await page.keyboard.press("Space");
-  await expect(page.locator("#scenario-plan-explicit-confirm")).toBeChecked();
-  await page.keyboard.press("Tab");
-  await expect.poll(() => page.evaluate(() => document.activeElement.id))
-    .toBe("scenario-plan-approval-cancel");
-  await page.keyboard.press("Tab");
-  await expect.poll(() => page.evaluate(() => document.activeElement.id))
-    .toBe("scenario-plan-confirm-approval");
-  await page.keyboard.press("Enter");
-
-  await expect(dialog).toBeHidden();
-  await expect.poll(() => page.evaluate(() => document.activeElement.id))
-    .toBe("scenario-plan-approval-status");
-});
-
-test("approved run uses the selected scenario and exact approval payload only after explicit approval", async ({ page, context }) => {
+test("selected scenario automatically uses its exact approval payload for the run", async ({ page, context }) => {
   const state = await setup(page, context);
-  await previewPlan(page);
-  await expect(page.locator("#scenario-plan-run")).toBeHidden();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
-  expect(state.runRequests).toEqual([]);
-
   await page.locator("#scenario-plan-scenario").selectOption("second-flow");
-  await approveSelectedPlan(page);
-  expect(state.runRequests).toEqual([]);
-  await page.locator("#scenario-plan-run-button").click();
-
-  await expect.poll(() => state.runRequests.length).toBe(1);
-  expect(state.runRequests).toEqual([{
+  await waitForAutomaticRun(page);
+  expect(state.runRequests).toHaveLength(2);
+  expect(state.runRequests[1]).toEqual({
     method: "POST",
     path: "/api/simulator/organizations/alpha/scenarios/second-flow/run",
     body: { approval_id: "approval-1", plan_digest: digest },
-  }]);
+  });
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
   await expect(page.locator("#scenario-plan-run-namespace")).toHaveText("alpha/second-flow/run-1");
   await expect(page.locator("#scenario-plan-run-id")).toBeHidden();
@@ -642,14 +661,9 @@ test("approved run uses the selected scenario and exact approval payload only af
 
 test("approved scenario run locks duplicate submission while the request is pending", async ({ page, context }) => {
   const state = await setup(page, context, { deferRunResponse: true });
-  await approveSelectedPlan(page);
-  const runButton = page.locator("#scenario-plan-run-button");
-  await runButton.click();
-
+  await previewPlan(page);
   await expect.poll(() => state.runRequests.length).toBe(1);
   await expect.poll(() => typeof state.releaseRun).toBe("function");
-  await expect(runButton).toBeDisabled();
-  await runButton.evaluate(button => button.click());
   expect(state.runRequests).toHaveLength(1);
 
   state.releaseRun();
@@ -663,18 +677,14 @@ test("stale approved-run token reports the server conflict and clears unusable a
     runHTTPStatus: 409,
     runErrorResponse: { error: "scenario run could not be started with this approval" },
   });
-  await approveSelectedPlan(page);
-  await page.locator("#scenario-plan-run-button").click();
-
+  await previewPlan(page);
   const error = page.locator("#scenario-plan-error");
   await expect(error).toBeVisible();
   await expect(error).toContainText("scenario run could not be started with this approval");
   await expect(page.locator("#scenario-plan-run-status")).toContainText(
-    "The run request was not confirmed. Its approval was cleared",
+    "Check current scenario status before selecting it again",
   );
   await expect(page.locator("#scenario-plan-preview")).toBeHidden();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
   await expect(page.locator("#scenario-plan-run-details")).toBeHidden();
   await expect(page.locator("#scenario-plan-run-status")).not.toContainText("accepted");
   expect(state.runSnapshot).toBeNull();
@@ -685,26 +695,40 @@ test("stale approved-run token reports the server conflict and clears unusable a
   }]);
 });
 
-test("approved run status refreshes from the scenario catalog and selection changes clear its snapshot", async ({ page, context }) => {
+test("revoked scenario authorization shows actionable failure without retrying the run", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    runHTTPStatus: 403,
+    runErrorResponse: {
+      error: "Scenario authorization is unavailable or denied; check the current operator session, scenario.run and approval.self for this organization.",
+    },
+  });
+  await previewPlan(page);
+  const error = page.locator("#scenario-plan-error");
+  await expect(error).toBeVisible();
+  await expect(error).toContainText("scenario.run and approval.self");
+  await expect(page.locator("#scenario-plan-run-status")).not.toContainText("accepted");
+  expect(state.runSnapshot).toBeNull();
+  expect(state.runRequests).toHaveLength(1);
+  await page.waitForTimeout(300);
+  expect(state.runRequests).toHaveLength(1);
+});
+
+test("approved run status refreshes from the scenario catalog and each selection starts its own run", async ({ page, context }) => {
   const state = await setup(page, context, {
     polledRunResponse: snapshot => ({ ...snapshot, state: "completed" }),
   });
-  await approveSelectedPlan(page);
-  const catalogReadsBeforeRun = state.catalogReads;
-  await page.locator("#scenario-plan-run-button").click();
+  await previewPlan(page);
 
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
   await expect(page.locator("#scenario-plan-run-namespace")).toHaveText("alpha/sample-flow/run-1");
   await expect(page.locator("#scenario-plan-run-id")).toBeHidden();
   await expect(page.locator("#scenario-plan-run-namespace")).toBeHidden();
   await expect(page.locator("#scenario-plan-run-state")).toHaveText("completed");
-  await expect.poll(() => state.catalogReads).toBeGreaterThan(catalogReadsBeforeRun);
+  expect(state.runRequests).toHaveLength(1);
 
   await page.locator("#scenario-plan-scenario").selectOption("second-flow");
-  await expect(page.locator("#scenario-plan-run")).toBeHidden();
-  await expect(page.locator("#scenario-plan-run-details")).toBeHidden();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
-  expect(state.runRequests).toHaveLength(1);
+  await waitForAutomaticRun(page);
+  expect(state.runRequests).toHaveLength(2);
 });
 
 for (const terminalState of ["completed", "failed"]) {
@@ -735,8 +759,7 @@ for (const terminalState of ["completed", "failed"]) {
         };
       },
     });
-    await approveSelectedPlan(page);
-    await page.locator("#scenario-plan-run-button").click();
+    await previewPlan(page);
 
     await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
     await expect(page.locator("#scenario-plan-run-state")).toHaveText("cleaning");
@@ -752,24 +775,185 @@ for (const terminalState of ["completed", "failed"]) {
 
 test("changing scenario invalidates its plan and mismatched preflight identity stays blocked", async ({ page, context }) => {
   const state = await setup(page, context, {
+    selectedScenarioID: "second-flow",
     preflightResponse: body => body.scenario_id === "second-flow"
       ? plan("sample-flow")
       : plan(body.scenario_id),
   });
 
   await previewPlan(page);
-  await expect(page.locator("#scenario-plan-approve")).toBeEnabled();
-  await page.locator("#scenario-plan-scenario").selectOption("second-flow");
-  await expect(page.locator("#scenario-plan-preview")).toBeHidden();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
   await expect(page.locator("#scenario-plan-preview")).toBeHidden();
   await expect(page.locator("#scenario-plan-error")).toContainText(/invalid or mismatched/i);
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  expect(state.preflightRequests.map(item => item.body.scenario_id)).toEqual(["sample-flow", "second-flow"]);
+  expect(state.preflightRequests.map(item => item.body.scenario_id)).toEqual(["second-flow"]);
   expect(state.approvalRequests).toEqual([]);
   expect(state.runRequests).toEqual([]);
+});
+
+test("a delayed preflight for an old selection cannot approve or run that selection", async ({ page, context }) => {
+  const state = await setup(page, context, { deferInitialPreflight: true });
+  await expect.poll(() => state.preflightRequests.length).toBe(1);
+  await expect.poll(() => typeof state.releasePreflight).toBe("function");
+  await page.locator("#scenario-plan-scenario").evaluate(select => {
+    select.value = "second-flow";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  state.releasePreflight();
+  await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
+  expect(state.preflightRequests.map(item => item.body.scenario_id)).toEqual([
+    "sample-flow", "second-flow",
+  ]);
+  expect(state.approvalRequests).toHaveLength(1);
+  expect(state.approvalRequests[0].body.scenario_id).toBe("second-flow");
+  expect(state.runRequests).toHaveLength(1);
+  expect(state.runRequests[0].path).toBe(
+    "/api/simulator/organizations/alpha/scenarios/second-flow/run",
+  );
+});
+
+test("an unconfirmed run response is not retried automatically", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    runHTTPStatus: 502,
+    runErrorResponse: { error: "Run service timed out." },
+  });
+  await previewPlan(page);
+  await expect(page.locator("#scenario-plan-error")).toContainText("Run service timed out.");
+  await expect(page.locator("#scenario-plan-error")).toContainText(
+    "does not prove that the run was not started",
+  );
+  await expect(page.locator("#scenario-plan-run-status"))
+    .toContainText("Check current scenario status before selecting it again");
+  expect(state.runRequests).toHaveLength(1);
+  await page.waitForTimeout(300);
+  expect(state.runRequests).toHaveLength(1);
+});
+
+for (const failure of ["gateway error", "network loss"]) {
+  test(`matching current run is recovered after ${failure} without a second run`, async ({ page, context }) => {
+    const state = await setup(page, context, {
+      runHTTPStatus: 502,
+      runErrorResponse: { error: "Run service timed out." },
+      recordRunBeforeError: true,
+      abortRunResponse: failure === "network loss",
+    });
+    await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
+    await expect(page.locator("#scenario-plan-run-state")).toHaveText("running");
+    await expect(page.locator("#scenario-plan-error")).toBeHidden();
+    expect(state.runSnapshot.approval_reference).toBe(approvalReference);
+    expect(state.runRequests).toHaveLength(1);
+    await page.waitForTimeout(300);
+    expect(state.runRequests).toHaveLength(1);
+  });
+}
+
+test("a same-scope run with another approval reference does not resolve an uncertain run", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    runHTTPStatus: 502,
+    runErrorResponse: { error: "Run service timed out." },
+    recordRunBeforeError: true,
+    runResponse: ({ scenarioID, body }) => ({
+      run_id: "other-run",
+      run_namespace: `${organization.id}/${scenarioID}/other-run`,
+      organization_id: organization.id,
+      scenario_id: scenarioID,
+      plan_digest: body.plan_digest,
+      approval_reference: `sha256:${"d".repeat(64)}`,
+      state: "running",
+      steps: [],
+    }),
+  });
+  await expect(page.locator("#scenario-plan-error")).toContainText(
+    "does not prove that the run was not started",
+  );
+  await expect(page.locator("#scenario-plan-run-details")).toBeHidden();
+  expect(state.runRequests).toHaveLength(1);
+});
+
+test("unavailable status readback leaves the run outcome explicitly unknown", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    runHTTPStatus: 502,
+    runErrorResponse: { error: "Run service timed out." },
+    reconciliationCatalogStatus: 503,
+  });
+  await expect(page.locator("#scenario-plan-error")).toContainText("Run service timed out.");
+  await expect(page.locator("#scenario-plan-error")).toContainText("Scenario status unavailable.");
+  await expect(page.locator("#scenario-plan-run-details")).toBeHidden();
+  expect(state.runRequests).toHaveLength(1);
+});
+
+test("a hung status readback times out and leaves the run outcome unknown", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    let runRequested = false;
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input, options = {}) => {
+      const url = new URL(typeof input === "string" ? input : input.url, location.href);
+      if (url.pathname.endsWith("/run") && options.method === "POST") runRequested = true;
+      if (runRequested && url.pathname.endsWith("/scenarios") && options.signal &&
+          options.headers instanceof Headers) {
+        return new Promise((_, reject) => {
+          options.signal.addEventListener("abort", () => {
+            reject(new DOMException("status check timed out", "AbortError"));
+          }, { once: true });
+        });
+      }
+      return originalFetch(input, options);
+    };
+    const originalTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (callback, delay, ...args) => {
+      if (delay === 10000) {
+        window.__scenarioStatusTimeout = delay;
+        return originalTimeout(callback, 20, ...args);
+      }
+      return originalTimeout(callback, delay, ...args);
+    };
+  });
+  const state = await setup(page, context, {
+    runHTTPStatus: 502,
+    runErrorResponse: { error: "Run service timed out." },
+  });
+  await expect(page.locator("#scenario-plan-error")).toContainText("status check timed out");
+  expect(await page.evaluate(() => window.__scenarioStatusTimeout)).toBe(10000);
+  await expect(page.locator("#scenario-plan-run-details")).toBeHidden();
+  expect(state.runRequests).toHaveLength(1);
+});
+
+test("malformed matching status cannot confirm an uncertain run", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    runHTTPStatus: 502,
+    runErrorResponse: { error: "Run service timed out." },
+    recordRunBeforeError: true,
+    runResponse: ({ scenarioID, body }) => ({
+      run_id: "run-1",
+      run_namespace: "wrong/namespace/run-1",
+      organization_id: organization.id,
+      scenario_id: scenarioID,
+      plan_digest: body.plan_digest,
+      approval_reference: approvalReference,
+      state: "running",
+      steps: [],
+    }),
+  });
+  await expect(page.locator("#scenario-plan-error")).toContainText(
+    "invalid or mismatched scenario run",
+  );
+  await expect(page.locator("#scenario-plan-run-details")).toBeHidden();
+  expect(state.runRequests).toHaveLength(1);
+});
+
+test("an approval without a valid reference blocks the run and explains version mismatch", async ({ page, context }) => {
+  const state = await setup(page, context, {
+    approvalResponse: body => ({
+      json: {
+        approved: true,
+        approval_id: "approval-1",
+        organization_id: body.organization_id,
+        scenario_id: body.scenario_id,
+        plan_digest: body.plan_digest,
+        machine_ids: ["machine-03"],
+      },
+    }),
+  });
+  await expect(page.locator("#scenario-plan-error")).toContainText("UI and backend versions match");
+  expect(state.runRequests).toHaveLength(0);
 });
 
 test("stale digest rejection invalidates approval state without starting a run", async ({ page, context }) => {
@@ -782,15 +966,12 @@ test("stale digest rejection invalidates approval state without starting a run",
   });
 
   await previewPlan(page);
-  const dialog = await confirmApproval(page);
-  await expect(dialog).toBeVisible();
-  const error = page.locator("#scenario-plan-approval-dialog-error");
+  const error = page.locator("#scenario-plan-error");
   await expect(error).toHaveAttribute("role", "alert");
   await expect(error).toHaveAttribute("aria-live", "assertive");
   await expect(error).toBeVisible();
-  await expect(error).toContainText("Run preflight again before requesting approval.");
+  await expect(error).toContainText("Scenario plan digest is stale.");
   await expect(page.locator("#scenario-plan-preview")).toBeHidden();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
   expect(state.approvalRequests[0].body.plan_digest).toBe(digest);
   expect(state.runRequests).toEqual([]);
 });

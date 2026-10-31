@@ -128,7 +128,7 @@ func TestSimulatorRuntimePlanBlocksMissingOrMismatchedEvidence(t *testing.T) {
 			mutate: func(input *simulatorRuntimePlanInput) {
 				input.Budget = nil
 			},
-			wantBlock: "approved budget evidence is absent",
+			wantBlock: "approved authorization evidence is absent",
 		},
 		{
 			name: "unapproved budget",

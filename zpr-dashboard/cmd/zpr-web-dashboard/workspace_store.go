@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,6 +115,32 @@ func openWorkspaceRepository(path string) (*workspaceRepository, error) {
 	if err := migrateWorkspaceSchema(context.Background(), db); err != nil {
 		_ = db.Close()
 		return nil, err
+	}
+	return &workspaceRepository{db: db}, nil
+}
+
+func openExistingWorkspaceRepository(path string) (*workspaceRepository, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(absPath)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("workspace database must be a regular file")
+	}
+	dsn := (&url.URL{Scheme: "file", Path: absPath, RawQuery: "mode=ro"}).String()
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if _, err := db.Exec(`PRAGMA busy_timeout = 5000; PRAGMA query_only = ON;`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("open existing workspace database: %w", err)
 	}
 	return &workspaceRepository{db: db}, nil
 }

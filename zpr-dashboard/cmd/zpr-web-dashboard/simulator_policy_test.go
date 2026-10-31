@@ -131,6 +131,32 @@ func TestSimulatorAPIProxyAuthorizationAndOrganizationBinding(t *testing.T) {
 	}
 }
 
+func TestSimulatorPlanApprovalRequiresSelfApprovalPermission(t *testing.T) {
+	for _, path := range []string{
+		"/api/simulator/organizations/acme/scenario-plans/approve",
+		"/api/simulator/organizations/acme/scenario-plans/budget-approval",
+	} {
+		t.Run(path, func(t *testing.T) {
+			authorizer := &testOperatorAuthorizer{denyPermission: "approval.self"}
+			proxyCalls := 0
+			handler := simulatorAPIProxy(
+				authorizer,
+				func(*http.Request) (string, error) { return "active-org", nil },
+				http.HandlerFunc(func(http.ResponseWriter, *http.Request) { proxyCalls++ }),
+			)
+			request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8788"+path, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusForbidden || proxyCalls != 0 ||
+				authorizer.organization != "acme" || authorizer.permission != "approval.self" ||
+				authorizer.calls != 2 {
+				t.Fatalf("self-approval denial status=%d scope=%q/%q calls=%d proxy=%d",
+					response.Code, authorizer.organization, authorizer.permission, authorizer.calls, proxyCalls)
+			}
+		})
+	}
+}
+
 func TestScopedScenarioRoutesAuthorizeRequestedOrganizationInsteadOfActiveOrganization(t *testing.T) {
 	authorizer := &testOperatorAuthorizer{}
 	proxyCalls := 0
@@ -155,11 +181,16 @@ func TestScopedScenarioRoutesAuthorizeRequestedOrganizationInsteadOfActiveOrgani
 		{http.MethodPost, "/api/simulator/organizations/northstar/scenarios/deny-machine-policy/run", "scenario.run"},
 	} {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
+			authorizer.permissionCalls = nil
 			request := httptest.NewRequest(test.method, "http://127.0.0.1:8788"+test.path, nil)
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
+			expectedPermissions := []string{test.permission}
+			if simulatorAPIRequiresSelfApproval(test.method, test.path) {
+				expectedPermissions = append(expectedPermissions, "approval.self")
+			}
 			if response.Code != http.StatusNoContent || authorizer.organization != "northstar" ||
-				authorizer.permission != test.permission {
+				!reflect.DeepEqual(authorizer.permissionCalls, expectedPermissions) {
 				t.Fatalf("status=%d scope=%q/%q, want northstar/%s",
 					response.Code, authorizer.organization, authorizer.permission, test.permission)
 			}

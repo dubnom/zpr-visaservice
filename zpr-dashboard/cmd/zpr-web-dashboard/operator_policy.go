@@ -19,6 +19,17 @@ func operatorAuthorizationDisabled(auth operatorRequestAuthorizer) bool {
 	return ok && configured == nil
 }
 
+func sameOperatorHasPermission(
+	auth operatorRequestAuthorizer, r *http.Request, organization, permission string, identity operatorauth.Identity,
+) bool {
+	if !operatorauth.ValidPrincipal(identity) {
+		return false
+	}
+	current, err := auth.Authorize(r, organization, permission)
+	return err == nil && operatorauth.ValidPrincipal(current) &&
+		current.Issuer == identity.Issuer && current.Subject == identity.Subject
+}
+
 func controlRoomAPIProxy(auth operatorRequestAuthorizer, organization string, proxy http.Handler) http.Handler {
 	localProxy := localControlRoomProxy(proxy)
 	if operatorAuthorizationDisabled(auth) {

@@ -121,10 +121,10 @@ The next acceptance target is the original `velocity-single-node` scenario:
 two original machines, real named logins, finance-client to echo-service,
 100 warmed HTTP round trips and a 16 MiB transfer, followed by cleanup and a
 retained-state restart. No further organization rollout is justified by base
-readiness alone. Updated user requirement (2026-10-30): turn-key means sign in
-and select an organization/scenario, with authorized automatic self-approval
-and no further prompts, shell commands or manual state repair in all Simulator
-installations; this target is **not met yet**. Audit role-risk warnings are
+readiness alone. Updated user requirement: after sign-in, explicit organization
+activation and scenario selection are separate actions, each with authorized
+automatic self-approval and no additional approval prompts, shell commands or
+manual state repair; this target is **not met yet**. Audit role-risk warnings are
 planned, not deployed. See the
 [owning delivery plan](../SIMULATOR_AS_ZPR_CLIENT_PLAN.md#active-turn-key-delivery-plan-2026-10-30).
 
@@ -378,11 +378,16 @@ approval, parallel scheduling, failure-path lifecycle or a matched package rollo
 The next UI dependency is now explicit, not another workload repair: the running
 Velocity issuer registers only `zpr-control-room` with the Room callback, and
 Control-Service trusts only its existing `evaluation-room` delegation key.
-An isolated Simulator requires its own ordinary OIDC client and separately
-reviewed delegation signer, using the existing named administrator and scoped
-only to Velocity. Do not copy the Room signing key, bypass login, infer approval,
-change the approved workload policy/BAS root, or replace main dev to avoid this
-registration. This client/trust change awaits review before implementation.
+The user approved a separate Simulator OIDC client at port 24788 and independent
+delegation signer using the existing named Velocity administrator. Source
+registration and an operator trust override are tested on a separate temporary
+installation, but are **not deployed to Velocity**. Its staged bootstrap lacks
+the new signer support, and its custom directory and lack of
+bootstrap-admitted evaluation endpoints are not supported by the current
+paired Simulator launcher. The separate Enrollment Service has its own trust.
+Do not copy the Room signing key, bypass login, infer approval, change the
+approved workload policy/BAS root, or replace main dev to avoid these boundaries.
+See the [current source and isolated evidence](../SIMULATOR_AS_ZPR_CLIENT_PLAN.md#g1-registration-implementation-record-2026-10-30).
 
 The canonical current acceptance record is
 `staged_organization_runtimes.velocity_release_gate` in [dev.json](dev.json).

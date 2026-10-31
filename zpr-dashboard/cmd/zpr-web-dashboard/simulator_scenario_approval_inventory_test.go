@@ -76,7 +76,7 @@ func TestSimulatorScenarioApprovalInventoryBlocksAbsentBudgets(t *testing.T) {
 			plan := buildSimulatorRuntimePlan(input)
 			if plan.Status != simulatorRuntimePlanBlocked ||
 				plan.BudgetStatus != simulatorRuntimeBudgetAbsent ||
-				!strings.Contains(strings.Join(plan.Blockers, "\n"), "approved budget evidence is absent") {
+				!strings.Contains(strings.Join(plan.Blockers, "\n"), "approved authorization evidence is absent") {
 				t.Fatalf("default plan did not retain absent-budget blocker: %+v", plan)
 			}
 			buildCalls := 0

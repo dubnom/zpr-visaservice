@@ -87,11 +87,20 @@ LDAP access, complete isolation and security certification remain open.
 
 - [x] **Decision (2026-10-28): the two-person rule is removed everywhere.**
   A small organization may have one operator. Create/propose and approve stay
-  separate steps, and the same person may do both. Control Room policy-change
+  separate steps, and the same person may do both when authorized.
+  **Clarified 2026-10-30:** self-approval requires the ordinary approval grant
+  plus organization-scoped `approval.self`; delegated operations require it in
+  both the signed-in session and independent backend grants. The deprecated
+  `allow_self_approval` configuration setting does not confer permission.
+  Self-approval is allowed, not a reason to require a second person; Audit
+  must identify it and present an advisory warning, not block an authorized
+  operation. See the [Audit warning requirement](../ENTITY_HISTORY_PLAN.md#self-approval-role-risk-warnings).
+  Control Room policy-change
   and subject-link reviews flag such approvals as `self_review` and log an
   `AUDIT WARNING` (less secure). Enrollment approval by the invitation creator
-  remains allowed; surfacing the same warning in its audit trail is still to do.
-  isolation, stale revisions, and audit rollback.
+  is likewise allowed with explicit permission. Broader Audit UI warning
+  coverage and live qualification remain open; existing log/event markers alone
+  do not prove that every self-approved operation is warned about in Audit.
 
 ### P0: Organization Isolation and Activation
 

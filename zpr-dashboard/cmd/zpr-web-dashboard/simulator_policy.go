@@ -231,7 +231,8 @@ func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simul
 				writePolicyError(w, http.StatusServiceUnavailable, "Named-user authorization is required for policy status.")
 				return
 			}
-			next.ServeHTTP(w, r)
+			ctx := withSimulatorAuthorizationMode(r.Context(), simulatorAuthorizationLocal)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	} else {
 		guarded = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +265,14 @@ func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simul
 				writePolicyError(w, http.StatusForbidden, "An authorized named-user session, organization scope, and mutation CSRF proof are required.")
 				return
 			}
+			requiresSelfApproval := simulatorAPIRequiresSelfApproval(r.Method, r.URL.Path)
+			if requiresSelfApproval {
+				if err := authorizeSimulatorSelfApproval(auth, r, organization, identity); err != nil {
+					log.Printf("Simulator self-approval authorization denied (HTTP %d)", http.StatusForbidden)
+					writePolicyError(w, http.StatusForbidden, "An authorized named-user session with approval.self is required.")
+					return
+				}
+			}
 			parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 			if len(parts) >= 6 && parts[2] == "organizations" && parts[4] == "duplicates" {
 				if _, err := auth.Authorize(r, parts[3], "organization.read"); err != nil {
@@ -274,6 +283,19 @@ func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simul
 			}
 			ctx := context.WithValue(r.Context(), simulatorIdentityContextKey{}, identity)
 			ctx = context.WithValue(ctx, simulatorAuthorizedOrganizationContextKey{}, organization)
+			ctx = withSimulatorAuthorizationMode(ctx, simulatorAuthorizationNamed)
+			if requiresSelfApproval {
+				originalRequest := r
+				revalidate := simulatorScenarioRevalidator(func(ctx context.Context) (operatorauth.Identity, error) {
+					request := originalRequest.WithContext(ctx)
+					current, err := auth.Authorize(request, organization, permission)
+					if err != nil || authorizeSimulatorSelfApproval(auth, request, organization, current) != nil {
+						return operatorauth.Identity{}, errSimulatorScenarioOperatorDenied
+					}
+					return current, nil
+				})
+				ctx = context.WithValue(ctx, simulatorScenarioRevalidatorContextKey{}, revalidate)
+			}
 			r = r.WithContext(ctx)
 			next.ServeHTTP(w, r)
 		})
@@ -286,6 +308,38 @@ func simulatorAPIProxy(auth operatorRequestAuthorizer, resolveOrganization simul
 		}
 		guarded.ServeHTTP(w, r)
 	})
+}
+
+func authorizeSimulatorSelfApproval(
+	auth operatorRequestAuthorizer, r *http.Request, organization string, identity operatorauth.Identity,
+) error {
+	if !sameOperatorHasPermission(auth, r, organization, "approval.self", identity) {
+		return errSimulatorScenarioOperatorDenied
+	}
+	return nil
+}
+
+func simulatorAPIRequiresSelfApproval(method, requestPath string) bool {
+	if method != http.MethodPost {
+		return false
+	}
+	parts := strings.Split(strings.Trim(requestPath, "/"), "/")
+	if len(parts) == 4 {
+		return parts[0] == "api" && parts[1] == "simulator" &&
+			parts[2] == "scenario-plans" &&
+			(parts[3] == "approve" || parts[3] == "budget-approval")
+	}
+	if len(parts) == 5 {
+		return parts[0] == "api" && parts[1] == "simulator" &&
+			parts[2] == "scenarios" && parts[4] == "run"
+	}
+	if len(parts) == 6 {
+		return parts[0] == "api" && parts[1] == "simulator" &&
+			parts[2] == "organizations" && parts[4] == "scenario-plans" &&
+			(parts[5] == "approve" || parts[5] == "budget-approval")
+	}
+	return len(parts) == 7 && parts[0] == "api" && parts[1] == "simulator" &&
+		parts[2] == "organizations" && parts[4] == "scenarios" && parts[6] == "run"
 }
 
 func currentSimulatorOrganization(*http.Request) (string, error) {

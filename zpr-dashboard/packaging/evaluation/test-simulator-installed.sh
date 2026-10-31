@@ -18,9 +18,11 @@ EOF
 cat > "$tmp/package/bin/zpr-lab-bootstrap" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" > "$ARGS"
+printf '%s\n' "${SIMULATION_SETUP_MODE-unset}" > "$SETUP_MODE"
 EOF
 chmod 700 "$tmp/tools/"* "$tmp/package/bin/zpr-lab-bootstrap"
-export PATH="$tmp/tools:$PATH" ARGS="$tmp/args"
+export PATH="$tmp/tools:$PATH" ARGS="$tmp/args" SETUP_MODE="$tmp/setup-mode"
+unset SIMULATION_SETUP_MODE
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 printf 'paired-build\n' > "$tmp/package/BUILD-INFO.txt"
 printf 'data-plane %s\n' "$digest" > "$tmp/package/images.txt"
@@ -35,6 +37,10 @@ sh "$tmp/companion/simulator.sh" start "$tmp/package" "$tmp/evaluation" "$tmp/si
 grep -Fx -- '-evaluation-simulator' "$ARGS"
 grep -Fx -- "$tmp/companion/bin/zpr-simulator" "$ARGS"
 grep -Fx -- "$digest" "$ARGS"
+grep -Fx -- 'unset' "$SETUP_MODE"
+SIMULATION_SETUP_MODE=ordinary-client sh "$tmp/companion/simulator.sh" start \
+    "$tmp/package" "$tmp/evaluation" "$tmp/simulator" >/dev/null
+grep -Fx -- 'ordinary-client' "$SETUP_MODE"
 cp "$ARGS" "$tmp/original-args"
 printf 'different-build\n' > "$tmp/package/BUILD-INFO.txt"
 checksum
@@ -50,4 +56,4 @@ if sh "$tmp/companion/simulator.sh" start "$tmp/package" "$tmp/evaluation" "$tmp
 fi
 grep 'Simulator package verification failed' "$tmp/error"
 cmp "$ARGS" "$tmp/original-args"
-printf 'PASS: paired build identity, exact launch arguments, tamper rejection\n'
+printf 'PASS: paired build identity, exact launch arguments, setup-mode forwarding, tamper rejection\n'

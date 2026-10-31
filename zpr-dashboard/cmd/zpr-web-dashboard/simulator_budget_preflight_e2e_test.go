@@ -90,7 +90,7 @@ func TestSimulatorBudgetPreflightApprovalRunEndToEnd(t *testing.T) {
 				preview.ScenarioID != scope.ScenarioID ||
 				!validSimulatorScenarioAuthorizationScopeDigest(preview.AuthorizationScopeDigest) ||
 				preview.AuthorizationScopeDigest != plan.AuthorizationScopeDigest ||
-				!slices.Contains(preview.Blockers, "current approved budget evidence is unavailable or invalid") {
+				!slices.Contains(preview.Blockers, "current approved authorization evidence is unavailable or invalid") {
 				t.Fatalf("empty-authority response did not expose only the requested scope and blockers: %+v",
 					preview)
 			}
@@ -174,9 +174,11 @@ func TestSimulatorBudgetPreflightApprovalRunEndToEnd(t *testing.T) {
 			if approvalResponse.Code != http.StatusOK {
 				t.Fatalf("local approval status=%d body=%s", approvalResponse.Code, approvalResponse.Body)
 			}
-			if authorizer.organization != organization.ID || authorizer.permission != "scenario.run" {
+			if authorizer.organization != organization.ID ||
+				len(authorizer.permissions) < 2 ||
+				!slices.Equal(authorizer.permissions[len(authorizer.permissions)-2:], []string{"scenario.run", "approval.self"}) {
 				t.Fatalf("local approval authorization scope=%q permission=%q",
-					authorizer.organization, authorizer.permission)
+					authorizer.organization, authorizer.permissions)
 			}
 			var localApproval simulatorScenarioPlanApprovalResponse
 			if err := json.Unmarshal(approvalResponse.Body.Bytes(), &localApproval); err != nil {
@@ -206,7 +208,8 @@ func TestSimulatorBudgetPreflightApprovalRunEndToEnd(t *testing.T) {
 			before := manager.snapshot()
 			currentCalls := authority.currentCalls.Load()
 			err := manager.startApprovedVersionedContext(
-				context.Background(), runScenario, runManifest, runOrganization,
+				simulatorScenarioTestNamedContext(context.Background(), simulatorScenarioPlanTestIdentity(organization.ID)),
+				runScenario, runManifest, runOrganization,
 				func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error) {
 					executed.Add(1)
 					return "synthetic in-memory run step", nil

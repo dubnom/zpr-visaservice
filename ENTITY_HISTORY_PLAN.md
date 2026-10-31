@@ -40,7 +40,18 @@ manifests/profiles/sessions/workloads. Simulator may supply test traffic.
 
 ### Self-approval role-risk warnings
 
-Approved requirement (2026-10-30); implementation and live acceptance pending.
+Approved requirement (2026-10-30); narrow request-time and observed
+subject-link-review advisories exist in source, while the role-risk engine,
+broader observed-self-approval coverage and live acceptance remain pending.
+Self-approval is allowed across approval workflows when the actor has the
+ordinary approval permission and organization-scoped `approval.self`.
+Delegated operations require that permission in the current session and
+independent backend grants. Authoring/submission and approval remain distinct
+actions, but do not require distinct people. Audit must visibly identify and
+warn about observed self-approvals; this is advisory and must not block an
+authorized operation. Existing event/log flags are evidence inputs, not proof
+of complete Audit warning coverage.
+
 All Simulator installations use the authenticated operator's scoped permissions
 to self-approve selection-triggered setup without further approval prompts.
 See the [ordinary-client decision and delivery gates](SIMULATOR_AS_ZPR_CLIENT_PLAN.md#active-turn-key-delivery-plan-2026-10-30).
@@ -52,6 +63,18 @@ or availability. Identify the affected issuer/subject, organization, role/grant,
 rule or assertion, exact operation/revision when available, and supporting
 evidence. Distinguish an observed self-approved operation from potential risk
 in a role assignment; incomplete evidence means unknown, not safe.
+
+The Audit history UI identifies two Control-Service signals. A
+`budget.approval.create` / `self-approval-requested` event records that a
+verified delegation contained `approval.self` when a request was made; it
+precedes the mutation and does not establish a self-approved operation, a
+successful decision, a role, or a current grant. A `subject-link.approve` /
+`approved-single-operator` event reports a committed review by its proposer,
+not publication or enforcement; an exact retry can produce another event with
+a later timestamp. The advisories display available actor, organization,
+target and event references and mark missing details as unknown. Browser
+fixtures cover matching and nonmatching events, pagination, unavailable
+history and Simulator independence; they are not live acceptance.
 
 Warnings are advisory, do not add a mandatory Simulator confirmation, and
 cannot confer permissions or excuse a failed backend authorization check.

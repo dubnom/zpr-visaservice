@@ -9,6 +9,10 @@ const (
 	maxSimulatorRunNamespaceCanonicalLength = 3*maxSimulatorRunNamespaceIDLength + 2
 )
 
+func validSimulatorRunNamespaceID(id string) bool {
+	return validScenarioID(id) && len(id) <= maxSimulatorRunNamespaceIDLength
+}
+
 // SimulatorRunNamespace identifies one simulator run within an organization
 // and scenario. It does not create resources or enforce run concurrency.
 type SimulatorRunNamespace struct {
@@ -27,7 +31,7 @@ func NewSimulatorRunNamespace(orgID, scenarioID, runID string) (SimulatorRunName
 		{name: "scenario ID", id: scenarioID},
 		{name: "run ID", id: runID},
 	} {
-		if !validScenarioID(component.id) || len(component.id) > maxSimulatorRunNamespaceIDLength {
+		if !validSimulatorRunNamespaceID(component.id) {
 			return SimulatorRunNamespace{}, fmt.Errorf(
 				"%s must be a valid lowercase ID of at most %d characters",
 				component.name,

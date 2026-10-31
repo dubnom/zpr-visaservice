@@ -65,13 +65,14 @@ func TestDefaultSimulatorScenarioPlanBootstrapKeepsOtherBlockers(t *testing.T) {
 	t.Setenv("SIMULATION_SCENARIOS_DIR", scenarioDirectory)
 	t.Setenv("SIMULATION_ACTIVE_ORGANIZATION_FILE", filepath.Join(directory, "no-active-organization"))
 	t.Setenv("SIMULATION_ORGANIZATION_ID", "")
+	setSimulatorPublishedWorkspaceFixture(t, directory, scenario)
 
 	defaultPlan, err := buildCurrentSimulatorScenarioPlan("great-lakes", scenario.ID)
 	if err != nil {
 		t.Fatalf("build default scenario plan: %v", err)
 	}
 	if defaultPlan.BudgetStatus != simulatorRuntimeBudgetAbsent ||
-		!strings.Contains(strings.Join(defaultPlan.Blockers, "\n"), "approved budget evidence is absent") {
+		!strings.Contains(strings.Join(defaultPlan.Blockers, "\n"), "approved authorization evidence is absent") {
 		t.Fatalf("default builder fabricated budget evidence: %+v", defaultPlan)
 	}
 
@@ -120,8 +121,8 @@ func TestDefaultSimulatorScenarioPlanBootstrapKeepsOtherBlockers(t *testing.T) {
 		bootstrap.ScenarioID != scope.ScenarioID ||
 		bootstrap.AuthorizationScopeDigest != defaultPlan.AuthorizationScopeDigest ||
 		!validSimulatorScenarioAuthorizationScopeDigest(bootstrap.AuthorizationScopeDigest) ||
-		!slices.Contains(bootstrap.Blockers, "approved budget evidence is absent") ||
-		!slices.Contains(bootstrap.Blockers, "current approved budget evidence is unavailable or invalid") {
+		!slices.Contains(bootstrap.Blockers, "approved authorization evidence is absent") ||
+		!slices.Contains(bootstrap.Blockers, "current approved authorization evidence is unavailable or invalid") {
 		t.Fatalf("default preflight did not expose its exact bootstrap scope: %+v", bootstrap)
 	}
 	if authorizer.organization != scope.OrganizationID || authorizer.permission != "scenario.read" {
@@ -170,7 +171,7 @@ func TestDefaultSimulatorScenarioPlanBootstrapKeepsOtherBlockers(t *testing.T) {
 		plan.BudgetStatus != simulatorRuntimeBudgetApproved ||
 		plan.Status != simulatorRuntimePlanBlocked ||
 		!slices.Contains(plan.Blockers, "policy resolution is required") ||
-		slices.Contains(plan.Blockers, "approved budget evidence is absent") {
+		slices.Contains(plan.Blockers, "approved authorization evidence is absent") {
 		t.Fatalf("authority grant bypassed other default plan blockers: %+v", plan)
 	}
 
@@ -188,9 +189,11 @@ func TestDefaultSimulatorScenarioPlanBootstrapKeepsOtherBlockers(t *testing.T) {
 	if approval.Code != http.StatusConflict {
 		t.Fatalf("default blocked plan approval status=%d body=%s", approval.Code, approval.Body)
 	}
-	if authorizer.organization != scope.OrganizationID || authorizer.permission != "scenario.run" {
+	if authorizer.organization != scope.OrganizationID ||
+		len(authorizer.permissions) < 2 ||
+		!slices.Equal(authorizer.permissions[len(authorizer.permissions)-2:], []string{"scenario.run", "approval.self"}) {
 		t.Fatalf("default approval authorization scope=%q permission=%q",
-			authorizer.organization, authorizer.permission)
+			authorizer.organization, authorizer.permissions)
 	}
 	if len(store.byID) != 0 || len(store.pendingByScope) != 0 {
 		t.Fatalf("blocked default plan stored approval tokens: byID=%d pending=%d",

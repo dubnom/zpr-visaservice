@@ -16,14 +16,30 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
 	evaluationruntime "neboagency.com/zpr-dashborad/internal/simulator/evaluation"
+	"neboagency.com/zpr-dashborad/internal/simulator/setupmode"
 )
 
+type evaluationSimulatorOutput struct {
+	mu     *sync.Mutex
+	writer io.Writer
+}
+
+func (output evaluationSimulatorOutput) Write(data []byte) (int, error) {
+	output.mu.Lock()
+	defer output.mu.Unlock()
+	return output.writer.Write(data)
+}
+
 func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
+	var outputMu sync.Mutex
+	stdout = evaluationSimulatorOutput{mu: &outputMu, writer: stdout}
+	stderr = evaluationSimulatorOutput{mu: &outputMu, writer: stderr}
 	flags := flag.NewFlagSet("zpr-lab-bootstrap -evaluation-simulator", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	evaluation := flags.String("evaluation-state", "", "existing independently running evaluation with -simulator-port")
@@ -41,8 +57,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "Simulator setup accepts flags only")
 		return 2
 	}
-	env, listen, err := prepareEvaluationSimulator(*evaluation, *state, *binary, *image)
-	if err != nil {
+	if err := validateEvaluationSimulatorArguments(*evaluation, *state, *binary, *image); err != nil {
 		fmt.Fprintf(stderr, "Simulator setup: %v\n", err)
 		return 1
 	}
@@ -52,6 +67,11 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer lock.Close()
+	env, listen, err := prepareEvaluationSimulator(*evaluation, *state, *binary, *image)
+	if err != nil {
+		fmt.Fprintf(stderr, "Simulator setup: %v\n", err)
+		return 1
+	}
 	if *catalog != "" {
 		env, err = prepareEvaluationSimulatorCatalog(*evaluation, *state, *catalog, env)
 		if err != nil {
@@ -112,31 +132,49 @@ func lockEvaluationSimulator(evaluation string) (*os.File, error) {
 	return lock, nil
 }
 
-func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]string, string, error) {
+func validateEvaluationSimulatorArguments(evaluation, state, binary, image string) error {
+	if _, err := setupmode.Parse(os.Getenv(setupmode.Environment)); err != nil {
+		return err
+	}
 	for _, path := range []string{evaluation, state, binary} {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
-			return nil, "", errors.New("evaluation, Simulator state and binary require canonical absolute non-root paths")
+			return errors.New("evaluation, Simulator state and binary require canonical absolute non-root paths")
 		}
 		resolved, err := filepath.EvalSymlinks(filepath.Dir(path))
 		if err != nil || resolved != filepath.Dir(path) {
-			return nil, "", errors.New("paths must have existing non-symlink parents")
+			return errors.New("paths must have existing non-symlink parents")
 		}
 	}
 	if state == evaluation || strings.HasPrefix(state, evaluation+string(filepath.Separator)) ||
 		strings.HasPrefix(evaluation, state+string(filepath.Separator)) {
-		return nil, "", errors.New("Simulator state must be separate from evaluation state")
+		return errors.New("Simulator state must be separate from evaluation state")
 	}
-	info, err := os.Lstat(binary)
+	info, err := os.Lstat(evaluation)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		return errors.New("evaluation state must be an existing real private directory")
+	}
+	info, err = os.Lstat(binary)
 	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 || info.Mode().Perm()&0o111 == 0 {
-		return nil, "", errors.New("Simulator binary must be a nonempty regular executable")
+		return errors.New("Simulator binary must be a nonempty regular executable")
 	}
 	if !immutableImage.MatchString(image) || len(image) != len("sha256:")+64 || image[:7] != "sha256:" {
-		return nil, "", errors.New("an exact data-plane image ID is required")
+		return errors.New("an exact data-plane image ID is required")
+	}
+	return nil
+}
+
+func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]string, string, error) {
+	setupMode, setupModeSet := os.LookupEnv(setupmode.Environment)
+	if err := validateEvaluationSimulatorArguments(evaluation, state, binary, image); err != nil {
+		return nil, "", err
 	}
 	data, err := os.ReadFile(filepath.Join(evaluation, "evaluation.json"))
 	var inventory evaluationInventory
 	if err != nil || json.Unmarshal(data, &inventory) != nil {
 		return nil, "", errors.New("evaluation inventory unavailable")
+	}
+	if err := inventory.Config.validate(); err != nil {
+		return nil, "", fmt.Errorf("invalid evaluation inventory: %w", err)
 	}
 	if _, err := readEvaluation(evaluation, inventory.Config); err != nil {
 		return nil, "", err
@@ -285,8 +323,8 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 		"organization_id":           organization,
 		"control_room_url":          inventory.Config.browserOrigin(inventory.Config.RoomPort),
 		"operator_service_url":      fmt.Sprintf("https://localhost:%d", inventory.Config.ServicePort),
-		"client_cert_file":          filepath.Join(evaluation, "client-chain.pem"),
-		"client_key_file":           filepath.Join(evaluation, "client-key.pem"),
+		"client_cert_file":          filepath.Join(evaluation, "simulator-client-chain.pem"),
+		"client_key_file":           filepath.Join(evaluation, "simulator-client-key.pem"),
 		"service_ca_file":           filepath.Join(evaluation, "ca.pem"),
 		"data_plane_endpoints_file": filepath.Join(evaluation, evaluationDataPlaneEndpointsFile),
 	}
@@ -319,14 +357,17 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 		"ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE": filepath.Join(evaluation, "oidc-simulator-client.secret"),
 		"ZPR_SIMULATOR_OPERATOR_OIDC_CA_FILE":     filepath.Join(evaluation, "ca.pem"),
 	}
+	if setupModeSet {
+		values[setupmode.Environment] = setupMode
+	}
 	if inventory.Config.ScenarioDemo {
 		values["SIMULATOR_DATA_PLANE_WORKLOAD_INTERVAL"] = "off"
 		values["ZPR_BUDGET_AUTHORITY_URL"] = fmt.Sprintf("https://localhost:%d", inventory.Config.ServicePort)
-		values["ZPR_BUDGET_AUTHORITY_CLIENT_CERT_FILE"] = filepath.Join(evaluation, "client-chain.pem")
-		values["ZPR_BUDGET_AUTHORITY_CLIENT_KEY_FILE"] = filepath.Join(evaluation, "client-key.pem")
+		values["ZPR_BUDGET_AUTHORITY_CLIENT_CERT_FILE"] = filepath.Join(evaluation, "simulator-client-chain.pem")
+		values["ZPR_BUDGET_AUTHORITY_CLIENT_KEY_FILE"] = filepath.Join(evaluation, "simulator-client-key.pem")
 		values["ZPR_BUDGET_AUTHORITY_CA_FILE"] = filepath.Join(evaluation, "ca.pem")
-		values["ZPR_OPERATOR_DELEGATION_SIGNER_FILE"] = filepath.Join(evaluation, "operator-delegation-signer.json")
-		values["ZPR_OPERATOR_DELEGATION_KEY_FILE"] = filepath.Join(evaluation, "operator-delegation-key.pem")
+		values["ZPR_OPERATOR_DELEGATION_SIGNER_FILE"] = filepath.Join(evaluation, "simulator-delegation-signer.json")
+		values["ZPR_OPERATOR_DELEGATION_KEY_FILE"] = filepath.Join(evaluation, "simulator-delegation-key.pem")
 		values["ZPR_OPERATOR_DELEGATION_AUDIENCE"] = evaluationServiceAudience(inventory.Config)
 	}
 	if inventory.Config.BrowserIP != "" {

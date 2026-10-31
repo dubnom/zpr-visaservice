@@ -161,7 +161,7 @@ func TestHandlerApprovalResolveAndRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	approvalBody, err := json.Marshal(approvalRequest{
+	approvalBody, err := json.Marshal(ApprovalRequest{
 		Scope: scopeRequest, Decision: DecisionApproved, ExpiresAt: fixture.now.Add(MaxApprovalLifetime),
 	})
 	if err != nil {
@@ -285,11 +285,37 @@ func TestHandlerApprovalResolveAndRevoke(t *testing.T) {
 	}
 }
 
+func TestHandlerRecordsSelfApprovalRequest(t *testing.T) {
+	fixture := newHandlerFixture(t, []string{"org-a"}, []string{"budget.approve", "approval.self"})
+	auditRepository := &budgetAuthorityAuditRepository{}
+	fixture.handler.auditRepository = auditRepository
+	body, err := json.Marshal(ApprovalRequest{
+		Scope:    ScopeRequest{OrganizationID: "org-a", ScenarioID: "scenario-a", PlanDigest: "sha256:plan-a"},
+		Decision: DecisionApproved, ExpiresAt: fixture.now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	fixture.handler.Operator(response, fixture.delegatedRequest(
+		t, operatordelegation.Prefix+"budget-authority/approvals", body,
+	))
+	if response.Code != http.StatusCreated || len(auditRepository.events) != 1 {
+		t.Fatalf("self-approval status=%d events=%+v body=%s", response.Code, auditRepository.events, response.Body)
+	}
+	event := auditRepository.events[0]
+	if event.ActorIssuer != fixture.identity.Issuer || event.ActorSubject != fixture.identity.Subject ||
+		event.OrganizationID != "org-a" || event.Action != "budget.approval.create" ||
+		event.Outcome != "self-approval-requested" {
+		t.Fatalf("self-approval audit event = %+v", event)
+	}
+}
+
 func TestHandlerAuditFailurePreventsBudgetApproval(t *testing.T) {
 	fixture := newHandlerFixture(t, []string{"org-a"}, []string{"budget.approve"})
 	fixture.handler.auditRepository = &budgetAuthorityAuditRepository{appendErr: errors.New("audit unavailable")}
 	scope := ScopeRequest{OrganizationID: "org-a", ScenarioID: "scenario-a", PlanDigest: "sha256:plan-a"}
-	body, err := json.Marshal(approvalRequest{
+	body, err := json.Marshal(ApprovalRequest{
 		Scope: scope, Decision: DecisionApproved, ExpiresAt: fixture.now.Add(time.Minute),
 	})
 	if err != nil {
@@ -314,7 +340,7 @@ func TestHandlerAuditFailurePreventsBudgetRevocation(t *testing.T) {
 	repository := &budgetAuthorityAuditRepository{}
 	fixture.handler.auditRepository = repository
 	scope := ScopeRequest{OrganizationID: "org-a", ScenarioID: "scenario-a", PlanDigest: "sha256:plan-a"}
-	body, err := json.Marshal(approvalRequest{
+	body, err := json.Marshal(ApprovalRequest{
 		Scope: scope, Decision: DecisionApproved, ExpiresAt: fixture.now.Add(time.Minute),
 	})
 	if err != nil {
@@ -361,7 +387,7 @@ func TestHandlerAuditFailurePreventsBudgetRevocation(t *testing.T) {
 func TestHandlerRejectsOutOfScopePermissionAndReplay(t *testing.T) {
 	fixture := newHandlerFixture(t, []string{"org-a"}, []string{"budget.approve"})
 	requestFor := func(scope ScopeRequest, decision Decision) (*http.Request, error) {
-		body, err := json.Marshal(approvalRequest{
+		body, err := json.Marshal(ApprovalRequest{
 			Scope: scope, Decision: decision, ExpiresAt: fixture.now.Add(time.Minute),
 		})
 		if err != nil {
@@ -424,7 +450,7 @@ func TestHandlerRejectsOutOfScopePermissionAndReplay(t *testing.T) {
 	}
 
 	noPermission := newHandlerFixture(t, []string{"org-a"}, []string{"read"})
-	body, err = json.Marshal(approvalRequest{
+	body, err = json.Marshal(ApprovalRequest{
 		Scope: scope, Decision: DecisionApproved, ExpiresAt: noPermission.now.Add(time.Minute),
 	})
 	if err != nil {

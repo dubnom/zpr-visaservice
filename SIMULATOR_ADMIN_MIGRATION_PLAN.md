@@ -683,7 +683,13 @@ establish identity or approval.
 - The Change Review workflow records named submitter/reviewer and an immutable
   proposal/digest in a Control Room-owned SQLite store. It requires
   `change.review`, checks the proposal remains current, and disallows
-  self-approval by default. Its `apply` route explicitly returns 409; its
+  self-approval by default in this historical baseline.
+  **Superseded separation requirement (2026-10-30):** the current approval
+  boundary permits the author to approve with `change.review` and
+  organization-scoped `approval.self`; delegated approval additionally
+  requires the independent backend grant. Audit must present an advisory
+  self-approval warning. This does not remove exact-revision or authorization
+  checks. Its `apply` route explicitly returns 409 in this historical baseline; its
   approval record is not in Policy-Service and is not a Visa Service operation
   receipt.
 - Policy-Service currently receives mTLS-authenticated Control Room requests

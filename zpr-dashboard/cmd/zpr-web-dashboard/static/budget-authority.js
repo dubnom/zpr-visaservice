@@ -47,7 +47,7 @@
     const revokeOrganization = byId("budget-revoke-organization").value;
     const permission = Boolean(state.identity?.permissions?.includes("budget.approve"));
     byId("budget-permission-status").textContent = permission
-      ? "Budget mutations require an organization explicitly listed in your operator session."
+      ? "Approval changes require an organization explicitly listed in your operator session."
       : "This session lacks budget.approve. Mutations are disabled.";
     byId("budget-approve").disabled = state.busy || state.uncertain ||
       !canManage(organization) ||
@@ -136,7 +136,7 @@
       throw error;
     }
     if (!response.ok) {
-      const error = new Error(data?.error || `Budget authority request failed (HTTP ${response.status}).`);
+      const error = new Error(data?.error || `Operation approval service request failed (HTTP ${response.status}).`);
       error.status = response.status;
       throw error;
     }
@@ -180,7 +180,8 @@
     if (state.busy || state.uncertain) return;
     state.busy = true;
     setError("");
-    setStatus(`Submitting budget ${kind} request…`);
+    const operation = kind === "approval" ? "Operation approval" : "Approval revocation";
+    setStatus(`Submitting ${operation.toLowerCase()} request…`);
     updateControls();
     try {
       const evidence = await operatorRequest(path, body);
@@ -191,26 +192,26 @@
           expected.planDigest && evidence.plan_digest !== expected.planDigest ||
           evidence.revoked !== (kind === "revocation")) {
         state.uncertain = true;
-        throw new Error("The service response did not match the requested budget authority scope. Do not retry; reconcile the outcome.");
+        throw new Error("The service response did not match the requested operation approval service scope. Do not retry; reconcile the outcome.");
       }
       renderEvidence(evidence);
       if (kind === "approval") {
         byId("budget-revoke-organization").value = evidence.organization_id;
         byId("budget-revoke-approval-id").value = evidence.approval_id;
-        setStatus("Budget approval recorded by the authority service. No Simulator or host action was performed.");
+        setStatus("Operation approval recorded by the authority service. No Simulator or host action was performed.");
       } else {
-        setStatus("Budget approval revocation recorded by the authority service. No Simulator or host action was performed.");
+        setStatus("Operation approval revocation recorded by the authority service. No Simulator or host action was performed.");
       }
     } catch (error) {
       if (error.status === undefined) state.uncertain = true;
       if (error.status === 401) {
         setError(error.message);
       } else if (error.status) {
-        setError(`Budget ${kind} was refused (HTTP ${error.status}): ${error.message}`);
-        setStatus("No successful budget authority response was received.");
+        setError(`${operation} was refused (HTTP ${error.status}): ${error.message}`);
+        setStatus("No successful operation approval service response was received.");
       } else {
-        setError(`${error.message || `Budget ${kind} outcome is unknown.`} No automatic retry was made.`);
-        setStatus("Budget authority outcome is unknown; do not retry until it is reconciled.");
+        setError(`${error.message || `${operation} outcome is unknown.`} No automatic retry was made.`);
+        setStatus("Operation approval service outcome is unknown; do not retry until it is reconciled.");
       }
     } finally {
       state.busy = false;
@@ -231,7 +232,7 @@
       }
       const submit = byId("budget-approve");
       openConfirmation({
-        label: "Confirm budget approval",
+        label: "Confirm operation approval",
         run: () => mutate("approval", "/api/budget-authority/approvals", {
           scope: {
             organization_id: organizationID,
@@ -246,7 +247,7 @@
           scenarioID,
           planDigest,
         }, submit),
-      }, "Confirm budget approval", "The authority service will record this exact scoped approval until its expiry.", [
+      }, "Confirm operation approval", "The authority service will record this exact scoped approval until its expiry.", [
         ["Organization", organizationID],
         ["Scenario", scenarioID],
         ["Authorization scope digest", planDigest],
@@ -254,7 +255,7 @@
       ], submit);
     } catch (error) {
       setError(error.message);
-      setStatus("Budget approval was not submitted.");
+      setStatus("Operation approval was not submitted.");
     }
   });
 
@@ -274,13 +275,13 @@
           { organization_id: organizationID },
           { approvalID, organizationID },
           submit),
-      }, "Confirm budget approval revocation", "The authority service will revoke only the identified approval for this organization.", [
+      }, "Confirm operation approval revocation", "The authority service will revoke only the identified approval for this organization.", [
         ["Organization", organizationID],
         ["Approval ID", approvalID],
       ], submit);
     } catch (error) {
       setError(error.message);
-      setStatus("Budget revocation was not submitted.");
+      setStatus("Approval revocation was not submitted.");
     }
   });
 
@@ -345,7 +346,7 @@
       updateControls();
     } catch (error) {
       clearSession(`Sign in required: ${error.message}`);
-      setError("No budget authority request is available until an authorized operator session is established.");
+      setError("No operation approval service request is available until an authorized operator session is established.");
     }
   })();
 

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -246,21 +247,30 @@ func TestEvaluationSubjectLinksEnvironment(t *testing.T) {
 func TestEvaluationDelegationTrustValidates(t *testing.T) {
 	state := filepath.Join(t.TempDir(), "install")
 	config := testEvaluationSubjectConfig()
+	config.SimulatorPort = 18791
 	inventory, err := prepareEvaluation(state, config, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	issuer := config.browserOrigin(config.OIDCPort)
-	admin := operatorGrantIdentity{Subject: "admin-subject", Permissions: append([]string{"monitor.read"}, evaluationAdminSubjectLinkPermissions...)}
+	admin := operatorGrantIdentity{Subject: "admin-subject", Permissions: append([]string{"monitor.read", "approval.self"}, evaluationAdminSubjectLinkPermissions...)}
 	reviewer := operatorGrantIdentity{Subject: "reviewer-subject", Permissions: evaluationReviewerPermissions}
 	chain := readSubjectFile(t, state, "client-chain.pem")
-	data, err := evaluationDelegationTrustFile(config, issuer, evaluationOrganization(inventory), readSubjectFile(t, state, "operator-delegation-key.pem"), chain, admin, reviewer)
+	data, err := evaluationDelegationTrustFile(config, issuer, evaluationOrganization(inventory),
+		readSubjectFile(t, state, "operator-delegation-key.pem"), chain,
+		readSubjectFile(t, state, "simulator-delegation-key.pem"), readSubjectFile(t, state, "simulator-client-chain.pem"),
+		admin, reviewer)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var trust operatordelegation.Config
-	if err := json.Unmarshal(data, &trust); err != nil || trust.Validate() != nil || len(trust.Grants) != 2 || trust.Audience != "https://localhost:18790" {
+	if err := json.Unmarshal(data, &trust); err != nil || trust.Validate() != nil ||
+		len(trust.Grants) != 2 || len(trust.Keys) != 2 || trust.Audience != "https://localhost:18790" {
 		t.Fatalf("trust file invalid: %s", data)
+	}
+	if !slices.Contains(trust.Grants[0].Permissions, "approval.self") ||
+		slices.Contains(trust.Grants[1].Permissions, "approval.self") {
+		t.Fatal("only the scoped admin grant may carry self-approval")
 	}
 	block, _ := pem.Decode(chain)
 	pin := sha256.Sum256(block.Bytes)
@@ -282,6 +292,52 @@ func TestEvaluationDelegationTrustValidates(t *testing.T) {
 	}
 	if info, err := os.Stat(once); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatal("identity binding not private")
+	}
+}
+
+func TestEvaluationSimulatorTrustAdminPreservesSelfApprovalScope(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "install")
+	config := testEvaluationSubjectConfig()
+	config.SimulatorPort = 18791
+	inventory, err := prepareEvaluation(state, config, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuer, organization := config.browserOrigin(config.OIDCPort), evaluationOrganization(inventory)
+	admin := operatorGrantIdentity{Subject: "admin-subject", Permissions: []string{"monitor.read"}}
+	reviewer := operatorGrantIdentity{Subject: "reviewer-subject", Permissions: evaluationReviewerPermissions}
+	trustAdmin, err := evaluationSimulatorTrustAdmin(state, issuer, organization, config, admin)
+	if err != nil || !slices.Contains(trustAdmin.Permissions, "approval.self") ||
+		slices.Contains(admin.Permissions, "approval.self") {
+		t.Fatalf("new Simulator trust grant=%v original=%v err=%v", trustAdmin.Permissions, admin.Permissions, err)
+	}
+	trust, err := evaluationDelegationTrustFile(config, issuer, organization,
+		readSubjectFile(t, state, "operator-delegation-key.pem"), readSubjectFile(t, state, "client-chain.pem"),
+		readSubjectFile(t, state, "simulator-delegation-key.pem"), readSubjectFile(t, state, "simulator-client-chain.pem"),
+		trustAdmin, reviewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, evaluationDelegationTrust), trust, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preserved, err := evaluationSimulatorTrustAdmin(state, issuer, organization, config, admin)
+	if err != nil || !slices.Contains(preserved.Permissions, "approval.self") {
+		t.Fatalf("existing self-approval grant=%v err=%v", preserved.Permissions, err)
+	}
+	withoutSelf, err := evaluationDelegationTrustFile(config, issuer, organization,
+		readSubjectFile(t, state, "operator-delegation-key.pem"), readSubjectFile(t, state, "client-chain.pem"),
+		readSubjectFile(t, state, "simulator-delegation-key.pem"), readSubjectFile(t, state, "simulator-client-chain.pem"),
+		admin, reviewer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, evaluationDelegationTrust), withoutSelf, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preserved, err = evaluationSimulatorTrustAdmin(state, issuer, organization, config, admin)
+	if err != nil || slices.Contains(preserved.Permissions, "approval.self") {
+		t.Fatalf("existing trust without self-approval expanded: %v err=%v", preserved.Permissions, err)
 	}
 }
 

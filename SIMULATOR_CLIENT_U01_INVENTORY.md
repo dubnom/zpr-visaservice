@@ -6,9 +6,10 @@ Date: 2026-10-23. Source baseline: local beta
 Simulator, LDAP, endpoint, production API, database or service was accessed.
 
 **U01 is not complete.** This packet inventories reachable legacy behavior and
-adds one Simulator-only, opt-in fail-closed launcher guard. Existing setup paths
-remain available; none is deleted or represented as an ordinary-client workflow.
-No production handler, trusted-source backend, credential or runtime file changed.
+includes Simulator-only, opt-in fail-closed launcher and web-mutation guards.
+Existing legacy setup paths remain available; none is deleted or represented as
+an ordinary-client workflow. No production handler, trusted-source backend,
+credential or runtime file changed.
 
 ## Boundary and classification
 
@@ -51,7 +52,7 @@ executed or claimed fully audited.
 | C12 | `install_multinode_policy` invokes `vs-admin policies --path` over Visa admin TLS/API-key transport; gateway checks use `vs-admin services`. | Public API transport, **not** ordinary-client setup end to end | Service/admin APIs exist, but local signing/bootstrap mounts and gateway restarts remain C11/C18. Consume production guarded apply/status instead of giving Simulator broad VS/operator key access. M0 B03, M2 C04, M3 U02/U06. |
 | C13 | Activation reads `/api/policy/context`, assertion settings/source/evaluate and snapshots; health/`in_sync` alone do not identify the applied candidate. Existing `policy_status_consumer.go` consume production `/api/policy/operations/current/{org}/{target}` and `/status/{org}/{target}/{operation}` with scoped mTLS, no install fallback; synthetic scenario preflight compares exact digest/target. | Public API | Reuse those existing read-only clients and distinguish recorded receipt from fresh exact version/digest. General activation still needs operation-specific reconciliation; no health-only success. M3 U06, W1 §5 applied-state contract. Guard `U01-RECONCILE`. |
 | C14 | `simulator_provisioning.go` delegates `approve-and-provision` to configured packaged tooling. `packaging/demo-runtime/packaged-machine-runtime.py:compile_endpoint_policy` injects endpoint public key into bootstrap compiler config and attributes into `attrfile.json`, compiles/copies bundle; `provision_member` reloads VS and flushes attributes. Human approval/unique keys do not make this ordinary enrollment. | Prohibited bypass | Pre-enroll a small fixed set through supported enrollment admin/authentication tools; claim, named approval, issuance, delivery and observed admission remain distinct. No policy-file fallback. W2 producer/consumer agreement, M3 U04 (X04), U01; native helper qualification is not a demo prerequisite. Guard `U01-ADMISSION`. |
-| C15 | Packaged provisioning retains separate identity volumes/fingerprints per endpoint and checks response bindings; `simulator_provisioning.go` separates start/stop/verify from approval. | Simulator-owned orchestration; keys remain endpoint-owned | Retain unique identity persistence and lifecycle checks, consume ordinary enrollment/admission observations, never export/clone private keys. M3 U04, W2; keeping this does not qualify C14. |
+| C15 | Packaged provisioning retains separate identity volumes/fingerprints per endpoint and checks response bindings. Legacy non-synthetic `verify` withdraws and restores trusted attributes; opt-in ordinary-client mode blocks that action. | Simulator-owned lifecycle; legacy verification is a production-state bypass | Retain unique identity persistence and lifecycle checks, consume ordinary enrollment/admission observations, never export/clone private keys. M3 U04, W2; keeping this does not qualify C14. |
 | C16 | Activation writes `organization-request.json` / `organization-runtime.json`, runtime policy/config files and marker flags; `dashboard-stack.sh` generates production service env, mounts runtime/config/signing paths, chooses per-org DB and restarts context. Transitive multinode `deploy-docker.sh` is outside this repository. Pure `simulator_runtime_plan.go` scenario planning is not itself production configuration. | Prohibited bypass for production runtime generation | Installer/production services own config, paths, credentials and deployment; Simulator sends explicit target/revision through APIs and keeps only its plans/evidence locally. M0 B01/B03, M3 U01, M4 P01/P02; production packaging owner. Guard `U01-CONFIG`. |
 | C17 | Direct SQLite seed path (C04), Restore file deletion (C03), and `verify-approved-identity-lab.py` direct `redis-cli HGETALL policy:current` for policy observations. These are distinct from legitimate Simulator workspace/reset SQLite stores. | Prohibited bypass for production DB access, including readback | Production revision APIs and fresh protected current-state/readback endpoints; installer/storage owners handle recovery. No direct SQLite/Redis fallback. M3 U01/U06, W1/W2, M6 R03. Guards `U01-ASSERTIONS` / `U01-RESTORE` / `U01-RECONCILE`. |
 | C18 | Activation stops/deploys node/VS runtime, Policy-Service, Control-Service, DNS, relays and observability; `multinode-admin.sh:refresh_multinode_gateway` restarts gateway. Packaged C14 independently reloads VS. | Prohibited bypass | Installer/service supervisor owns production; companion supervisor owns LDAP/OIDC/DNS. Simulator lifecycle targets endpoints/workloads only. M3 U01, M4 P01/P03/P05. Guard `U01-ACTIVATION`. |
@@ -80,16 +81,39 @@ profiles or runtime availability are needed, and no source probe is attempted.
 The report describes known source-level incompatibilities, not dynamic readiness
 or proof any external service is available.
 
+When the Simulator web process explicitly sets `SIMULATION_SETUP_MODE` to
+`ordinary-client`, its activation and Restore endpoints return an explicit
+unavailable response before looking up the organization or starting either the
+legacy activation manager or evaluation-install lifecycle. An invalid mode also
+fails closed. The web API and internal command path also block legacy packaged
+`approve-and-provision` and `verify`, and global legacy stack/agent lifecycle
+actions are rejected. Unbound fixed-name machine start/stop is blocked in the
+interactive and scenario paths; scenario preflight reports it before approval.
+Packaged status and existing-machine start/stop remain available. Status can
+create or update local inventory/locks and issue readiness traffic; it is not a
+strictly read-only probe. These guards do not implement setup or enrollment.
+The paired evaluation Simulator launcher validates and forwards the explicit
+setting to its child, including with the full catalog. It is not persisted and
+must be supplied again on each start; the source fixture does not establish
+installed-package acceptance.
+
 Absent/empty `SIMULATION_SETUP_MODE` retains existing `legacy-launcher` behavior;
 explicit `legacy-launcher` also retains it. This default is compatibility only,
-**not ordinary-client acceptance**. The guard is scoped to this launcher, not all
-Simulator entrypoints, packaged provisioning, or production APIs. It does not
-claim to disable every C-row, authorize a mutation, or enforce least privilege
-outside its own entrypoint. No new production endpoint or trusted-source path is
-introduced. Callers adopting this guard must explicitly select `ordinary-client`;
-existing web activation is not relabeled or migrated by this change.
+**not ordinary-client acceptance**. The guards cover this launcher and the two
+activation mutations plus the specific legacy provisioning, global and machine
+lifecycle actions above, not every Simulator entrypoint, separately invoked scripts,
+independently started lifecycle, or production API. They do not disable every
+C-row, authorize a mutation, or enforce least privilege elsewhere. No new
+production endpoint or trusted-source path is introduced.
 
 ## Verification (offline)
+
+Current source checks include the dashboard Go package and browser fixtures for
+ordinary-client activation/Restore, legacy provisioning and machine/global
+lifecycle rejection, preflight blockers, unchanged selection and legacy mode
+compatibility. They do not
+start a real service or exercise installed packages. The earlier packet
+evidence below remains historical.
 
 Passed:
 

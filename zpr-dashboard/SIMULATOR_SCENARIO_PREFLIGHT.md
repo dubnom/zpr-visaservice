@@ -2,6 +2,12 @@
 
 ## Purpose and boundary
 
+Terminology: **authorization evidence** means an exact operation approval,
+not a resource or financial budget. Legacy `budget_status`, `budget_inputs`,
+`budget.approve`, service routes and configuration names remain unchanged for
+compatibility. `budget_inputs` represents requested resource counts, not
+permission to consume them.
+
 The Simulator scenario-plan API builds a read-only description of one explicitly
 selected organization and scenario. It reports whether the plan is blocked or
 plan-only, the plan's explicit machine references, and the evidence/status
@@ -11,28 +17,36 @@ selected Simulator scenario run.
 
 That approval is not a general run permission, host-provisioning authorization,
 deployment authorization, or evidence that provisioning or deployment occurred.
-The current UI records approval but does not submit the separate run request.
+The current source UI starts this sequence when a scenario is selected: it
+preflights, obtains an eligible bounded budget self-approval if necessary,
+self-approves the plan, and submits one separate run request. Login and passive
+organization selection do not start it. A bounded current-run readback after an
+ambiguous response never retries the run automatically.
 
 ## Authorization and request rules
 
-All three endpoints are authenticated Simulator API operations and require
-named-user operator authorization scoped to the active Simulator organization:
+The operations below require named-user operator authorization scoped to the
+selected Simulator organization when authentication is configured. An
+explicitly unauthenticated local mode is separate and cannot share its permits
+with a named session:
 
 | Endpoint | Permission |
 | --- | --- |
 | `POST /api/simulator/scenario-plans/preflight` | `scenario.read` |
-| `POST /api/simulator/scenario-plans/approve` | `scenario.run` |
-| `POST /api/simulator/scenarios/{scenario}/run` | `scenario.run` |
+| `POST /api/simulator/scenario-plans/budget-approval` | `budget.approve` and `approval.self`, also required by the independent delegation grant |
+| `POST /api/simulator/scenario-plans/approve` | `scenario.run` and `approval.self` |
+| `POST /api/simulator/scenarios/{scenario}/run` | `scenario.run` and `approval.self` |
 
 The preflight and approve bodies each include `organization_id`; it must match
 the organization authorized by the API middleware. When no authorized
 organization is attached to the request context, the handler's active
 Simulator organization resolver is used and the requested ID must match it.
-The run body has no organization field: middleware authorizes `scenario.run`
-for the active Simulator organization, which the run handler reads from the
-current manifest. The run's `{scenario}` path must select a published scenario
-whose organization and ID match that organization and path. Its one-use
-approval must then match the same organization and scenario path.
+Organization-scoped variants insert `/organizations/{organization}` after
+`/api/simulator`; the source UI uses these variants. The run body has no
+organization field: its scoped path selects the authorized organization, while
+the unscoped variant uses the current manifest. The run's `{scenario}` path
+must select a published scenario whose organization and ID match the request.
+Its one-use approval must match that organization, scenario and principal.
 
 Authorization failures, organization-scope mismatches, malformed or missing
 request fields, and published-scenario/path identity failures are rejected
@@ -89,7 +103,7 @@ mean the scenario ran:
 }
 ```
 
-The example illustrates the success response after current budget evidence has
+The example illustrates the success response after current authorization evidence has
 been resolved; remaining policy or other blockers still prevent approval. If
 authority evidence is absent, stale, revoked, mismatched, or unavailable,
 preflight returns `503 Service Unavailable`. When the execution-scope digest is
@@ -101,9 +115,9 @@ valid, this error includes a scope-only bootstrap response:
   "scenario_id": "great-lakes-runtime-verification",
   "authorization_scope_digest": "sha256:<64 lowercase hexadecimal characters>",
   "blockers": [
-    "approved budget evidence is absent",
+    "approved authorization evidence is absent",
     "policy resolution is required",
-    "current approved budget evidence is unavailable or invalid"
+    "current approved authorization evidence is unavailable or invalid"
   ]
 }
 ```
@@ -113,7 +127,7 @@ stable authorization digest, and blockers. It contains no full plan,
 `plan_digest`, approval, or run authorization. It is not a success-shaped
 fallback. The authenticated `scenario.read` preflight request may use this
 digest to initiate a separate, explicit human approval in the independent
-Budget Authority for the exact organization, scenario, and digest. After that
+Operation approval service for the exact organization, scenario, and digest. After that
 grant exists, repeat preflight; only a successful plan with no blockers can be
 locally approved. Revoked, expired, or unavailable authority evidence again
 fails with `503`. If the plan inputs cannot be safely loaded or a valid scope
@@ -140,16 +154,16 @@ The success response fields are:
 | `topology_status` | Topology resolution state, such as `missing`, `invalid`, `unresolved`, or `resolved`. |
 | `policy_status` | Policy resolution state, such as `unresolved`, `mismatched`, or `resolved`. |
 | `northstar_assets_status` | `not-required`, `missing`, `unresolved`, or `resolved`. |
-| `package_contract_status` | `missing`, `unsupported`, or `supported`. |
+| `package_contract_status` | `missing`, `unsupported`, `supported`, `retained-topology-only`, `retained-machine-bas-v1`, or `evaluation-endpoints-v1`. A supported contract does not by itself establish runtime readiness. |
 | `blockers` | Reasons the plan is not eligible for approval. |
-| `plan_digest` | SHA-256 digest binding approval to the exact full planner result, including budget status and blockers. |
-| `authorization_scope_digest` | Versioned, domain-separated SHA-256 digest of the selected organization, scenario, and manifest source inputs. It is the scope sent to the budget authority; it is not the local approval digest. |
+| `plan_digest` | SHA-256 digest binding approval to the exact full planner result, including authorization status and blockers. |
+| `authorization_scope_digest` | Versioned, domain-separated SHA-256 digest of the selected organization, scenario, and manifest source inputs. It is the scope sent to the operation approval service; it is not the local approval digest. |
 
-Preflight resolves current approved budget evidence for the exact organization,
+Preflight resolves current approved authorization evidence for the exact organization,
 scenario, and `authorization_scope_digest`. Authority evidence must pass the
 server-side currentness check, including a `checked_at` age of at most five
-seconds. A successful resolution marks budget status approved and removes only
-the planner's known budget-evidence blockers; it does not clear policy,
+seconds. A successful resolution marks authorization status approved and removes only
+the planner's known authorization-evidence blockers; it does not clear policy,
 topology, package, resource, or other blockers. The authorization digest uses
 the versioned domain `zpr:simulator:scenario-authorization-scope:v1` followed
 by a NUL separator and serialized organization, scenario, and manifest inputs.
@@ -170,17 +184,30 @@ inventory, topology, load-test profile, or workload count. More than 12
 distinct explicit references adds a blocker; an absent or invalid referenced
 machine is also blocked.
 
+With the opt-in `ordinary-client` setup mode, preflight additionally blocks
+machine-referencing plans that would fall back to the unbound fixed-name
+legacy machine runtime. A retained runtime must declare a supported machine
+and still pass the separate topology and file checks. The synthetic packaged
+path requires its explicit runtime configuration; this configuration check
+does not establish that the machine is provisioned or safe for every action.
+An invalid setup mode also blocks machine-free plans. The same mode and
+machine-runtime check is repeated at run admission before a permit is consumed;
+the bounded evaluation endpoint contract remains eligible without machine
+references. These checks do not cover every Simulator entrypoint or separately
+invoked script.
+
 A scenario with no explicit machine references remains a zero-machine plan;
 the planner never falls back to all organization machines. Its actions must
 still satisfy the action contract. For example, machine-free traffic requires
 a component namespace; actions that require a machine are blocked if the
 machine field is absent.
 
-The current UI independently requires a non-empty `machine_ids` list before it
-enables approval. Thus the UI will not request approval for a zero-reference
-plan. The approval endpoint itself has no separate non-empty-machine check; it
-requires a `plan-only` status, approved budget status, and no blockers. This
-distinction does not change the no-fallback rule or authorize execution.
+The UI blocks zero-reference plans except for the bounded
+`evaluation-endpoints-v1` contract. The approval endpoint itself has no
+separate non-empty-machine check; it requires `plan-only`, approved
+authorization and no blockers. Both preflight and approval serialize an empty
+`machine_ids` list as `[]`, which the UI validates against the exact plan.
+This exception does not infer a machine inventory or authorize other actions.
 
 ## Budget inputs are not approved budgets
 
@@ -194,7 +221,7 @@ limits, or authorization to launch the fanout.
 
 Load-test fanout actions are explicitly blocked from execution by the runtime
 plan. There are no approved numeric LoadLab budgets currently. The planner also
-requires budget evidence scoped to the exact organization and scenario, with
+requires authorization evidence scoped to the exact organization and scenario, with
 an approval reference; missing, unverified, unapproved, or mismatched budget
 evidence blocks plan approval.
 
@@ -208,8 +235,9 @@ returned as specific status fields and blockers.
 
 ## Digest-bound approval contract
 
-Approval requires a fresh preflight result and a separate explicit operator
-confirmation. The client submits:
+Approval requires a fresh preflight result and an explicit `approved: true`
+request. In the current source UI, selecting the scenario triggers the named
+self-approval rather than a separate approval prompt. The client submits:
 
 ```http
 POST /api/simulator/scenario-plans/approve
@@ -242,6 +270,7 @@ On accepted approval, the server returns `200 OK`:
 {
   "approved": true,
   "approval_id": "<opaque one-use identifier>",
+  "approval_reference": "sha256:<64 lowercase hexadecimal characters>",
   "organization_id": "great-lakes",
   "scenario_id": "great-lakes-runtime-verification",
   "plan_digest": "sha256:<64 lowercase hexadecimal characters>",
@@ -251,11 +280,14 @@ On accepted approval, the server returns `200 OK`:
 ```
 
 The approval ID is an opaque, randomly generated, in-memory record scoped to
-the organization, scenario, and digest. At most one unconsumed record can be
-issued for that exact scope. The internal consume operation checks all three
-scope values and removes a successfully consumed record; unknown, mismatched,
-or already-consumed IDs are rejected. Approval is consumed by the separate
-run endpoint below; the approval response itself does not execute anything.
+the organization, scenario, digest and named issuer/subject or local mode. At
+most one unconsumed record exists for that scope. After current plan, budget
+and session revalidation, the same principal can recover that pending record;
+another principal cannot. The public `approval_reference` is a
+domain-separated fingerprint, not the bearer permit. The consume operation
+checks the exact scope and principal and removes a successfully consumed
+record; unknown, mismatched, or already-consumed IDs are rejected. Neither
+the permit nor its recovery is durable across a Simulator restart.
 
 ## Starting an approved Simulator run
 
@@ -302,7 +334,7 @@ start returns `202 Accepted` and a snapshot of the run state, for example:
   "run_id": "run-0123456789abcdef0123456789abcdef",
   "run_namespace": "great-lakes/great-lakes-runtime-verification/run-0123456789abcdef0123456789abcdef",
   "plan_digest": "sha256:<64 lowercase hexadecimal characters>",
-  "machine_ids": [],
+  "approval_reference": "sha256:<64 lowercase hexadecimal characters>",
   "workspace_revision": 7,
   "state": "running",
   "generation": 3,
@@ -317,10 +349,11 @@ start returns `202 Accepted` and a snapshot of the run state, for example:
 This is the `simulatorScenarioRun` snapshot. `scenario` is the selected
 published scenario definition; `steps` contains completed step results, while
 `active_steps` can identify in-progress work. `finished_at` and `error` are
-omitted until present; `active_steps` is omitted when empty. The snapshot can
+omitted until present; `active_steps` and `machine_ids` are omitted when empty. The snapshot can
 already reflect a later state if execution progresses before it is serialized.
-The run ID is generated only after approval consumption and plan validation;
-it has the `run-` prefix followed by 32 lowercase hexadecimal characters. The
+The run ID and namespace are prepared after validation but before permit
+consumption; preparation failure leaves the permit unconsumed. A run ID has
+the `run-` prefix followed by 32 lowercase hexadecimal characters. The
 namespace is the canonical, un-hashed tuple
 `organization_id/scenario_id/run_id`.
 
@@ -337,16 +370,16 @@ does not consume its approval because this guard runs first.
 These request, identity, and run-slot denials occur before approval
 consumption. With an available run slot, the manager first performs a
 non-consuming exact-scope approval lookup, verifies the approved plan against
-current request inputs, then resolves authoritative budget evidence outside
+current request inputs, then resolves authoritative authorization evidence outside
 the manager lock. The current source scope uses the stored
 `authorization_scope_digest`, not the full local `plan_digest`. The manager
 recomputes that stable digest from current organization, scenario, and manifest
-inputs before resolving evidence; changed inputs are rejected before evidence
-lookup. Resolver errors, absent or invalid evidence, and request
+inputs before resolving evidence; changed inputs or an unavailable scoped
+machine-runtime configuration are rejected before evidence lookup. Resolver errors, absent or invalid evidence, and request
 cancellation fail before the final busy-state check and approval consumption.
-The manager re-locks and rechecks the run slot, consumes the exact
-`approval_id`, organization, scenario, and full `plan_digest`, and only then
-allocates a run ID, namespace, and run state.
+The manager re-locks, rechecks the run slot and principal, prepares the run ID
+and namespace, consumes the exact `approval_id`, organization, scenario,
+principal and full `plan_digest`, and only then allocates run state.
 
 The run check validates approved decision, exact authority scope, validity
 interval, revocation state, and a maximum five-second `checked_at` age. The
@@ -366,8 +399,9 @@ Entity`. Missing manifest or organization inputs can prevent the request with
 
 This endpoint authorizes only the selected Simulator run. It is not host
 provisioning or deployment evidence and does not establish that either
-occurred. This document describes the API contract and implementation
-lifecycle; it does not claim an end-to-end run was performed.
+occurred. A source-built bounded evaluation run is recorded in the
+[ordinary-client plan](../SIMULATOR_AS_ZPR_CLIENT_PLAN.md#g1-registration-implementation-record-2026-10-30);
+it is not original-organization or package acceptance.
 
 ## Current operational status
 
@@ -381,9 +415,9 @@ continues to include status and blockers for local approval integrity. This
 implemented API flow is not evidence of deployment or production readiness.
 
 LoadLab fanout/service scenarios have no approved numeric budgets and remain
-blocked independently. The current UI records approval but does not call the
-separate run endpoint. Neither a preflight response nor a one-use run approval
-authorizes host provisioning or deployment.
+blocked independently. The source UI calls the separate approval and run
+endpoints only for an eligible selected scenario. Neither a preflight response
+nor a one-use run approval authorizes host provisioning or deployment.
 
 ### Authority-backed operator sequence
 
@@ -419,14 +453,17 @@ Configure and operate the two services separately:
    file must validate the service certificate. If all resolver settings are
    absent, the default is unavailable; partial or invalid configuration fails
    explicitly. The request timeout is at most three seconds.
-4. **Grant source approval before Simulator preflight.** A named operator must
+4. **Optional manual Control Room authority grant.** A named operator must
    have `budget.approve` for the exact organization in both the OIDC
    authorization grant and the independent Control-Service delegation grant.
    Through the Control Room route
    `POST /api/budget-authority/approvals`, explicitly approve the exact
    organization/scenario/authorization digest, decision `approved`, and an
    expiry no more than one hour away. Same-origin session and CSRF proof are
-   required. There is no seeded grant or automatic approval. The revoke route
+   required. There is no seeded grant; this manual route does not itself
+   automatically approve. The Simulator UI can instead self-approve only its
+   eligible bounded scenario when both session and independent delegation
+   explicitly grant `budget.approve` and `approval.self`. The revoke route
    is `POST /api/budget-authority/approvals/{approval_id}/revoke` and requires
    the same organization-scoped permission. In this authority request,
    `scope.plan_digest` carries the Simulator's `authorization_scope_digest`,
@@ -455,17 +492,18 @@ Configure and operate the two services separately:
    `plan-only`, budget-approved, and blocker-free, send
    `POST /api/simulator/scenario-plans/approve` with its full `plan_digest`,
    exact organization/scenario, and `approved: true`, authorized for
-   `scenario.run`. Then send
+   `scenario.run` and `approval.self`. Then send
    `POST /api/simulator/scenarios/{scenario}/run` with the returned one-use
    `approval_id` and same full `plan_digest`, also authorized for
-   `scenario.run`. Run start rechecks current inputs and current authority
+   `scenario.run` and `approval.self`. Run start rechecks current inputs and current authority
    evidence before consuming the local token or allocating run state.
 
 **First-approval bootstrap:** With no matching authority record, authenticated
 `scenario.read` preflight returns the `503` scope-only response described above,
 including the exact `authorization_scope_digest` for that organization and
-scenario. An authorized approver may submit that digest to the independent
-Budget Authority for the exact scope. This response contains no full
+scenario. For an eligible bounded evaluation scope, the source UI can request
+its authorized self-approval; otherwise an authorized approver may submit that
+digest to the independent Operation approval service. This response contains no full
 `plan_digest` and cannot approve or run a scenario. After the authority grant
 exists, repeat preflight and continue only if the full plan is `plan-only`,
 budget-approved, and blocker-free. Never guess or hand-edit either digest. If
@@ -505,7 +543,7 @@ new pass marks without a dated, redacted evidence record.
   organization profiles, scenario directory, and published scenario revision.
   The selected organization must match the manifest and scenario. The flow
   requires operator authorization for `scenario.read` (preflight) and
-  `scenario.run` (approval and run); every requested machine must be an
+  `scenario.run` plus `approval.self` (approval and run); every requested machine must be an
   explicit plan reference and present in the manifest. A two-node network
   readiness result alone does not provision Simulator machine controllers or
   establish their directory users, workload mappings, or service policies.
@@ -573,7 +611,7 @@ bash "$installer" simulator-status
 | Stop/start recovery | Stop in the command order above, restart from the same private state, and repeat `smoke` plus `simulator-test`. Identity/configuration fingerprints and active policy state remain unchanged; allow/deny results recover. | State/fingerprint changes, policy loss, or traffic does not recover. Preserve prior state and logs; do not reinstall over it. |
 
 The packaged `simulator-test` is separate from the dashboard plan/preflight/run
-API. The latter still requires current budget evidence, resolved policy, no
+API. The latter still requires current authorization evidence, resolved policy, no
 other blockers, and an explicitly published scenario with a verified
 two-machine runtime configuration. The package smoke/readiness checks do not
 prove scenario cleanup.
@@ -593,7 +631,7 @@ Fresh-host installation, host reboot recovery, and backup restoration remain
 #### Organization coverage and production follow-up
 
 No organization is cleared for all-org live scenario acceptance. The checked-in
-dashboard organization profiles currently lack approved budget evidence, and
+dashboard organization profiles currently lack approved authorization evidence, and
 the default planner leaves policy resolution unestablished. The five dashboard
 profiles also lack the v2 `shared-approved-bootstrap`/`OciWeb` package contract;
 the separate `demo` profile declares that contract shape, but matching

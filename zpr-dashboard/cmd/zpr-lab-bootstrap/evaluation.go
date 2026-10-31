@@ -341,6 +341,9 @@ func (config evaluationConfig) validate() error {
 		len(config.DataPlaneNodes) != 0 || config.Directory != nil) {
 		return errors.New("scenario-demo requires simulator-port, single-node data-plane, at least two endpoints, starter directory and snapshot-delivery-port for named delegation")
 	}
+	if config.ScenarioDemo && config.OrganizationID != "" {
+		return errors.New("scenario-demo requires the install-derived evaluation organization; omit -organization-id")
+	}
 	return nil
 }
 
@@ -480,6 +483,16 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 	if _, err := os.Lstat(filepath.Join(output, "admin-recovery.pending")); !errors.Is(err, os.ErrNotExist) {
 		return inventory, errors.New("interrupted admin recovery: keep stopped and restore the complete offline backup; never reseed")
 	}
+	for _, name := range []string{evaluationSimulatorPairingPreparing, evaluationSimulatorPairingPending} {
+		if _, err := os.Lstat(filepath.Join(output, name)); !errors.Is(err, os.ErrNotExist) {
+			return inventory, errors.New("interrupted Simulator pairing: keep stopped and rerun -evaluation-simulator-pairing with the same state, port and operator-services-file to complete it")
+		}
+	}
+	return validateEvaluationInventory(output, config)
+}
+
+func validateEvaluationInventory(output string, config evaluationConfig) (evaluationInventory, error) {
+	inventory := evaluationInventory{}
 	if err := filepath.WalkDir(output, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -511,19 +524,7 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 			return inventory, errors.New("operator registry missing or unprotected; refuse reseed")
 		}
 	}
-	required := []string{"ca.pem", "ca-key.pem", "server-chain.pem", "server-key.pem", "client-chain.pem", "client-key.pem", "ldap-admin.secret", "ldap-reader.secret", "ldap-admin-config.php", "logging-admin.secret", "openobserve.env", "slapd.conf", "directory.ldif", "serve-directory.sh", "compose.json", "dex.json", "operator-admin.secret", "oidc-room-client.secret", "EVALUATION.txt", "source-registration.json"}
-	if config.SimulatorPort != 0 {
-		required = append(required, "oidc-simulator-client.secret")
-	}
-	if config.VisaService {
-		required = append(required, evaluationVisaRequired(config)...)
-	}
-	if config.subjectLinks() {
-		required = append(required, evaluationSubjectLinkFiles...)
-	}
-	if config.Directory != nil {
-		required = append(required, evaluationDirectorySchemaFile)
-	}
+	required := evaluationRequiredFiles(config)
 	if len(inventory.Files) != len(required) {
 		return inventory, errors.New("evaluation inventory is missing required files")
 	}
@@ -543,6 +544,23 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 		}
 	}
 	return inventory, nil
+}
+
+func evaluationRequiredFiles(config evaluationConfig) []string {
+	required := []string{"ca.pem", "ca-key.pem", "server-chain.pem", "server-key.pem", "client-chain.pem", "client-key.pem", "ldap-admin.secret", "ldap-reader.secret", "ldap-admin-config.php", "logging-admin.secret", "openobserve.env", "slapd.conf", "directory.ldif", "serve-directory.sh", "compose.json", "dex.json", "operator-admin.secret", "oidc-room-client.secret", "EVALUATION.txt", "source-registration.json"}
+	if config.SimulatorPort != 0 {
+		required = append(required, evaluationSimulatorPairingFiles...)
+	}
+	if config.VisaService {
+		required = append(required, evaluationVisaRequired(config)...)
+	}
+	if config.subjectLinks() {
+		required = append(required, evaluationSubjectLinkFiles...)
+	}
+	if config.Directory != nil {
+		required = append(required, evaluationDirectorySchemaFile)
+	}
+	return required
 }
 
 func generateEvaluation(state string, config evaluationConfig, now time.Time) (map[string][]byte, evaluationInventory, error) {
@@ -775,6 +793,9 @@ ZO_LOG_LEVEL=warn
 			"secret":       string(files["oidc-simulator-client.secret"]),
 			"redirectURIs": []string{config.browserOrigin(config.SimulatorPort) + "/auth/operator/callback"},
 		})
+		if err := generateEvaluationSimulatorSigner(files, config, now, caPEM, ca, key, addresses); err != nil {
+			return nil, inventory, err
+		}
 	}
 	data, err := json.MarshalIndent(dexConfig, "", "  ")
 	if err != nil {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -46,9 +47,24 @@ func TestEvaluationSimulatorClientIsOptionalAndIndependent(t *testing.T) {
 	}
 }
 
+func TestEvaluationSimulatorGrantIncludesScopedSelfApproval(t *testing.T) {
+	permissions := evaluationSimulatorOperatorPermissions(false)
+	if !slices.Contains(permissions, "approval.self") || slices.Contains(permissions, "budget.approve") {
+		t.Fatalf("non-scenario Simulator permissions=%v", permissions)
+	}
+	permissions = evaluationSimulatorOperatorPermissions(true)
+	if !slices.Contains(permissions, "approval.self") || !slices.Contains(permissions, "budget.approve") {
+		t.Fatalf("scenario Simulator permissions=%v", permissions)
+	}
+}
+
 func TestEvaluationSimulatorPreparation(t *testing.T) {
 	t.Setenv("SIMULATOR_OPERATOR_SERVICE_URL", "https://must-not-leak.invalid")
 	t.Setenv("SIMULATION_ORGANIZATION_RESET_SCRIPT", "/must-not-run")
+	t.Setenv("SIMULATION_SETUP_MODE", "")
+	if err := os.Unsetenv("SIMULATION_SETUP_MODE"); err != nil {
+		t.Fatal(err)
+	}
 	parent := t.TempDir()
 	parent, err := filepath.EvalSymlinks(parent)
 	if err != nil {
@@ -95,10 +111,66 @@ func TestEvaluationSimulatorPreparation(t *testing.T) {
 		if strings.Contains(entry, "must-not-") {
 			t.Fatal("inherited Simulator configuration leaked into paired runtime")
 		}
+		if strings.HasPrefix(entry, "SIMULATION_SETUP_MODE=") {
+			t.Fatal("unset setup mode was implicitly configured")
+		}
 	}
 	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image); err != nil {
 		t.Fatal("same-state restart failed", err)
 	}
+	for _, mode := range []string{"", "legacy-launcher", "ordinary-client"} {
+		t.Run("setup-mode="+mode, func(t *testing.T) {
+			t.Setenv("SIMULATION_SETUP_MODE", mode)
+			prepared, _, err := prepareEvaluationSimulator(evaluation, state, binary, image)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Contains(prepared, "SIMULATION_SETUP_MODE="+mode) {
+				t.Fatalf("explicit setup mode %q not forwarded", mode)
+			}
+			for _, entry := range prepared {
+				if strings.Contains(entry, "must-not-") {
+					t.Fatal("unrelated inherited configuration leaked into paired runtime")
+				}
+			}
+		})
+	}
+	for _, mode := range []string{"unknown", " ordinary-client "} {
+		t.Run("invalid-setup-mode="+mode, func(t *testing.T) {
+			t.Setenv("SIMULATION_SETUP_MODE", mode)
+			rejectedState := filepath.Join(parent, "rejected-state")
+			if _, _, err := prepareEvaluationSimulator(evaluation, rejectedState, binary, image); err == nil ||
+				!strings.Contains(err.Error(), "SIMULATION_SETUP_MODE") {
+				t.Fatalf("invalid setup mode accepted or unclear: %v", err)
+			}
+			if _, err := os.Stat(rejectedState); !os.IsNotExist(err) {
+				t.Fatalf("invalid setup mode changed Simulator state: %v", err)
+			}
+		})
+	}
+	t.Run("child-receives-ordinary-mode", func(t *testing.T) {
+		t.Setenv("SIMULATION_SETUP_MODE", "ordinary-client")
+		program := "#!/bin/sh\nprintf '%s\\n' \"$SIMULATION_SETUP_MODE\" \"${SIMULATION_ORGANIZATION_RESET_SCRIPT-unset}\" > \"$PWD/observed-setup-mode\"\nprintf 'child stdout\\n'\nprintf 'child stderr\\n' >&2\n"
+		if err := os.WriteFile(binary, []byte(program), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		var output bytes.Buffer
+		status := runEvaluationSimulator([]string{
+			"-evaluation-state", evaluation, "-state", state, "-binary", binary, "-data-plane-image", image,
+		}, &output, &output)
+		if status != 0 {
+			t.Fatalf("Simulator child failed: status=%d output=%s", status, output.String())
+		}
+		for _, message := range []string{"Simulator is separately supervised", "child stdout", "child stderr"} {
+			if !strings.Contains(output.String(), message) {
+				t.Fatalf("Simulator output missing %q: %s", message, output.String())
+			}
+		}
+		observed, err := os.ReadFile(filepath.Join(state, "observed-setup-mode"))
+		if err != nil || string(observed) != "ordinary-client\nunset\n" {
+			t.Fatalf("Simulator child environment=%q error=%v", observed, err)
+		}
+	})
 
 	if _, _, err := prepareEvaluationSimulator(evaluation, filepath.Join(evaluation, "nested"), binary, image); err == nil {
 		t.Fatal("nested Simulator state accepted")

@@ -33,7 +33,8 @@ The original review-only milestone is not the current blanket capability limit.
   cannot be rewritten. Submit a new revision/request for further changes.
 - Revalidation on approval: changed source/revision or observed domain context
   rejects approval. Submit and approve are always two separate steps. A single
-  operator may do both; approval by the proposer is allowed but recorded as
+  operator may do both with the ordinary review permission and an explicit
+  organization-scoped `approval.self` grant; approval by the proposer is recorded as
   `self_review` on the event, shown in the UI and logged as an `AUDIT WARNING`
   because it is less secure than an independent review.
 - Unknown mutation outcomes require queue reconciliation; the browser never
@@ -54,7 +55,9 @@ application or an external-network policy.
 Opening the same protected store also initializes separate subject-link review
 tables. Internal APIs persist immutable device/LDAP-entryUUID proposals and
 transactional review decisions, with exact digest/version/registry
-revision matching. A proposer may approve their own record; the event is
+revision matching. A proposer may approve their own record when the HTTP
+boundary authorizes the ordinary approval permission and `approval.self` in
+both the current session and independent backend grants; the event is
 flagged `self_review` like generic reviews.
 `review-approved` means review evidence only, not an active subject binding.
 
@@ -152,6 +155,7 @@ appropriate grants:
 | `change.read` | Capabilities, queue and request details |
 | `change.submit` | Submit a saved revision, withdraw own pending request |
 | `change.review` | Approve/reject; does not grant domain editing or deployment |
+| `approval.self` | Additionally required to approve one's own proposal; does not replace `change.review` |
 
 Submission additionally requires `policy.edit` or `gateway.edit`. Details and
 decisions additionally require the corresponding domain `.read` permission.
@@ -161,7 +165,10 @@ mutations require the existing same-origin session/CSRF proof. Display names
 and email are labels, never identities. No new privileges are seeded automatically.
 
 `allow_self_approval` is obsolete: it is accepted and ignored. Single-operator
-approval is always allowed and flagged in the audit. The decision still records
+approval is allowed with explicit `approval.self` permission and flagged in the
+audit. Audit must present an advisory self-approval warning; broader warning UI
+coverage and live qualification remain separate from existing event/log markers.
+The decision still records
 the named author/reviewer and reason. Restart to change configuration/grants;
 no hot reload.
 

@@ -21,10 +21,9 @@ func TestScenarioWorkflowUsesAuthorizationCopy(t *testing.T) {
 	js := readScenarioStaticAsset(t, "scenarios.js")
 
 	for _, want := range []string{
-		`<header class="section-head"><div><h2 id="scenario-plan-title">Scenario preflight and authorization</h2><p>Select an organization and scenario, preview its plan, then explicitly approve and run it.</p></div></header>`,
-		`<p>Current authorization evidence is unavailable or invalid. This does not establish that evidence is absent. For an explicitly configured bounded evaluation, the authorization button delegates your authorized identity to the independent authorization service. Other scenarios require the authenticated Control Room handoff below.</p>`,
-		`<button id="scenario-plan-budget-approve" class="button" type="button" hidden>Authorize 15-minute evaluation</button>`,
-		`<p>After an authorized operator records the grant in Control Room, preview this exact organization and scenario again. A successful authorization response is required before local plan approval or a run request is available.</p>`,
+		`<header class="section-head"><div><h2 id="scenario-plan-title">Scenario preparation</h2><p>Select an organization and scenario. The Simulator checks authorization, records named self-approval for the exact authorized scope, and starts the run automatically; login alone makes no changes.</p></div></header>`,
+		`<section id="scenario-plan-authorization-blockers" aria-labelledby="scenario-plan-authorization-blockers-title" hidden>`,
+		`<h3 id="scenario-plan-authorization-blockers-title">Authorization blockers</h3>`,
 		`<h4>Resource inputs</h4><div id="scenario-plan-budget-inputs"></div>`,
 		`<p>Authorization evidence is summarized by the plan status fields above; the API does not return a raw evidence payload.</p>`,
 	} {
@@ -34,18 +33,18 @@ func TestScenarioWorkflowUsesAuthorizationCopy(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`"This bounded evaluation is ready. Your authorized identity can authorize its exact scope for 15 minutes; no digest entry is needed."`,
-		`"Evaluation scenario authorization"`,
-		`"Authorization unavailable: obtain a valid Control Room authorization grant, then refresh preflight."`,
-		`"Authorization evidence is unavailable or invalid. No local approval or run can be requested."`,
+		`"Authorization evidence is unavailable; checking the exact selected scope for authorized self-approval."`,
+		`"Required authorization evidence is unavailable. No approval or run was submitted."`,
+		`"Preflight passed. Authorized self-approval and execution will proceed automatically."`,
 		"Authorization status is ${plan.budget_status}.",
 		`["Authorization status", plan.budget_status]`,
 		`"No resource inputs returned."`,
 		`Preflight ${result.body.status}; authorization ${result.body.budget_status}; `,
 		`Authorization service returned a mismatched response; refresh preflight.`,
 		`Evaluation authorization was not confirmed.`,
-		`Control Room authorization workflow.`,
+		`Check the named operator's organization and action grants; no run was started.`,
 		`Authorization service returned an invalid or mismatched unavailable-evidence response.`,
+		`Starting the scenario run…`,
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("scenarios.js missing authorization copy %q", want)
@@ -59,6 +58,9 @@ func TestScenarioWorkflowUsesAuthorizationCopy(t *testing.T) {
 		"Budget approval was not confirmed.",
 		"Control Room budget-authority workflow.",
 		"Budget authority returned",
+		"Explicitly approve scenario plan",
+		"Confirm approval",
+		"Run approved scenario",
 	} {
 		if strings.Contains(js, old) {
 			t.Errorf("scenarios.js contains outdated user-facing budget copy %q", old)
@@ -72,13 +74,14 @@ func TestScenarioWorkflowKeepsBudgetGateContract(t *testing.T) {
 	source := html + "\n" + js
 
 	for _, want := range []string{
-		`id="scenario-plan-budget-approve"`,
+		`id="scenario-plan-authorization-blockers"`,
 		`id="scenario-plan-budget-inputs"`,
 		"budget_approval_available",
 		"budget_status",
 		"authorization_scope_digest",
-		"15 minutes",
-		"Run approved scenario",
+		"approveEvaluationScenarioBudget",
+		"approveSelectedScenarioPlan",
+		"runApprovedScenario",
 	} {
 		if !strings.Contains(source, want) {
 			t.Errorf("scenario workflow lost required authorization gate contract %q", want)

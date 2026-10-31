@@ -324,9 +324,13 @@ func waitForRetainedScenarioDNSRecord(ctx context.Context, binding simulatorReta
 	}
 }
 
+func isSimulatorRetainedMachine(machine string) bool {
+	return machine == "machine-03" || machine == "machine-05"
+}
+
 func retainedMachineAction(ctx context.Context, organization simulatorOrganization, scope machineControlScope, machine, action string,
 	run func(context.Context, string, ...string) (string, error)) (string, error) {
-	if machine != "machine-03" && machine != "machine-05" && machine != "callback" || action != "start" && action != "stop" {
+	if !isSimulatorRetainedMachine(machine) && machine != "callback" || action != "start" && action != "stop" {
 		return "", errors.New("unsupported retained machine lifecycle operation")
 	}
 

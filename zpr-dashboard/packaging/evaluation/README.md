@@ -65,6 +65,12 @@ Then, from the extracted package:
 ./demo.sh start /absolute/new-private-state -simulator-port 18788
 ```
 
+The source-tree [offline package-script test](./test-installed.sh) can be run
+with `sh packaging/evaluation/test-installed.sh`. It uses placeholder images
+and fake Docker/host commands to check package verification, image-load and
+startup dispatch, add-later pairing arguments and tamper rejection. It does not
+start services, authenticate, or qualify a built archive on a clean host.
+
 `start` runs in the foreground. Ctrl-C stops this installation and retains its
 state. Restart with the identical state path and configuration flags; never
 delete retained state to resolve startup problems. Generated credentials are
@@ -221,15 +227,23 @@ For the single-node starter-directory endpoint-access scenario, create a **new**
 `-simulator-port PORT -scenario-demo`. This frozen opt-in enables the independent
 production budget-authority database and gives the verified administrator
 `budget.approve` permission. ZPR still does not start or require Simulator.
+The bounded scenario requires at least two bootstrap-admitted endpoints,
+snapshot delivery and the install-derived `evaluation-<install-id>`
+organization: omit `-organization-id`. It does not support a custom directory.
 The companion captures a versioned evaluation runtime contract binding the
 installation, immutable image, endpoint handoff and canonical live Visa policy
 bundle. A changed policy or handoff is rejected, not silently rebound.
 
 Open Simulator's Scenarios page, select **Verify endpoint access policy**, and
-choose **Preview plan**. With no current budget evidence, choose **Approve
-15-minute evaluation budget**. This sends your named, CSRF-protected delegated
-approval to Control-Service; scope and digest are computed by the server.
-Review and approve the resulting plan, then explicitly run it.
+the current source UI automatically preflights, obtains an eligible 15-minute
+evaluation budget if needed, self-approves the exact plan and submits one run.
+This sends named, CSRF-protected delegated approval to Control-Service; scope
+and digest are computed by the server. The current operator needs
+`scenario.read`, `scenario.run` and `approval.self`; automatic budget
+self-approval additionally requires `budget.approve` and `approval.self` in
+both the session and the independent budget-delegation grant. Blockers stop the
+flow; an uncertain run response is checked once and never retried automatically.
+Previously built packages can retain an older manual workflow.
 
 The runner rechecks current budget and runtime evidence, consumes the exact
 plan approval once, and executes a fresh bounded probe round. It checks denied
@@ -256,11 +270,94 @@ which is root-equivalent; run only on a trusted isolated host.
 Create the ZPR installation with `-simulator-port PORT` from the outset.
 This optional setting registers an independent confidential OIDC client with
 its own secret and exact HTTPS callback, but never reserves that port, launches
-Simulator, or makes ZPR depend on it. The verified administrator receives
+Simulator, or makes ZPR depend on it. It also freezes an independent Simulator
+delegation signer pinned to its own CA-issued mTLS client certificate; the
+companion never reuses the Room secret, signing key or transport identity.
+The verified administrator receives
 organization-scoped Simulator grants automatically. No identifiers, versions
 or digests are entered in a browser. The same password works for both separate
 application sessions. Existing installations without this option are not
-silently migrated: create a separate private state directory.
+silently migrated at startup: register the client explicitly with the
+add-later pairing command below.
+
+#### Add-later Simulator pairing for an existing installation
+
+An installation created without `-simulator-port` can register the separate
+Simulator client later while completely stopped (`./demo.sh pair` from the
+installed package runs the same command):
+
+```sh
+go run ./cmd/zpr-lab-bootstrap -evaluation-simulator-pairing \
+  -state /absolute/existing-private-state -simulator-port 24788
+```
+
+Pairing first verifies the complete frozen inventory, then registers in one
+recorded, resumable transaction: the `zpr-simulator` confidential OIDC client
+with its own new secret and exact HTTPS callback, and the independent
+Simulator delegation signer pinned to its own CA-issued client certificate.
+The Room client, its secret and signing key, every retained operator identity
+and all other frozen files are preserved byte for byte. Pairing never reseeds
+state, rotates identities, rebinds an already registered port or starts
+Simulator. Before staging, it records the intended outputs and the fingerprints
+of retained targets. Startup fails closed while preparation or commit is
+interrupted. With the install still stopped, rerun the exact command: verified
+uncommitted staging is discarded and replanned, while a recorded commit resumes
+the same files. Retries also check that the install and Simulator ports are
+unoccupied. The Simulator launcher acquires its lifecycle lock before preparing
+its state, so pairing and administrator recovery cannot overlap that
+preparation. Pairing never deletes an unrelated file merely because its name
+ends in `.simulator-pairing-new`, and it refuses unrecorded staging or an
+existing new target rather than overwriting either. If staged content differs,
+a commit has neither the recorded staged nor committed content, or a retained
+target or plan is missing or changed, keep the install stopped and inspect the
+complete offline backup; do not assume an uncertain file is safe to remove.
+Development-era version 1 pending plans lack the fingerprints needed for safe
+recovery and are refused. If the runtime-written delegation trust already
+exists, pairing extends it with only the new key so the next verified startup
+matches the retained binding.
+
+If the installation uses an `operator_delegation_trust_file` override, supply
+its existing protected operator-service bindings to the pairing command:
+
+```sh
+go run ./cmd/zpr-lab-bootstrap -evaluation-simulator-pairing \
+  -state /absolute/existing-private-state -simulator-port 24788 \
+  -operator-services-file /absolute/private/operator-services.json
+```
+
+The original bindings and trust remain untouched. Pairing creates protected
+`simulator-paired-operator-services.json` and
+`simulator-paired-delegation-trust.json` in the installation state, retaining
+the named grants and Room key while adding the independent Simulator key.
+Restart with the original flags plus `-simulator-port 24788`, **replacing**
+the original `-operator-services-file` argument with the derived
+`/absolute/existing-private-state/simulator-paired-operator-services.json`.
+An interrupted pairing must be resumed with the exact same state, port and
+original operator-services path. During an interrupted transaction, the original
+bindings, delegation override and directly referenced protected inputs must
+remain byte-for-byte unchanged; their recorded fingerprints are checked before
+recovery or commit. Keep these inputs stable while pairing. An input may not
+also be a file pairing replaces, including the runtime-written base trust;
+supply a separate protected override instead. An exact completed retry
+validates both the derived snapshot and original bindings semantically; it will
+not silently adopt changed bindings or grants.
+
+The derived files are runtime-owned snapshots, not frozen inventory and not
+automatically synchronized with later operator changes. Review and revalidate
+subsequent updates under the independent operator-service contract. Pairing
+does not update the separate Enrollment Service or any other downstream trust;
+their signer acceptance and grants must be established through those services'
+own contracts. An old override lacking the new key cannot be selected at
+restart because overrides must preserve the paired base keys exactly.
+
+After pairing, restart the installation with its original flags **plus** the
+same `-simulator-port` and, when applicable, the derived service bindings
+above; the frozen configuration now records the port, and the next verified
+startup writes the Simulator operator grants. Login alone still changes
+nothing. Installations whose Simulator client was registered by an earlier
+build do not carry the independent signer and are still not silently migrated:
+create a separate private state directory for them. Existing archives must be
+rebuilt and qualified before they can provide newer source behavior.
 
 After ZPR reports ready, from the extracted Simulator package:
 
@@ -271,8 +368,26 @@ After ZPR reports ready, from the extracted Simulator package:
   /absolute/new-private-simulator-state
 ```
 
-Use the actual extracted ZPR package path. With the example port above the
-Simulator is at `https://localhost:18788`. For `-browser-ip`, it uses the same
+To opt into the current fail-closed ordinary-client setup guard, prefix that
+command with `SIMULATION_SETUP_MODE=ordinary-client`. The paired launcher
+validates and forwards the setting to the Simulator process; repeat it on each
+start, including with `--full-catalog`. Activation and Restore then remain
+unavailable until independent setup contracts are wired. Legacy packaged
+`approve-and-provision` and `verify`, global legacy stack/agent lifecycle, and
+unbound legacy machine start/stop are also blocked. Scenario preflight reports
+the unbound machine fallback before approval. Packaged status and
+existing-machine start/stop remain available; status can update local
+inventory/locks and issue readiness traffic. Separately invoked scripts and
+other entrypoints are not covered by these web-process guards. An unset, empty
+or `legacy-launcher` value preserves the existing legacy behavior; an unknown
+value fails before Simulator preparation. This source-tested option does not
+establish installed-package or ordinary-client acceptance. The
+[offline Simulator wrapper test](test-simulator-installed.sh) checks forwarding
+to a fake bootstrap; the Go fixture checks forwarding from bootstrap to its
+child.
+
+Use the actual extracted ZPR package path. With the add-later example port above
+the Simulator is at `https://localhost:24788`. For `-browser-ip`, it uses the same
 explicit private address and the same public CA. Sign in normally; the verified
 user is scoped to the paired evaluation organization. Simulator owns separate
 workspace state and observes Control-Service over verified mTLS. Its endpoint

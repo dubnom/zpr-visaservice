@@ -1,5 +1,6 @@
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 import subprocess
 import sys
@@ -444,6 +445,86 @@ class PackagedMachineTests(unittest.TestCase):
             self.assertTrue(result["controller_link_active"])
             self.assertEqual(result["workload"]["state"], "active")
             self.assertEqual(result["workload"]["address"], "fd00:1:4::1")
+
+    def test_northstar_status_requires_recorded_owned_machine(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = module.PackagedMachine(
+                root, root, "sha256:" + "a" * 64, "northstar", "machine-01", {
+                    "machines": ["machine-01"],
+                    "primary_machine_id": "machine-01",
+                    "synthetic_workload": module.NORTHSTAR_WORKLOAD,
+                })
+            settings = {
+                "machine_cert_dir": root / "machine-certs",
+                "workload_dir": root / "workloads",
+                "image": "sha256:" + "a" * 64,
+                "network": "test-network",
+                "generation": "generation-one",
+            }
+            name = runtime.member_resource_name()
+            runtime.record["state"] = "running"
+            runtime.record["resources"][name] = "recorded-id"
+            runtime.synthetic_settings = Mock(return_value=settings)
+            runtime.synthetic_controller_active = Mock(return_value=True)
+            runtime.synthetic_workload_status = Mock(
+                return_value={"state": "active", "address": "fd00:1:4::1"})
+            mounts = {
+                "/run/zpr-machine": settings["machine_cert_dir"],
+                "/opt/zpr-workloads/ca.crt": settings["workload_dir"] / "ca.crt",
+                "/opt/zpr-workloads/client-finance-rsa.key":
+                    settings["workload_dir"] / "client-finance-rsa.key",
+                "/opt/zpr-workloads/machine-controller-machine-01.key":
+                    settings["workload_dir"] / "machine-controller-machine-01.key",
+            }
+            owned = {
+                "Id": "recorded-id", "Name": "/" + name, "Image": settings["image"],
+                "Config": {"Labels": {
+                    "zpr.simulator.identity-lab": runtime.token,
+                    "zpr.organization.id": "northstar",
+                    "zpr.runtime.generation": settings["generation"],
+                    "zpr.machine.id": "machine-01",
+                    "zpr.simulator.packaged-workload": "northstar-finance-client-v1",
+                }},
+                "HostConfig": {
+                    "NetworkMode": settings["network"], "Privileged": False,
+                    "ReadonlyRootfs": True, "CapDrop": ["ALL"],
+                    "CapAdd": ["NET_ADMIN"], "PortBindings": {},
+                },
+                "Mounts": [
+                    {"Type": "bind", "Destination": target, "Source": str(source), "RW": False}
+                    for target, source in mounts.items()
+                ],
+                "State": {"Running": True},
+            }
+            runtime.inspect = Mock(return_value=owned)
+            self.assertEqual(runtime.status()["state"], "running")
+            runtime.inspect.assert_called_with("recorded-id")
+
+            changes = {
+                "id": lambda config: config.update(Id="replacement-id"),
+                "name": lambda config: config.update(Name="/foreign"),
+                "image": lambda config: config.update(Image="foreign"),
+                "organization": lambda config: config["Config"]["Labels"].update(
+                    {"zpr.organization.id": "foreign"}),
+                "generation": lambda config: config["Config"]["Labels"].update(
+                    {"zpr.runtime.generation": "foreign"}),
+                "network": lambda config: config["HostConfig"].update(NetworkMode="foreign"),
+                "privileged": lambda config: config["HostConfig"].update(Privileged=True),
+                "mount": lambda config: config["Mounts"][0].update(RW=True),
+            }
+            for name, change in changes.items():
+                with self.subTest(change=name):
+                    config = deepcopy(owned)
+                    change(config)
+                    runtime.inspect.return_value = config
+                    with self.assertRaisesRegex(RuntimeError, "ownership or isolation changed"):
+                        runtime.status()
+
+            runtime.record["resources"].clear()
+            runtime.inspect.reset_mock()
+            self.assertEqual(runtime.status()["state"], "unavailable")
+            runtime.inspect.assert_not_called()
 
     def test_northstar_workload_readiness_prefers_granted_tun_address_and_keeps_fallback(self):
         with tempfile.TemporaryDirectory() as directory:

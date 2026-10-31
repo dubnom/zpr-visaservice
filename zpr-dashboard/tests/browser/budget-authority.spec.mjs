@@ -49,7 +49,7 @@ async function setup(page, context, options = {}) {
           identity: {
             issuer: "https://issuer.example.test",
             subject: "operator-1",
-            display_name: "Budget Operator",
+                    display_name: "Approval Operator",
             organizations: options.organizations || ["alpha"],
             permissions: options.permissions ?? ["budget.approve"],
           },
@@ -75,7 +75,7 @@ async function setup(page, context, options = {}) {
           return route.fulfill({
             status: options.approveStatus,
             contentType: "application/json",
-            body: JSON.stringify({ error: options.approveError || "Budget approval refused." }),
+            body: JSON.stringify({ error: options.approveError || "Operation approval refused." }),
           });
         }
         return route.fulfill({ status: 201, json: evidence({
@@ -89,7 +89,7 @@ async function setup(page, context, options = {}) {
         return route.fulfill({
           status: options.revokeStatus,
           contentType: "application/json",
-          body: JSON.stringify({ error: options.revokeError || "Budget revocation refused." }),
+          body: JSON.stringify({ error: options.revokeError || "Approval revocation refused." }),
         });
       }
       return route.fulfill({ status: 200, json: evidence({
@@ -136,7 +136,7 @@ async function fillApproval(page) {
 }
 
 async function confirmDialog(page) {
-  const dialog = page.getByRole("dialog", { name: "Confirm budget approval" });
+  const dialog = page.getByRole("dialog", { name: "Confirm operation approval" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText(scope.organization_id);
   await expect(dialog).toContainText(scope.scenario_id);
@@ -145,7 +145,7 @@ async function confirmDialog(page) {
   await dialog.locator("#budget-confirm-submit").click();
 }
 
-test("Control Room budget authority works without Simulator and explicitly approves then revokes exact scope", async ({ page, context }) => {
+test("Control Room operation approval service works without Simulator and explicitly approves then revokes exact scope", async ({ page, context }) => {
   const state = await setup(page, context);
   expect(await page.locator("#budget-organization").inputValue()).toBe("");
   expect(await page.locator("#budget-scenario").inputValue()).toBe("");
@@ -176,7 +176,7 @@ test("Control Room budget authority works without Simulator and explicitly appro
   expect(Date.parse(state.mutations[0].body.expires_at)).toBeLessThanOrEqual(Date.now() + 60 * 60 * 1000);
 
   await page.locator("#budget-revoke").click();
-  const revokeDialog = page.getByRole("dialog", { name: "Confirm budget approval revocation" });
+  const revokeDialog = page.getByRole("dialog", { name: "Confirm operation approval revocation" });
   await expect(revokeDialog).toBeVisible();
   await expect(revokeDialog).toContainText("budget-approval-1");
   await revokeDialog.locator("#budget-explicit-confirm").check();
@@ -230,10 +230,10 @@ test("server refusal is visible and never presented as a successful approval", a
   await confirmDialog(page);
 
   await expect(page.locator("#budget-error")).toBeVisible();
-  await expect(page.locator("#budget-error")).toContainText("Budget approval was refused (HTTP 403)");
+  await expect(page.locator("#budget-error")).toContainText("Operation approval was refused (HTTP 403)");
   await expect(page.locator("#budget-error")).toContainText("budget.approve permission denied");
   await expect(page.locator("#budget-evidence")).toBeHidden();
-  await expect(page.locator("#budget-session-status")).toHaveText("No successful budget authority response was received.");
+  await expect(page.locator("#budget-session-status")).toHaveText("No successful operation approval service response was received.");
   expect(state.mutations).toHaveLength(1);
   expect(state.simulatorRequests).toEqual([]);
 });

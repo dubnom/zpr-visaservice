@@ -187,7 +187,8 @@ func TestSimulatorBudgetBootstrapScopeRejectsExecutionInputTampering(t *testing.
 			var executions atomic.Int32
 			run := func(scenario simulatorScenario, manifest simulatorManifest, approval simulatorScenarioPlanApprovalResponse) error {
 				return manager.startApprovedVersionedContext(
-					context.Background(), scenario, manifest, organization,
+					simulatorScenarioTestNamedContext(context.Background(), simulatorScenarioPlanTestIdentity(organization.ID)),
+					scenario, manifest, organization,
 					func(context.Context, simulatorManifest, simulatorScenarioStep) (string, error) {
 						executions.Add(1)
 						return "synthetic in-memory run", nil

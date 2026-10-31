@@ -40,9 +40,11 @@ const scenarioPlanState = {
   catalogRequestID: 0,
   planRequestID: 0,
   runRequestID: 0,
+  selectionRequestID: 0,
   busy: false,
 };
-let scenarioPlanDialogReturnFocus = null;
+let scenarioPlanWorkflowQueue = Promise.resolve();
+let scenarioPlanOptionsSignature = "";
 const scenarioResetPath = (organization) =>
   `/api/simulator/organizations/${encodeURIComponent(organization)}/scenario-reset`;
 const scenarioResetRequest = (path, options = {}) => {
@@ -79,29 +81,10 @@ function scenarioPlanAppendOption(select, value, label) {
 
 function scenarioPlanRenderControls() {
   const busy = scenarioPlanState.busy;
-  document.getElementById("scenario-plan-budget-approve").disabled = busy;
   const organization = document.getElementById("scenario-plan-organization");
   const scenario = document.getElementById("scenario-plan-scenario");
   organization.disabled = busy || scenarioPlanState.organizations.length === 0;
   scenario.disabled = busy || !scenarioPlanState.organizationID || scenarioPlanState.scenarios.length === 0;
-  document.getElementById("scenario-plan-preflight").disabled =
-    busy || !scenarioPlanState.organizationID || !scenarioPlanState.scenarioID || Boolean(scenarioPlanState.approval);
-  const approve = document.getElementById("scenario-plan-approve");
-  const canApprove = scenarioPlanCanApprove();
-  approve.disabled = busy || !canApprove || Boolean(scenarioPlanState.approval);
-  if (scenarioPlanState.approval) {
-    approve.textContent = "Plan approved";
-  } else {
-    approve.textContent = "Approve plan…";
-  }
-  const explicitConfirmation = document.getElementById("scenario-plan-explicit-confirm").checked;
-  document.getElementById("scenario-plan-confirm-approval").disabled =
-    busy || !explicitConfirmation || !canApprove || Boolean(scenarioPlanState.approval);
-  const runButton = document.getElementById("scenario-plan-run-button");
-  runButton.disabled = busy || !scenarioPlanCanRun() || scenarioPlanState.runAttempted;
-  runButton.textContent = scenarioPlanState.run
-    ? "Scenario run submitted"
-    : scenarioPlanState.runAttempted ? "Run request attempted" : "Run approved scenario";
 }
 
 function scenarioPlanInvalidate(message = "") {
@@ -113,25 +96,14 @@ function scenarioPlanInvalidate(message = "") {
   scenarioPlanState.approval = null;
   scenarioPlanState.run = null;
   scenarioPlanState.runAttempted = false;
+  document.getElementById("scenario-plan-authorization-blockers").hidden = true;
+  document.getElementById("scenario-plan-authorization-blocker-list").replaceChildren();
   document.getElementById("scenario-plan-preview").hidden = true;
-  document.getElementById("scenario-plan-budget-handoff").hidden = true;
-  document.getElementById("scenario-plan-handoff-organization").textContent = "";
-  document.getElementById("scenario-plan-handoff-scenario").textContent = "";
-  document.getElementById("scenario-plan-handoff-digest").textContent = "";
-  document.getElementById("scenario-plan-handoff-blockers").replaceChildren();
-  document.getElementById("scenario-plan-copy-status").textContent = "";
   document.getElementById("scenario-plan-run").hidden = true;
   document.getElementById("scenario-plan-run-status").textContent = "";
   document.getElementById("scenario-plan-run-details").hidden = true;
   document.getElementById("scenario-plan-approval-status").textContent = "";
   scenarioPlanSetError("");
-  const dialog = document.getElementById("scenario-plan-approval-dialog");
-  if (dialog.open) dialog.close();
-  document.getElementById("scenario-plan-explicit-confirm").checked = false;
-  document.getElementById("scenario-plan-approval-dialog-status").textContent = "";
-  const dialogError = document.getElementById("scenario-plan-approval-dialog-error");
-  dialogError.textContent = "";
-  dialogError.hidden = true;
   scenarioPlanSetStatus(message);
   scenarioPlanRenderControls();
 }
@@ -206,7 +178,8 @@ async function scenarioPlanPreflightRequest(organizationID, scenarioID) {
     if (!(error instanceof SyntaxError)) throw error;
     throw new Error(`Preflight returned invalid JSON (HTTP ${response.status}).`);
   }
-  if (response.status !== 200 && response.status !== 503) {
+  if ((response.status !== 200 && response.status !== 503) ||
+      (response.status === 503 && scenarioPlanIsObject(body) && typeof body.error === "string")) {
     const message = scenarioPlanIsObject(body) && typeof body.error === "string"
       ? body.error
       : `HTTP ${response.status}`;
@@ -216,29 +189,22 @@ async function scenarioPlanPreflightRequest(organizationID, scenarioID) {
 }
 
 function scenarioPlanRenderUnavailableBudget(response) {
-  const evaluationBudget = response.budget_approval_available === true;
-  document.getElementById("scenario-plan-budget-approve").hidden = !evaluationBudget;
-  document.getElementById("scenario-plan-budget-approve-status").textContent = evaluationBudget
-    ? "This bounded evaluation is ready. Your authorized identity can authorize its exact scope for 15 minutes; no digest entry is needed."
-    : "";
-  document.getElementById("scenario-plan-budget-handoff-title").textContent = evaluationBudget
-    ? "Evaluation scenario authorization" : "Manual first-grant handoff";
-  document.getElementById("scenario-plan-handoff-organization").textContent = response.organization_id;
-  document.getElementById("scenario-plan-handoff-scenario").textContent = response.scenario_id;
-  document.getElementById("scenario-plan-handoff-digest").textContent = response.authorization_scope_digest;
-  const blockers = document.getElementById("scenario-plan-handoff-blockers");
-  blockers.replaceChildren();
+  if (response.budget_approval_available === true) {
+    scenarioPlanSetStatus("Authorization evidence is unavailable; checking the exact selected scope for authorized self-approval.");
+    return;
+  }
+  scenarioPlanSetError(
+    `Authorization is unavailable for ${response.organization_id}/${response.scenario_id}. ` +
+    "Check the named operator's organization and action grants; no run was started.",
+  );
+  const blockerList = document.getElementById("scenario-plan-authorization-blocker-list");
   for (const blocker of response.blockers) {
     const item = document.createElement("li");
     item.textContent = blocker;
-    blockers.append(item);
+    blockerList.append(item);
   }
-  document.getElementById("scenario-plan-budget-handoff").hidden = false;
-  document.getElementById("scenario-plan-approval-status").textContent =
-    "Authorization unavailable: obtain a valid Control Room authorization grant, then refresh preflight.";
-  scenarioPlanSetStatus(
-    "Authorization evidence is unavailable or invalid. No local approval or run can be requested.",
-  );
+  document.getElementById("scenario-plan-authorization-blockers").hidden = false;
+  scenarioPlanSetStatus("Required authorization evidence is unavailable. No approval or run was submitted.");
 }
 
 function scenarioPlanApprovalBlockers(plan) {
@@ -266,12 +232,12 @@ function scenarioPlanCanRun() {
     plan.scenario_id === scenarioID && !scenarioPlanApprovalBlockers(plan).length);
 }
 
-function scenarioPlanValidateRun(run, organizationID, scenarioID, planDigest) {
+function scenarioPlanValidateRun(run, organizationID, scenarioID, planDigest, approvalReference) {
   if (!scenarioPlanIsObject(run) || typeof run.run_id !== "string" || !run.run_id ||
-      typeof run.run_namespace !== "string" || !run.run_namespace ||
-      typeof run.state !== "string" || !run.state ||
+      run.run_namespace !== `${organizationID}/${scenarioID}/${run.run_id}` ||
+      !["running", "cleaning", "completed", "failed", "cancelled"].includes(run.state) ||
       run.organization_id !== organizationID || run.scenario_id !== scenarioID ||
-      run.plan_digest !== planDigest) {
+      run.plan_digest !== planDigest || run.approval_reference !== approvalReference) {
     throw new Error("Run endpoint returned an invalid or mismatched scenario run.");
   }
   return run;
@@ -391,15 +357,59 @@ function scenarioPlanRender(plan) {
   const reasons = scenarioPlanApprovalBlockers(plan);
   approvalStatus.textContent = reasons.length
     ? `Approval unavailable: ${reasons.join(" ")}`
-    : "Preflight permits requesting approval; a separate explicit confirmation is required.";
+    : "Preflight passed. Authorized self-approval and execution will proceed automatically.";
   preview.hidden = false;
+  scenarioPlanRenderControls();
+}
+
+function updateScenarioPlanCatalog(data, organizationID) {
+  if (!scenarioPlanIsObject(data) || data.organization?.id !== organizationID || !Array.isArray(data.scenarios) ||
+      data.scenarios.some(item => !scenarioPlanIsObject(item) ||
+        typeof item.id !== "string" || typeof item.name !== "string" ||
+        item.organization_id !== organizationID ||
+        !Number.isInteger(item.published_revision) || item.published_revision < 0)) {
+    throw new Error("Scenario catalog did not match the selected organization.");
+  }
+  const seen = new Set();
+  for (const item of data.scenarios) {
+    if (seen.has(item.id)) throw new Error("Scenario catalog contains duplicate scenario IDs.");
+    seen.add(item.id);
+  }
+  const published = data.scenarios.filter(item => item.published_revision > 0);
+  const publishedName = item => typeof item.published_scenario?.name === "string" && item.published_scenario.name
+    ? item.published_scenario.name : item.name;
+  const signature = JSON.stringify([organizationID, published.map(item => [item.id, publishedName(item), item.published_revision])]);
+  scenarioPlanState.scenarios = published;
+  if (signature === scenarioPlanOptionsSignature) return;
+  scenarioPlanOptionsSignature = signature;
+  const selected = scenarioPlanState.scenarioID;
+  if (selected && !published.some(item => item.id === selected)) {
+    const submitted = scenarioPlanState.runAttempted;
+    scenarioPlanState.selectionRequestID += 1;
+    scenarioPlanState.scenarioID = "";
+    scenarioPlanInvalidate(submitted
+      ? "The selected scenario is no longer published. A submitted run may still be active; check its status before retrying."
+      : "The selected scenario is no longer published; choose another scenario.");
+  }
+  const scenarioSelect = document.getElementById("scenario-plan-scenario");
+  scenarioSelect.replaceChildren();
+  scenarioPlanAppendOption(scenarioSelect, "", published.length ? "Select a scenario" : "No published scenarios available");
+  for (const item of published) scenarioPlanAppendOption(scenarioSelect, item.id, publishedName(item));
+  scenarioSelect.value = scenarioPlanState.scenarioID;
+  if (!selected && !scenarioPlanState.busy) {
+    scenarioPlanSetStatus(published.length
+      ? "Choose a scenario to check authorization and start its exact-scope run."
+      : "No published scenarios are available for this organization.");
+  }
   scenarioPlanRenderControls();
 }
 
 async function loadScenarioPlanCatalog(organizationID) {
   const requestID = ++scenarioPlanState.catalogRequestID;
+  scenarioPlanState.selectionRequestID += 1;
   scenarioPlanState.scenarios = [];
   scenarioPlanState.scenarioID = "";
+  scenarioPlanOptionsSignature = "";
   const scenarioSelect = document.getElementById("scenario-plan-scenario");
   scenarioSelect.replaceChildren();
   scenarioPlanAppendOption(scenarioSelect, "", organizationID ? "Loading scenarios…" : "Select an organization first");
@@ -413,26 +423,11 @@ async function loadScenarioPlanCatalog(organizationID) {
       `/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenarios`,
     );
     if (requestID !== scenarioPlanState.catalogRequestID || organizationID !== scenarioPlanState.organizationID) return;
-    if (!scenarioPlanIsObject(data) || data.organization?.id !== organizationID || !Array.isArray(data.scenarios) ||
-        data.scenarios.some(item => !scenarioPlanIsObject(item) ||
-          typeof item.id !== "string" || typeof item.name !== "string" ||
-          item.organization_id !== organizationID)) {
-      throw new Error("Scenario catalog did not match the selected organization.");
-    }
-    const seen = new Set();
-    for (const item of data.scenarios) {
-      if (seen.has(item.id)) throw new Error("Scenario catalog contains duplicate scenario IDs.");
-      seen.add(item.id);
-    }
-    scenarioPlanState.scenarios = data.scenarios;
-    scenarioSelect.replaceChildren();
-    scenarioPlanAppendOption(scenarioSelect, "", data.scenarios.length ? "Select a scenario" : "No scenarios available");
-    for (const item of data.scenarios) scenarioPlanAppendOption(scenarioSelect, item.id, item.name);
-    scenarioPlanSetStatus(data.scenarios.length
-      ? "Choose a scenario, then preview its plan."
-      : "No scenarios are available for this organization.");
+    updateScenarioPlanCatalog(data, organizationID);
   } catch (error) {
     if (requestID !== scenarioPlanState.catalogRequestID) return;
+    scenarioPlanState.scenarios = [];
+    scenarioPlanOptionsSignature = "";
     scenarioSelect.replaceChildren();
     scenarioPlanAppendOption(scenarioSelect, "", "Scenario catalog unavailable");
     scenarioPlanSetError(error.message || "Could not load scenarios for the selected organization.");
@@ -503,9 +498,8 @@ async function preflightSelectedScenarioPlan() {
     scenarioPlanRender(scenarioPlanState.plan);
     scenarioPlanSetStatus(
       `Preflight ${result.body.status}; authorization ${result.body.budget_status}; ` +
-      `${result.body.machine_ids.length} machine references and ${result.body.blockers.length} blockers. Review the plan below.`,
+      `${result.body.machine_ids.length} machine references and ${result.body.blockers.length} blockers.`,
     );
-    document.getElementById("scenario-plan-preview-title").focus();
   } catch (error) {
     if (requestID !== scenarioPlanState.planRequestID) return;
     scenarioPlanState.plan = null;
@@ -531,6 +525,7 @@ async function approveEvaluationScenarioBudget() {
   scenarioPlanState.busy = true;
   scenarioPlanRenderControls();
   scenarioPlanSetError("");
+  scenarioPlanSetStatus("Submitting automatic self-approval for the exact bounded scenario scope…");
   try {
     const response = await scenarioResetRequest(
       `/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenario-plans/budget-approval`,
@@ -555,29 +550,12 @@ async function approveEvaluationScenarioBudget() {
   }
 }
 
-function openScenarioPlanApprovalDialog() {
-  if (!scenarioPlanCanApprove() || scenarioPlanState.busy || scenarioPlanState.approval) return;
-  document.getElementById("scenario-plan-approval-organization").textContent = scenarioPlanState.plan.organization_id;
-  document.getElementById("scenario-plan-approval-scenario").textContent = scenarioPlanState.plan.scenario_id;
-  document.getElementById("scenario-plan-approval-digest").textContent = scenarioPlanState.plan.plan_digest;
-  document.getElementById("scenario-plan-explicit-confirm").checked = false;
-  document.getElementById("scenario-plan-confirm-approval").disabled = true;
-  document.getElementById("scenario-plan-approval-dialog-status").textContent = "";
-  const dialogError = document.getElementById("scenario-plan-approval-dialog-error");
-  dialogError.textContent = "";
-  dialogError.hidden = true;
-  scenarioPlanDialogReturnFocus = document.activeElement;
-  document.getElementById("scenario-plan-approval-dialog").showModal();
-  document.getElementById("scenario-plan-approval-title").focus();
-}
-
-async function confirmScenarioPlanApproval() {
+async function approveSelectedScenarioPlan() {
   const plan = scenarioPlanState.plan;
-  const confirmation = document.getElementById("scenario-plan-explicit-confirm");
-  if (!scenarioPlanCanApprove() || scenarioPlanState.busy || scenarioPlanState.approval || !confirmation.checked) return;
+  if (!scenarioPlanCanApprove() || scenarioPlanState.busy || scenarioPlanState.approval) return;
   scenarioPlanState.busy = true;
   const requestID = scenarioPlanState.planRequestID;
-  document.getElementById("scenario-plan-approval-dialog-status").textContent = "Submitting explicit approval…";
+  scenarioPlanSetStatus("Recording the selected plan's named self-approval…");
   scenarioPlanRenderControls();
   try {
     const response = await scenarioResetRequest(
@@ -596,34 +574,29 @@ async function confirmScenarioPlanApproval() {
     if (requestID !== scenarioPlanState.planRequestID || plan !== scenarioPlanState.plan) return;
     if (!scenarioPlanIsObject(response) || response.approved !== true ||
         typeof response.approval_id !== "string" || !response.approval_id ||
+        typeof response.approval_reference !== "string" ||
+        !/^sha256:[0-9a-f]{64}$/.test(response.approval_reference) ||
         response.organization_id !== plan.organization_id || response.scenario_id !== plan.scenario_id ||
         response.plan_digest !== plan.plan_digest || !Array.isArray(response.machine_ids) ||
         response.machine_ids.some(id => typeof id !== "string") ||
         response.machine_ids.length !== plan.machine_ids.length ||
         response.machine_ids.some((id, index) => id !== plan.machine_ids[index])) {
-      throw new Error("Approval endpoint returned an invalid or mismatched response.");
+      throw new Error("Approval endpoint returned an invalid or mismatched response; verify Simulator UI and backend versions match.");
     }
     scenarioPlanState.approval = response;
     document.getElementById("scenario-plan-run").hidden = false;
     document.getElementById("scenario-plan-run-status").textContent =
-      "Approval is recorded for this selected plan. You may explicitly start its scenario run.";
+      "Named self-approval is recorded for this exact plan. Starting the scenario run…";
     document.getElementById("scenario-plan-approval-status").textContent =
-      `Approval recorded (${response.approval_id}).`;
-    scenarioPlanSetStatus("Scenario plan approval recorded. No run has been started.");
-    document.getElementById("scenario-plan-approval-dialog").close();
+      `Approval recorded (reference ${response.approval_reference}).`;
+    scenarioPlanSetStatus("Named self-approval recorded. Starting the selected scenario.");
   } catch (error) {
     if (requestID !== scenarioPlanState.planRequestID) return;
     scenarioPlanState.plan = null;
     scenarioPlanState.approval = null;
     document.getElementById("scenario-plan-preview").hidden = true;
-    document.getElementById("scenario-plan-explicit-confirm").checked = false;
-    document.getElementById("scenario-plan-approval-dialog-status").textContent =
-      "Approval was not confirmed. The preflight plan was cleared.";
-    const dialogError = document.getElementById("scenario-plan-approval-dialog-error");
-    dialogError.textContent =
-      `${error.message || "Approval failed."} Run preflight again before requesting approval.`;
-    dialogError.hidden = false;
-    scenarioPlanSetStatus("Approval was not confirmed; the plan was cleared.");
+    scenarioPlanSetStatus("Named self-approval was not confirmed; the scenario was not started.");
+    scenarioPlanSetError(error.message || "Could not confirm named self-approval.");
   } finally {
     if (requestID === scenarioPlanState.planRequestID) {
       scenarioPlanState.busy = false;
@@ -658,25 +631,97 @@ async function runApprovedScenario() {
         organizationID !== scenarioPlanState.organizationID || scenarioID !== scenarioPlanState.scenarioID ||
         approval !== scenarioPlanState.approval || plan !== scenarioPlanState.plan) return;
     scenarioPlanRenderRun(scenarioPlanValidateRun(
-      response, organizationID, scenarioID, plan.plan_digest,
+      response, organizationID, scenarioID, plan.plan_digest, approval.approval_reference,
     ));
     document.getElementById("scenario-plan-run-status").textContent =
-      "Approved scenario run accepted. Status will refresh from the scenario catalog.";
+      "Scenario run accepted. Status will refresh from the scenario catalog.";
     void refreshScenariosNow();
   } catch (error) {
     if (requestID !== scenarioPlanState.runRequestID) return;
+    let reconciliation = "";
+    if (typeof error.status !== "number" || error.status >= 500 || error.status === 408) {
+      document.getElementById("scenario-plan-run-status").textContent =
+        "The run response was not confirmed. Checking current scenario status without retrying the run…";
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), 10000);
+      try {
+        const catalog = await scenarioResetRequest(
+          `/api/simulator/organizations/${encodeURIComponent(organizationID)}/scenarios`,
+          { signal: controller.signal },
+        );
+        if (requestID !== scenarioPlanState.runRequestID ||
+            organizationID !== scenarioPlanState.organizationID || scenarioID !== scenarioPlanState.scenarioID ||
+            approval !== scenarioPlanState.approval || plan !== scenarioPlanState.plan) return;
+        if (!scenarioPlanIsObject(catalog) || catalog.organization?.id !== organizationID ||
+            !scenarioPlanIsObject(catalog.run)) {
+          throw new Error("Scenario status returned an invalid or mismatched response.");
+        }
+        if (catalog.run.approval_reference === approval.approval_reference) {
+          scenarioPlanRenderRun(scenarioPlanValidateRun(
+            catalog.run, organizationID, scenarioID, plan.plan_digest, approval.approval_reference,
+          ));
+          document.getElementById("scenario-plan-run-status").textContent =
+            "The run response was not confirmed, but the matching current run was found. Status will refresh from the scenario catalog.";
+          scenarioPlanSetError("");
+          void refreshScenariosNow();
+          return;
+        }
+        reconciliation = "No matching current run was found; this does not prove that the run was not started.";
+      } catch (statusError) {
+        if (requestID !== scenarioPlanState.runRequestID) return;
+        reconciliation = `Current scenario status could not be checked: ${statusError.message || "unknown error"}`;
+      } finally {
+        window.clearTimeout(timer);
+      }
+    }
     scenarioPlanState.plan = null;
     scenarioPlanState.approval = null;
     document.getElementById("scenario-plan-preview").hidden = true;
     document.getElementById("scenario-plan-run-status").textContent =
-      "The run request was not confirmed. Its approval was cleared; preview and approve again before another request.";
-    scenarioPlanSetError(error.message || "Could not confirm the approved scenario run.");
+      "The run request was not confirmed. Check current scenario status before selecting it again.";
+    scenarioPlanSetError(`${error.message || "Could not confirm the approved scenario run."}${reconciliation ? ` ${reconciliation}` : ""}`);
   } finally {
     if (requestID === scenarioPlanState.runRequestID) {
       scenarioPlanState.busy = false;
       scenarioPlanRenderControls();
     }
   }
+}
+
+async function runSelectedScenarioWorkflow() {
+  const organizationID = scenarioPlanState.organizationID;
+  const scenarioID = scenarioPlanState.scenarioID;
+  if (!organizationID || !scenarioID) return;
+  const selectionRequestID = ++scenarioPlanState.selectionRequestID;
+  const isCurrent = () => selectionRequestID === scenarioPlanState.selectionRequestID &&
+    organizationID === scenarioPlanState.organizationID && scenarioID === scenarioPlanState.scenarioID;
+  scenarioPlanInvalidate("Preparing the selected scenario; login alone does not submit changes.");
+  const workflow = async () => {
+    if (!isCurrent()) return;
+    await preflightSelectedScenarioPlan();
+    if (!isCurrent()) return;
+    if (scenarioPlanState.unavailableBudget?.budget_approval_available === true) {
+      await approveEvaluationScenarioBudget();
+      if (!isCurrent()) return;
+    }
+    if (!scenarioPlanState.plan || !scenarioPlanCanApprove()) {
+      if (scenarioPlanState.plan) {
+        scenarioPlanSetStatus("Preflight blockers prevent approval and execution. Resolve them before selecting this scenario again.");
+      }
+      return;
+    }
+    await approveSelectedScenarioPlan();
+    if (!isCurrent() || !scenarioPlanState.approval) return;
+    await runApprovedScenario();
+  };
+  scenarioPlanWorkflowQueue = scenarioPlanWorkflowQueue
+    .then(workflow)
+    .catch(error => {
+      if (!isCurrent()) return;
+      scenarioPlanSetError(error.message || "Scenario selection could not be completed.");
+      scenarioPlanSetStatus("Scenario selection stopped safely; no further operation was submitted.");
+    });
+  await scenarioPlanWorkflowQueue;
 }
 
 const scenarioEditorController = scenarioEditorPage.createController({
@@ -816,67 +861,19 @@ document.getElementById("scenario-plan-organization").addEventListener("change",
   scenarioPlanState.organizationID = event.target.value;
   scenarioPlanState.scenarios = [];
   scenarioPlanState.scenarioID = "";
+  invalidateScenarioReset("Reset availability is being checked for the selected Simulator organization.");
   void loadScenarioPlanCatalog(scenarioPlanState.organizationID);
+  void refreshScenariosNow();
 });
 document.getElementById("scenario-plan-scenario").addEventListener("change", event => {
   const selected = event.target.value;
   scenarioPlanState.scenarioID = scenarioPlanState.scenarios.some(item => item.id === selected) ? selected : "";
-  scenarioPlanInvalidate(scenarioPlanState.scenarioID
-    ? "Scenario selection changed. Preview the selected scenario before requesting approval."
-    : "Select a scenario to preview its plan.");
-});
-document.getElementById("scenario-plan-preflight").addEventListener("click", () => {
-  void preflightSelectedScenarioPlan();
-});
-document.getElementById("scenario-plan-copy-handoff").addEventListener("click", async () => {
-  const handoff = scenarioPlanState.unavailableBudget;
-  if (!handoff || handoff.organization_id !== scenarioPlanState.organizationID ||
-      handoff.scenario_id !== scenarioPlanState.scenarioID) return;
-  const status = document.getElementById("scenario-plan-copy-status");
-  try {
-    await navigator.clipboard.writeText(JSON.stringify({
-      organization_id: handoff.organization_id,
-      scenario_id: handoff.scenario_id,
-      authorization_scope_digest: handoff.authorization_scope_digest,
-    }, null, 2));
-    status.textContent = "Exact grant scope copied. Manually enter it in the authenticated Control Room authorization workflow.";
-  } catch (error) {
-    status.textContent = `Could not copy the grant scope: ${error.message || "clipboard access is unavailable"}.`;
+  if (scenarioPlanState.scenarioID) {
+    void runSelectedScenarioWorkflow();
+  } else {
+    scenarioPlanState.selectionRequestID += 1;
+    scenarioPlanInvalidate("Select a scenario to prepare and run it.");
   }
-});
-document.getElementById("scenario-plan-approve").addEventListener("click", openScenarioPlanApprovalDialog);
-document.getElementById("scenario-plan-budget-approve").addEventListener("click", () => {
-  void approveEvaluationScenarioBudget();
-});
-document.getElementById("scenario-plan-explicit-confirm").addEventListener("change", scenarioPlanRenderControls);
-document.getElementById("scenario-plan-confirm-approval").addEventListener("click", () => {
-  void confirmScenarioPlanApproval();
-});
-document.getElementById("scenario-plan-run-button").addEventListener("click", () => {
-  void runApprovedScenario();
-});
-for (const id of ["scenario-plan-approval-cancel", "scenario-plan-approval-close-icon"]) {
-  document.getElementById(id).addEventListener("click", () => {
-    document.getElementById("scenario-plan-approval-dialog").close();
-  });
-}
-document.getElementById("scenario-plan-approval-dialog").addEventListener("close", () => {
-  document.getElementById("scenario-plan-explicit-confirm").checked = false;
-  document.getElementById("scenario-plan-approval-dialog-status").textContent = "";
-  const dialogError = document.getElementById("scenario-plan-approval-dialog-error");
-  dialogError.textContent = "";
-  dialogError.hidden = true;
-  scenarioPlanRenderControls();
-  const focusTarget = scenarioPlanState.approval
-    ? document.getElementById("scenario-plan-approval-status")
-    : scenarioPlanDialogReturnFocus;
-  scenarioPlanDialogReturnFocus = null;
-  if (focusTarget?.isConnected && !focusTarget.disabled && !focusTarget.closest("[hidden]")) {
-    focusTarget.focus();
-    return;
-  }
-  const scenarioSelect = document.getElementById("scenario-plan-scenario");
-  (scenarioSelect.disabled ? document.getElementById("scenario-plan-organization") : scenarioSelect).focus();
 });
 window.addEventListener("hashchange", updateScenarioTrackScroll);
 document.addEventListener("simulator:activate", event => {
@@ -1595,16 +1592,21 @@ function scenarioCatalogOrganization() {
 
 async function refreshScenarios({ signal, isCurrent }) {
   const requestedOrganizationID = scenarioCatalogOrganization();
+  const catalogRequestID = scenarioPlanState.catalogRequestID;
   const path = requestedOrganizationID
     ? `/api/simulator/organizations/${encodeURIComponent(requestedOrganizationID)}/scenarios`
     : "/api/simulator/scenarios";
   const data = await scenarioRequest(path, { cache: "no-store", signal });
-  if (!isCurrent()) return;
+  if (!isCurrent() || catalogRequestID !== scenarioPlanState.catalogRequestID ||
+      requestedOrganizationID !== scenarioCatalogOrganization()) return;
   const error = document.getElementById("scenario-error");
   error.hidden = true;
   const organization = requestedOrganizationID || data.active_organization_id || activeScenarioOrganization;
   if (requestedOrganizationID && data.organization?.id !== requestedOrganizationID) {
     throw new Error("Scenario catalog did not match the authorized organization.");
+  }
+  if (requestedOrganizationID && requestedOrganizationID === scenarioPlanState.organizationID) {
+    updateScenarioPlanCatalog(data, requestedOrganizationID);
   }
   if (organization !== activeScenarioOrganization &&
       (scenarioPlanState.plan || scenarioPlanState.approval || scenarioPlanState.run ||
@@ -1617,8 +1619,12 @@ async function refreshScenarios({ signal, isCurrent }) {
   if (scenarioPlanState.run && run.run_id === scenarioPlanState.run.run_id &&
       run.organization_id === scenarioPlanState.organizationID &&
       run.scenario_id === scenarioPlanState.scenarioID &&
-      run.plan_digest === scenarioPlanState.plan?.plan_digest) {
-    scenarioPlanRenderRun(run);
+      run.plan_digest === scenarioPlanState.plan?.plan_digest &&
+      run.approval_reference === scenarioPlanState.approval?.approval_reference) {
+    scenarioPlanRenderRun(scenarioPlanValidateRun(
+      run, scenarioPlanState.organizationID, scenarioPlanState.scenarioID,
+      scenarioPlanState.plan.plan_digest, scenarioPlanState.approval.approval_reference,
+    ));
     document.getElementById("scenario-plan-run-status").textContent =
       `Scenario run status refreshed: ${run.state}.`;
   }

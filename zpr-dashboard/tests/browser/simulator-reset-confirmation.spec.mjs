@@ -72,7 +72,13 @@ async function setup(page, context, options = {}) {
     confirmRequests: [],
     clearRequests: 0,
     scenarioReads: 0,
+    deferNextCatalog: "",
   };
+  const organizationIDs = (options.identity || identity).organizations;
+  const organizations = organizationIDs.map(id => ({
+    id,
+    name: id === organization ? "Lab Alpha" : "Lab Beta",
+  }));
 
   await context.route("**/*", async route => {
     const request = route.request();
@@ -87,21 +93,32 @@ async function setup(page, context, options = {}) {
     if (url.pathname === "/simulator-navigation.json") {
       return route.fulfill({ status: 503, json: { error: "Not configured in this fixture." } });
     }
-    if (url.pathname === "/api/simulator/scenarios") {
-      state.scenarioReads++;
-      return route.fulfill({ json: {
-        active_organization_id: state.activeOrganization,
-        organization: { id: organization, name: "Lab Alpha" },
-        scenarios: state.scenarios,
-        run: state.run,
-      } });
+    if (url.pathname === "/api/simulator/organizations") {
+      return route.fulfill({ json: { active_id: state.activeOrganization, organizations } });
     }
-    if (/^\/api\/simulator\/organizations\/[^/]+\/scenario-reset\/status$/.test(url.pathname)) {
+    const scopedCatalog = url.pathname.match(/^\/api\/simulator\/organizations\/([^/]+)\/scenarios$/);
+    if (url.pathname === "/api/simulator/scenarios" || scopedCatalog) {
+      state.scenarioReads++;
+      const catalogOrganization = scopedCatalog ? decodeURIComponent(scopedCatalog[1]) : state.activeOrganization;
+      const result = {
+        active_organization_id: state.activeOrganization,
+        organization: organizations.find(item => item.id === catalogOrganization),
+        scenarios: catalogOrganization === organization ? state.scenarios : [],
+        run: catalogOrganization === organization ? state.run : { state: "idle", steps: [] },
+      };
+      if (state.deferNextCatalog === catalogOrganization) {
+        state.deferNextCatalog = "";
+        await new Promise(resolve => { state.releaseCatalog = resolve; });
+      }
+      return route.fulfill({ json: result });
+    }
+    const statusPath = url.pathname.match(/^\/api\/simulator\/organizations\/([^/]+)\/scenario-reset\/status$/);
+    if (statusPath) {
       state.statusReads++;
       state.statusTargets.push(url.pathname);
       return route.fulfill({
         status: options.statusHTTPStatus || 200,
-        json: options.statusResponse || { ...state.status, organization },
+        json: options.statusResponse || { ...state.status, organization: decodeURIComponent(statusPath[1]) },
       });
     }
     if (url.pathname === `/api/simulator/organizations/${organization}/scenario-reset/intents`) {
@@ -449,13 +466,15 @@ test("Simulator reset discards outstanding intent evidence when the run changes"
   await expect.poll(() => state.statusReads).toBeGreaterThan(0);
   await page.locator("#scenario-reset").click();
   await expect.poll(() => state.intentRequests).toHaveLength(1);
+  const initialScenarioReads = state.scenarioReads;
+  const initialStatusReads = state.statusReads;
   state.run = {
     ...state.run,
     state: "failed",
     finished_at: new Date().toISOString(),
   };
-  await expect.poll(() => state.scenarioReads).toBeGreaterThan(1);
-  await expect.poll(() => state.statusReads).toBeGreaterThan(1);
+  await expect.poll(() => state.scenarioReads).toBeGreaterThan(initialScenarioReads);
+  await expect.poll(() => state.statusReads).toBeGreaterThan(initialStatusReads);
   state.releaseIntent();
   await expect(page.getByRole("dialog", { name: "Reset scenario state" })).toBeHidden();
   expect(state.confirmRequests).toHaveLength(0);
@@ -470,11 +489,34 @@ test("Simulator reset discards outstanding intent evidence when the selected org
   await expect.poll(() => state.statusReads).toBeGreaterThan(0);
   await page.locator("#scenario-reset").click();
   await expect.poll(() => state.intentRequests).toHaveLength(1);
-  state.activeOrganization = "lab-beta";
-  await expect.poll(() => state.scenarioReads).toBeGreaterThan(1);
+  await page.evaluate(() => {
+    const select = document.getElementById("scenario-plan-organization");
+    select.value = "lab-beta";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(page.getByRole("dialog", { name: "Reset scenario state" })).toBeHidden();
   await expect.poll(() => state.statusTargets.some(target =>
     target === "/api/simulator/organizations/lab-beta/scenario-reset/status")).toBe(true);
   state.releaseIntent();
-  await expect(page.getByRole("dialog", { name: "Reset scenario state" })).toBeHidden();
   expect(state.confirmRequests).toHaveLength(0);
+});
+
+test("a delayed previous-organization catalog cannot restore reset availability", async ({ page, context }) => {
+  const crossOrgIdentity = { ...identity, organizations: [organization, "lab-beta"] };
+  const state = await setup(page, context, { identity: crossOrgIdentity });
+  await expect(page.locator("#scenario-reset")).toBeEnabled();
+  state.deferNextCatalog = organization;
+  await expect.poll(() => typeof state.releaseCatalog).toBe("function");
+  try {
+    await page.locator("#scenario-plan-organization").selectOption("lab-beta");
+    await expect(page.locator("#scenario-reset")).toBeDisabled();
+    state.releaseCatalog();
+    await expect.poll(() => state.statusTargets.some(target =>
+      target === "/api/simulator/organizations/lab-beta/scenario-reset/status")).toBe(true);
+    await expect(page.locator("#scenario-reset")).toBeHidden();
+    expect(state.intentRequests).toHaveLength(0);
+    expect(state.confirmRequests).toHaveLength(0);
+  } finally {
+    state.releaseCatalog();
+  }
 });

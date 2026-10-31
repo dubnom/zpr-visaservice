@@ -72,7 +72,7 @@ func (budgetBootstrapBrowserAuthorizer) Authorize(
 		Subject:       "synthetic-browser-operator",
 		DisplayName:   "Synthetic Browser Operator",
 		Organizations: []string{budgetBootstrapBrowserFixtureOrg},
-		Permissions:   []string{"organization.read", "scenario.read", "scenario.run"},
+		Permissions:   []string{"organization.read", "scenario.read", "scenario.run", "approval.self"},
 	}
 	organizationCatalog := organization == "" && permission == "organization.read"
 	if !organizationCatalog &&
@@ -151,7 +151,7 @@ func TestBudgetBootstrapBrowserFixture(t *testing.T) {
 			Subject:       "synthetic-browser-operator",
 			DisplayName:   "Synthetic Browser Operator",
 			Organizations: []string{organization.ID},
-			Permissions:   []string{"organization.read", "scenario.read", "scenario.run"},
+			Permissions:   []string{"organization.read", "scenario.read", "scenario.run", "approval.self"},
 		}
 		writeBudgetBootstrapBrowserJSON(w, http.StatusOK, map[string]any{
 			"identity": identity, "csrf": budgetBootstrapBrowserFixtureCSRF,
@@ -168,8 +168,8 @@ func TestBudgetBootstrapBrowserFixture(t *testing.T) {
 			"organizations": []map[string]string{{"id": organization.ID, "name": "Synthetic Approval Org"}},
 		})
 	})
-	mux.HandleFunc("GET /api/simulator/scenarios", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("organization_id") != organization.ID {
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios", func(w http.ResponseWriter, r *http.Request) {
+		if r.PathValue("organization") != organization.ID {
 			writeBudgetBootstrapBrowserJSON(w, http.StatusBadRequest, map[string]string{"error": "organization mismatch"})
 			return
 		}
@@ -188,8 +188,11 @@ func TestBudgetBootstrapBrowserFixture(t *testing.T) {
 	mux.HandleFunc("POST /__fixture__/revoke", fixture.handleRevoke)
 	mux.HandleFunc("GET /__fixture__/status", fixture.handleStatus)
 	mux.Handle("POST /api/simulator/scenario-plans/preflight", api)
+	mux.Handle("POST /api/simulator/organizations/{organization}/scenario-plans/preflight", api)
 	mux.Handle("POST /api/simulator/scenario-plans/approve", api)
+	mux.Handle("POST /api/simulator/organizations/{organization}/scenario-plans/approve", api)
 	mux.Handle("POST /api/simulator/scenarios/{scenario}/run", api)
+	mux.Handle("POST /api/simulator/organizations/{organization}/scenarios/{scenario}/run", api)
 	mux.Handle("/scenarios.html", http.FileServer(http.FS(staticRoot)))
 	mux.Handle("/", http.FileServer(http.FS(staticRoot)))
 

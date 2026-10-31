@@ -35,8 +35,10 @@ const (
 	evaluationSubjectVSID       = "evaluation-vs"
 	evaluationSubjectEpoch      = "evaluation"
 	evaluationDelegationKeyID   = "evaluation-room"
-	evaluationSnapshotKeyID     = "evaluation-snapshot"
-	evaluationReviewerEmail     = "reviewer@evaluation.invalid"
+	// Independent Simulator delegation signer; never the Room key or secret.
+	evaluationSimulatorDelegationKeyID = "evaluation-simulator"
+	evaluationSnapshotKeyID            = "evaluation-snapshot"
+	evaluationReviewerEmail            = "reviewer@evaluation.invalid"
 	// Runtime-written after both Dex subjects are known; refused if it changes.
 	evaluationDelegationTrust = "operator-delegation-trust.json"
 )
@@ -200,8 +202,32 @@ func evaluationServiceAudience(config evaluationConfig) string {
 }
 
 // evaluationDelegationTrustFile binds the Room signer key and its mTLS client
-// certificate to the administrator and independent reviewer grants.
-func evaluationDelegationTrustFile(config evaluationConfig, issuer, organization string, signerKey, clientChain []byte, admin, reviewer operatorGrantIdentity) ([]byte, error) {
+// certificate to the administrator and independent reviewer grants. With a
+// registered Simulator client it also pins the independent Simulator signer
+// to its own transport certificate; neither key is shared.
+func evaluationDelegationTrustFile(config evaluationConfig, issuer, organization string, signerKey, clientChain []byte, simulatorKey, simulatorChain []byte, admin, reviewer operatorGrantIdentity) ([]byte, error) {
+	room, err := evaluationDelegationKeyEntry(evaluationDelegationKeyID, signerKey, clientChain)
+	if err != nil {
+		return nil, err
+	}
+	keys := []map[string]string{room}
+	if config.SimulatorPort != 0 {
+		simulator, err := evaluationDelegationKeyEntry(evaluationSimulatorDelegationKeyID, simulatorKey, simulatorChain)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, simulator)
+	}
+	grants := []map[string]any{
+		{"issuer": issuer, "subject": admin.Subject, "organizations": []string{organization}, "permissions": admin.Permissions},
+		{"issuer": issuer, "subject": reviewer.Subject, "organizations": []string{organization}, "permissions": reviewer.Permissions},
+	}
+	return evaluationJSON(map[string]any{"version": 1, "audience": evaluationServiceAudience(config), "keys": keys, "grants": grants})
+}
+
+// evaluationDelegationKeyEntry binds one delegation signing key to the exact
+// mutual-TLS client certificate presented with its tokens.
+func evaluationDelegationKeyEntry(keyID string, signerKey, clientChain []byte) (map[string]string, error) {
 	block, _ := pem.Decode(signerKey)
 	if block == nil {
 		return nil, errors.New("invalid evaluation delegation key")
@@ -213,17 +239,13 @@ func evaluationDelegationTrustFile(config evaluationConfig, issuer, organization
 	}
 	leaf, _ := pem.Decode(clientChain)
 	if leaf == nil || leaf.Type != "CERTIFICATE" {
-		return nil, errors.New("invalid evaluation Room client certificate")
+		return nil, errors.New("invalid evaluation delegation client certificate")
 	}
 	pin := sha256.Sum256(leaf.Bytes)
-	grants := []map[string]any{
-		{"issuer": issuer, "subject": admin.Subject, "organizations": []string{organization}, "permissions": admin.Permissions},
-		{"issuer": issuer, "subject": reviewer.Subject, "organizations": []string{organization}, "permissions": reviewer.Permissions},
-	}
-	return evaluationJSON(map[string]any{"version": 1, "audience": evaluationServiceAudience(config), "keys": []map[string]string{{
-		"key_id": evaluationDelegationKeyID, "public_key": base64.RawURLEncoding.EncodeToString(private.Public().(ed25519.PublicKey)),
+	return map[string]string{
+		"key_id": keyID, "public_key": base64.RawURLEncoding.EncodeToString(private.Public().(ed25519.PublicKey)),
 		"certificate_sha256": hex.EncodeToString(pin[:]),
-	}}, "grants": grants})
+	}, nil
 }
 
 type operatorGrantIdentity struct {

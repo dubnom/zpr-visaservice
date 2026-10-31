@@ -4,21 +4,30 @@ umask 077
 fail() { printf 'zpr-evaluation: %s\n' "$*" >&2; exit 1; }
 root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 action=${1:-}
-[ "$#" -gt 0 ] || fail "usage: ./demo.sh verify|load|start STATE [evaluation flags...]"
+[ "$#" -gt 0 ] || fail "usage: ./demo.sh verify|load|start|pair STATE [evaluation flags...]"
 shift
 command -v sha256sum >/dev/null || fail "sha256sum is required"
 case "$action" in
-    verify|load|start) ;;
-    *) fail "usage: ./demo.sh verify|load|start STATE [evaluation flags...]" ;;
+    verify|load|start|pair) ;;
+    *) fail "usage: ./demo.sh verify|load|start|pair STATE [evaluation flags...]" ;;
 esac
 case "$action" in
     verify|load) [ "$#" -eq 0 ] || fail "$action takes no arguments" ;;
     start) [ "$#" -ge 1 ] || fail "start requires a private absolute state directory" ;;
+    pair) [ "$#" -ge 1 ] || fail "pair requires a private absolute state directory and -simulator-port" ;;
 esac
 (cd "$root" && sha256sum --check --strict SHA256SUMS) || fail "package verification failed; nothing started"
 [ "$action" != verify ] || exit 0
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] ||
     fail "this engineering package requires Linux x86-64"
+if [ "$action" = pair ]; then
+    # Add-later Simulator client/signer registration on a stopped installation;
+    # it needs no container runtime and never starts services.
+    state=$1
+    shift
+    case "$state" in /*) ;; *) fail "state directory must be absolute" ;; esac
+    exec "$root/bin/zpr-lab-bootstrap" -evaluation-simulator-pairing -state "$state" "$@"
+fi
 command -v docker >/dev/null || fail "Docker Engine with Compose v2 is required"
 docker compose version >/dev/null || fail "Docker Compose v2 is required"
 data_plane='' ldap='' ldap_admin_ui='' logging='' oidc=''

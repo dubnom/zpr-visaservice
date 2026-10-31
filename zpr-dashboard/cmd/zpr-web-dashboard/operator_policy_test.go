@@ -10,17 +10,29 @@ import (
 )
 
 type testOperatorAuthorizer struct {
-	organization string
-	permission   string
-	err          error
-	calls        int
+	organization    string
+	permission      string
+	err             error
+	denyPermission  string
+	calls           int
+	permissionCalls []string
 }
 
 func (authorizer *testOperatorAuthorizer) Authorize(_ *http.Request, organization, permission string) (operatorauth.Identity, error) {
 	authorizer.calls++
 	authorizer.organization = organization
 	authorizer.permission = permission
-	return operatorauth.Identity{}, authorizer.err
+	authorizer.permissionCalls = append(authorizer.permissionCalls, permission)
+	if permission == authorizer.denyPermission {
+		return operatorauth.Identity{}, errors.New("permission denied")
+	}
+	if authorizer.err != nil {
+		return operatorauth.Identity{}, authorizer.err
+	}
+	return operatorauth.Identity{
+		Issuer: "https://identity.example", Subject: "operator",
+		Organizations: []string{organization}, Permissions: []string{permission},
+	}, nil
 }
 
 func TestOperatorConfigAcceptsControlRoomPermissions(t *testing.T) {

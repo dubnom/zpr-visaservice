@@ -46,6 +46,22 @@ grep -Fx -- "$tmp/package/bin/zpr-control-room" "$ARGS"
 grep -Fx -- '-protected-dns' "$ARGS"
 grep -Fx -- '-ldap-admin-image' "$ARGS"
 grep -Fx -- '28787' "$ARGS"
+sh "$tmp/package/demo.sh" pair "$tmp/state" -simulator-port 24788 \
+    -operator-services-file "$tmp/operator services.json" >/dev/null
+grep -Fx -- '-evaluation-simulator-pairing' "$ARGS"
+grep -Fx -- '-simulator-port' "$ARGS"
+grep -Fx -- '24788' "$ARGS"
+grep -Fx -- '-operator-services-file' "$ARGS"
+grep -Fx -- "$tmp/operator services.json" "$ARGS"
+if grep -Fx -- '-visa-service' "$ARGS"; then
+    echo "pair must not forward start-only flags" >&2
+    exit 1
+fi
+if sh "$tmp/package/demo.sh" pair relative-state >"$tmp/error" 2>&1; then
+    echo "relative pair state accepted" >&2
+    exit 1
+fi
+grep 'state directory must be absolute' "$tmp/error"
 cp "$ARGS" "$tmp/original-args"
 printf 'tampered\n' >> "$tmp/package/images.txt"
 if sh "$tmp/package/demo.sh" start "$tmp/state" >"$tmp/error" 2>&1; then
@@ -54,4 +70,4 @@ if sh "$tmp/package/demo.sh" start "$tmp/state" >"$tmp/error" 2>&1; then
 fi
 cmp "$ARGS" "$tmp/original-args"
 grep 'package verification failed' "$tmp/error"
-printf 'PASS: offline package verification, image loading, prebuilt startup and tamper rejection\n'
+printf 'PASS: offline package verification, image loading, prebuilt startup, add-later pairing dispatch and tamper rejection\n'

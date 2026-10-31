@@ -29,6 +29,7 @@ const scenariosByOrganization = {
 const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
 const mockPlanDigest = `sha256:${"c".repeat(64)}`;
 const mockAuthorizationScopeDigest = `sha256:${"d".repeat(64)}`;
+const mockApprovalReference = `sha256:${"e".repeat(64)}`;
 
 function northstarPlan(scenarioID, overrides = {}) {
   return {
@@ -127,6 +128,7 @@ async function setupAuthenticatedNorthstarPlan(page, context, options = {}) {
         : {
           approved: true,
           approval_id: "fixture-approval-1",
+          approval_reference: mockApprovalReference,
           organization_id: body.organization_id,
           scenario_id: body.scenario_id,
           plan_digest: body.plan_digest,
@@ -148,6 +150,7 @@ async function setupAuthenticatedNorthstarPlan(page, context, options = {}) {
         organization_id: northstar.id,
         scenario_id: runPath[1],
         plan_digest: body.plan_digest,
+        approval_reference: mockApprovalReference,
         state: "running",
         steps: [],
       };
@@ -179,29 +182,13 @@ async function setupAuthenticatedNorthstarPlan(page, context, options = {}) {
   return state;
 }
 
-test("authenticated scoped plan handoff uses distinct digests and submits only explicit approval and run", async ({ page, context }) => {
+test("authenticated scoped selection uses distinct digests for named approval and run", async ({ page, context }) => {
   const state = await setupAuthenticatedNorthstarPlan(page, context);
-  const preflightResponsePromise = page.waitForResponse(response =>
-    new URL(response.url()).pathname ===
-      "/api/simulator/organizations/northstar/scenario-plans/preflight" &&
-    response.request().method() === "POST");
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
-  expect((await preflightResponsePromise).status()).toBe(200);
+  await expect(page.locator("#scenario-plan-run-id")).toHaveText("fixture-run-1");
   expect(state.preflightResponse.authorization_scope_digest)
     .not.toBe(state.preflightResponse.plan_digest);
-  await expect(page.locator("#scenario-plan-summary")).toContainText(mockPlanDigest);
-  await expect(page.locator("#scenario-plan-summary")).toContainText(mockAuthorizationScopeDigest);
-  await expect(page.locator("#scenario-plan-approve")).toBeEnabled();
-
-  await page.locator("#scenario-plan-approve").click();
-  await expect(page.locator("#scenario-plan-approval-dialog")).toBeVisible();
-  await page.locator("#scenario-plan-explicit-confirm").check();
-  const approvalResponsePromise = page.waitForResponse(response =>
-    new URL(response.url()).pathname ===
-      "/api/simulator/organizations/northstar/scenario-plans/approve" &&
-    response.request().method() === "POST");
-  await page.locator("#scenario-plan-confirm-approval").click();
-  expect((await approvalResponsePromise).status()).toBe(200);
+  await expect(page.locator("#scenario-plan-summary")).not.toContainText(mockPlanDigest);
+  await expect(page.locator("#scenario-plan-summary")).not.toContainText(mockAuthorizationScopeDigest);
   await expect(page.locator("#scenario-plan-approval-status")).toContainText("Approval recorded");
   expect(state.approvalResponse).toMatchObject({
     approved: true,
@@ -218,12 +205,6 @@ test("authenticated scoped plan handoff uses distinct digests and submits only e
       approved: true,
     });
 
-  const runResponsePromise = page.waitForResponse(response =>
-    new URL(response.url()).pathname ===
-      "/api/simulator/organizations/northstar/scenarios/machine-policy-deny/run" &&
-    response.request().method() === "POST");
-  await page.locator("#scenario-plan-run-button").click();
-  expect((await runResponsePromise).status()).toBe(202);
   expect(state.requests.find(request => request.path.endsWith("/machine-policy-deny/run")).body)
     .toEqual({ approval_id: "fixture-approval-1", plan_digest: mockPlanDigest });
   expect(state.runResponse).toMatchObject({
@@ -242,28 +223,20 @@ test("authenticated scoped plan handoff uses distinct digests and submits only e
     .toBe(true);
 });
 
-test("expired scoped budget grant remains unavailable and prevents local approval or run", async ({ page, context }) => {
+test("expired scoped budget grant remains unavailable and prevents automatic approval or run", async ({ page, context }) => {
   const state = await setupAuthenticatedNorthstarPlan(page, context, {
     preflightStatus: 503,
     preflightResponse: body => ({
       organization_id: northstar.id,
       scenario_id: body.scenario_id,
       authorization_scope_digest: mockAuthorizationScopeDigest,
-      blockers: ["current approved budget evidence is unavailable or invalid"],
+      blockers: ["current approved authorization evidence is unavailable or invalid"],
     }),
   });
-  const preflightResponsePromise = page.waitForResponse(response =>
-    new URL(response.url()).pathname ===
-      "/api/simulator/organizations/northstar/scenario-plans/preflight" &&
-    response.request().method() === "POST");
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
-  expect((await preflightResponsePromise).status()).toBe(503);
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeVisible();
-  await expect(page.locator("#scenario-plan-handoff-digest")).toHaveText(mockAuthorizationScopeDigest);
-  await expect(page.locator("#scenario-plan-handoff-blockers"))
-    .toContainText("current approved budget evidence is unavailable or invalid");
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-error")).toContainText("Authorization is unavailable");
+  await expect(page.locator("#scenario-plan-authorization-blocker-list"))
+    .toContainText("current approved authorization evidence is unavailable or invalid");
+  expect(state.preflightResponse.authorization_scope_digest).toBe(mockAuthorizationScopeDigest);
   expect(state.requests.some(request =>
     request.path.endsWith("/scenario-plans/approve") || request.path.endsWith("/machine-policy-deny/run"),
   )).toBe(false);
@@ -273,16 +246,8 @@ test("mismatched scoped preflight identity cannot proceed to approval or run", a
   const state = await setupAuthenticatedNorthstarPlan(page, context, {
     preflightResponse: () => northstarPlan("machine-policy-allow"),
   });
-  const preflightResponsePromise = page.waitForResponse(response =>
-    new URL(response.url()).pathname ===
-      "/api/simulator/organizations/northstar/scenario-plans/preflight" &&
-    response.request().method() === "POST");
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
-  expect((await preflightResponsePromise).status()).toBe(200);
   await expect(page.locator("#scenario-plan-error")).toContainText(/invalid or mismatched/i);
   await expect(page.locator("#scenario-plan-preview")).toBeHidden();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
   expect(state.requests.some(request =>
     request.path.endsWith("/scenario-plans/approve") || request.path.endsWith("/machine-policy-deny/run"),
   )).toBe(false);
@@ -410,31 +375,22 @@ async function assertNorthstarBlockedPreflight(
   }
   await expect(page.locator("#scenario-plan-scenario option")).toHaveCount(6);
   await expect(page.locator("#scenario-plan-scenario option[value='machine-policy-deny']")).toHaveCount(1);
-  await page.locator("#scenario-plan-scenario").selectOption("machine-policy-deny");
   const preflightResponse = page.waitForResponse(response =>
     new URL(response.url()).pathname ===
       "/api/simulator/organizations/northstar/scenario-plans/preflight" &&
     response.request().method() === "POST");
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
+  await page.locator("#scenario-plan-scenario").selectOption("machine-policy-deny");
   expect((await preflightResponse).status()).toBe(503);
 
-  const handoff = page.locator("#scenario-plan-budget-handoff");
-  await expect(handoff).toBeVisible();
-  await expect(page.locator("#scenario-plan-handoff-organization")).toHaveText(northstar.id);
-  await expect(page.locator("#scenario-plan-handoff-scenario")).toHaveText("machine-policy-deny");
-  await expect(page.locator("#scenario-plan-handoff-digest")).toHaveText(`sha256:${"b".repeat(64)}`);
-  await expect(page.locator("#scenario-plan-handoff-blockers li")).toHaveText(blockers);
-  await expect(handoff).not.toContainText(/csrf|token/i);
+  await expect(page.locator("#scenario-plan-error")).toContainText("Authorization is unavailable");
+  await expect(page.locator("#scenario-plan-authorization-blocker-list li")).toHaveText(blockers);
+  await expect(page.locator("#scenario-plan-error")).not.toContainText(/csrf|token/i);
   await expect(page.locator("#scenario-plan-preview")).toBeHidden();
   await expect(page.locator("#scenario-plan-blockers")).toBeHidden();
-  await expect(page.locator("#scenario-plan-error")).toBeHidden();
   await expect(page.locator("#scenario-plan-workflow-status"))
-    .toContainText("Budget evidence is unavailable or invalid. No local approval or run can be requested.");
-  await expect(page.locator("#scenario-plan-approval-status")).toContainText("Approval unavailable");
+    .toContainText("Required authorization evidence is unavailable");
   await expect(page.locator("#scenario-plan-approval-status")).not.toContainText("Approval recorded");
   await expect(page.locator("#scenario-plan-run")).toBeHidden();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
 
   expect(state.requests).toContainEqual({
     method: "GET",
@@ -466,9 +422,9 @@ test("Northstar synthetic profile starts on Northstar without bypassing blocked 
   );
 });
 
-test("missing Northstar plan-scoped budget evidence never shows readiness or local approval", async ({ page, context }) => {
+test("missing Northstar plan-scoped budget evidence never shows readiness or starts a run", async ({ page, context }) => {
   await assertNorthstarBlockedPreflight(page, context, {
-    blockers: ["current approved budget evidence is unavailable or invalid"],
+    blockers: ["current approved authorization evidence is unavailable or invalid"],
   });
 });
 
@@ -524,8 +480,7 @@ test("enabled OIDC without a named-user session denies Northstar catalog and pre
   await expect(page.locator("#scenario-plan-workflow-status"))
     .toContainText("Organization catalog is unavailable; approval remains disabled.");
   await expect(page.locator("#scenario-plan-scenario")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  await expect(page.locator("#scenario-plan-approval-dialog")).toHaveCount(0);
   expect(state.requests).toContainEqual({
     method: "GET",
     path: "/api/simulator/organizations",

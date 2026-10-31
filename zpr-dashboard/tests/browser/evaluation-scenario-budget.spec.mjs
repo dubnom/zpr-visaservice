@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-test("bounded evaluation computes budget scope server-side and permits its machine-free approved run", async ({ page, context }) => {
+test("scenario selection self-approves the exact bounded evaluation scope and runs without prompts", async ({ page, context }) => {
   const origin = "https://simulator.example.test";
   const assets = fileURLToPath(new URL("../../cmd/zpr-web-dashboard/static/", import.meta.url));
   const organization = { id: `evaluation-${"a".repeat(24)}`, name: "ZPR Evaluation" };
@@ -14,8 +14,10 @@ test("bounded evaluation computes budget scope server-side and permits its machi
   };
   const scopeDigest = `sha256:${"b".repeat(64)}`;
   const planDigest = `sha256:${"c".repeat(64)}`;
+  const approvalReference = `sha256:${"d".repeat(64)}`;
   let budgetApproved = false;
   const requests = [];
+  const operations = [];
   let run = { state: "idle", steps: [] };
   await context.route("**/*", async route => {
     const request = route.request();
@@ -31,6 +33,7 @@ test("bounded evaluation computes budget scope server-side and permits its machi
       } });
     }
     if (url.pathname.endsWith("/scenario-plans/preflight")) {
+      operations.push("preflight");
       return route.fulfill(budgetApproved ? { json: {
         status: "plan-only", organization_id: organization.id, scenario_id: scenario.id,
         manifest_name: "Evaluation endpoints", machine_ids: [], topology: { nodes: [] }, workloads: [],
@@ -40,10 +43,11 @@ test("bounded evaluation computes budget scope server-side and permits its machi
         blockers: [], plan_digest: planDigest, authorization_scope_digest: scopeDigest,
       } } : { status: 503, json: {
         organization_id: organization.id, scenario_id: scenario.id, authorization_scope_digest: scopeDigest,
-        budget_approval_available: true, blockers: ["current approved budget evidence is unavailable or invalid"],
+        budget_approval_available: true, blockers: ["current approved authorization evidence is unavailable or invalid"],
       } });
     }
     if (url.pathname.endsWith("/scenario-plans/budget-approval")) {
+      operations.push("budget-approval");
       requests.push(request.postDataJSON());
       budgetApproved = true;
       return route.fulfill({ status: 201, json: {
@@ -51,15 +55,19 @@ test("bounded evaluation computes budget scope server-side and permits its machi
       } });
     }
     if (url.pathname.endsWith("/scenario-plans/approve")) {
+      operations.push("plan-approval");
       return route.fulfill({ json: {
-        approved: true, approval_id: "one-use", organization_id: organization.id, scenario_id: scenario.id,
+        approved: true, approval_id: "one-use", approval_reference: approvalReference,
+        organization_id: organization.id, scenario_id: scenario.id,
         plan_digest: planDigest, authorization_scope_digest: scopeDigest, machine_ids: [],
       } });
     }
     if (url.pathname.endsWith("/run")) {
+      operations.push("run");
       run = {
         state: "running", run_id: "run-test", run_namespace: `${organization.id}/${scenario.id}/run-test`,
-        organization_id: organization.id, scenario_id: scenario.id, plan_digest: planDigest, steps: [],
+        organization_id: organization.id, scenario_id: scenario.id, plan_digest: planDigest,
+        approval_reference: approvalReference, steps: [],
       };
       return route.fulfill({ status: 202, json: run });
     }
@@ -77,16 +85,11 @@ test("bounded evaluation computes budget scope server-side and permits its machi
     return route.fulfill({ status: 404, json: { error: "Not configured by fixture" } });
   });
   await page.goto(`${origin}/scenarios.html#simulate`);
+  expect(operations).toEqual([]);
+  expect(requests).toEqual([]);
   await page.locator("#scenario-plan-scenario").selectOption(scenario.id);
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Approve 15-minute evaluation budget" })).toBeVisible();
-  await page.getByRole("button", { name: "Approve 15-minute evaluation budget" }).click();
-  await expect(page.locator("#scenario-plan-approve")).toBeEnabled();
-  expect(requests).toEqual([{ organization_id: organization.id, scenario_id: scenario.id }]);
-  await page.locator("#scenario-plan-approve").click();
-  await page.locator("#scenario-plan-explicit-confirm").check();
-  await page.locator("#scenario-plan-confirm-approval").click();
-  await expect(page.locator("#scenario-plan-run-button")).toBeEnabled();
-  await page.locator("#scenario-plan-run-button").click();
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-test");
+  expect(requests).toEqual([{ organization_id: organization.id, scenario_id: scenario.id }]);
+  expect(operations).toEqual(["preflight", "budget-approval", "preflight", "plan-approval", "run"]);
+  await expect(page.locator("#scenario-plan-approval-dialog")).toHaveCount(0);
 });

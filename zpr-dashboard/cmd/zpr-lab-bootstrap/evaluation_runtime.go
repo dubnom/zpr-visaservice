@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -698,12 +699,8 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 			SessionLifetimeSeconds: 3600,
 			Grants: []operatorauth.Grant{{
 				Issuer: issuer, Subject: admin.Subject, Organizations: []string{organization},
-				Permissions: []string{"simulator.read", "simulator.control", "organization.read", "organization.activate",
-					"scenario.read", "scenario.analyze", "scenario.run", "scenario.cancel", "device.lifecycle", "device.workloads"},
+				Permissions: evaluationSimulatorOperatorPermissions(inventory.Config.ScenarioDemo),
 			}},
-		}
-		if inventory.Config.ScenarioDemo {
-			simulator.Grants[0].Permissions = append(simulator.Grants[0].Permissions, "budget.approve")
 		}
 		if err := simulator.Validate(); err != nil {
 			return errors.New("verified Simulator operator grant is invalid")
@@ -727,7 +724,20 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 	if err != nil {
 		return errors.New("cannot read Control Room client certificate")
 	}
-	trust, err := evaluationDelegationTrustFile(inventory.Config, issuer, organization, signerKey, clientChain, admin, reviewer)
+	var simulatorKey, simulatorChain []byte
+	if inventory.Config.SimulatorPort != 0 {
+		if simulatorKey, err = os.ReadFile(filepath.Join(state, "simulator-delegation-key.pem")); err != nil {
+			return errors.New("cannot read private Simulator delegation key")
+		}
+		if simulatorChain, err = os.ReadFile(filepath.Join(state, "simulator-client-chain.pem")); err != nil {
+			return errors.New("cannot read Simulator client certificate")
+		}
+	}
+	trustAdmin, err := evaluationSimulatorTrustAdmin(state, issuer, organization, inventory.Config, admin)
+	if err != nil {
+		return err
+	}
+	trust, err := evaluationDelegationTrustFile(inventory.Config, issuer, organization, signerKey, clientChain, simulatorKey, simulatorChain, trustAdmin, reviewer)
 	if err != nil {
 		return err
 	}
@@ -748,6 +758,7 @@ func writeEvaluationOnce(state, name string, data []byte) error {
 		}
 		return nil
 	}
+
 	if !errors.Is(err, os.ErrNotExist) {
 		return errors.New("cannot read existing operator grant")
 	}
@@ -757,6 +768,61 @@ func writeEvaluationOnce(state, name string, data []byte) error {
 	}
 	defer root.Close()
 	return writePrivate(root, name, data)
+}
+
+func evaluationSimulatorOperatorPermissions(scenarioDemo bool) []string {
+	permissions := []string{
+		"simulator.read", "simulator.control", "organization.read", "organization.activate",
+		"scenario.read", "scenario.analyze", "scenario.run", "scenario.cancel",
+		"device.lifecycle", "device.workloads", "approval.self",
+	}
+	if scenarioDemo {
+		permissions = append(permissions, "budget.approve")
+	}
+	return permissions
+}
+
+func evaluationSimulatorTrustAdmin(
+	state, issuer, organization string,
+	config evaluationConfig,
+	admin operatorGrantIdentity,
+) (operatorGrantIdentity, error) {
+	trustAdmin := admin
+	trustAdmin.Permissions = append([]string(nil), admin.Permissions...)
+	if config.SimulatorPort == 0 {
+		return trustAdmin, nil
+	}
+	data, err := os.ReadFile(filepath.Join(state, evaluationDelegationTrust))
+	if errors.Is(err, os.ErrNotExist) {
+		if !slices.Contains(trustAdmin.Permissions, "approval.self") {
+			trustAdmin.Permissions = append(trustAdmin.Permissions, "approval.self")
+		}
+		return trustAdmin, nil
+	}
+	if err != nil {
+		return operatorGrantIdentity{}, errors.New("cannot read existing operator delegation trust")
+	}
+	var trust operatordelegation.Config
+	if json.Unmarshal(data, &trust) != nil || trust.Validate() != nil {
+		return operatorGrantIdentity{}, errors.New("existing operator delegation trust is invalid")
+	}
+	for _, grant := range trust.Grants {
+		if grant.Issuer != issuer || grant.Subject != admin.Subject ||
+			!slices.Contains(grant.Organizations, organization) {
+			continue
+		}
+		if slices.Contains(grant.Permissions, "approval.self") {
+			if !slices.Contains(trustAdmin.Permissions, "approval.self") {
+				trustAdmin.Permissions = append(trustAdmin.Permissions, "approval.self")
+			}
+		} else {
+			trustAdmin.Permissions = slices.DeleteFunc(trustAdmin.Permissions, func(permission string) bool {
+				return permission == "approval.self"
+			})
+		}
+		return trustAdmin, nil
+	}
+	return operatorGrantIdentity{}, errors.New("existing operator delegation trust lacks the named Simulator operator grant")
 }
 
 func evaluationDockerEnvironment() []string {

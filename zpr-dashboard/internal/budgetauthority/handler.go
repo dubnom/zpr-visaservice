@@ -43,10 +43,12 @@ type EvidenceResponse struct {
 	Revoked        bool      `json:"revoked"`
 }
 
-type approvalRequest struct {
-	Scope     ScopeRequest `json:"scope"`
-	Decision  Decision     `json:"decision"`
-	ExpiresAt time.Time    `json:"expires_at"`
+// ApprovalRequest describes an exact decision and optional self-approval requirement.
+type ApprovalRequest struct {
+	Scope               ScopeRequest `json:"scope"`
+	Decision            Decision     `json:"decision"`
+	ExpiresAt           time.Time    `json:"expires_at"`
+	RequireSelfApproval bool         `json:"require_self_approval,omitempty"`
 }
 
 type revokeRequest struct {
@@ -205,7 +207,7 @@ func (h *Handler) Operator(w http.ResponseWriter, r *http.Request) {
 
 // approve persists an explicitly authorized approval for one exact scope.
 func (h *Handler) approve(w http.ResponseWriter, r *http.Request, body []byte) {
-	var request approvalRequest
+	var request ApprovalRequest
 	if err := decodeHandlerJSON(body, &request); err != nil {
 		http.Error(w, "invalid budget approval request", http.StatusBadRequest)
 		return
@@ -222,11 +224,15 @@ func (h *Handler) approve(w http.ResponseWriter, r *http.Request, body []byte) {
 	}
 	grant, err := h.verifier.Verify(r, body, now)
 	if err != nil {
-		http.Error(w, "operator delegation is unavailable or denied", http.StatusForbidden)
+		writeApprovalAuthorizationError(w, request.RequireSelfApproval, "operator delegation is unavailable or denied")
 		return
 	}
 	if !authorizedBudgetApprover(grant, scope.OrganizationID) {
-		http.Error(w, "budget approval permission denied", http.StatusForbidden)
+		writeApprovalAuthorizationError(w, request.RequireSelfApproval, "budget approval permission denied")
+		return
+	}
+	if request.RequireSelfApproval && !slices.Contains(grant.Permissions, "approval.self") {
+		writeApprovalAuthorizationError(w, true, "budget self-approval permission denied")
 		return
 	}
 	if err := h.recordOperatorRequest(r, grant, scope.OrganizationID,
@@ -242,6 +248,20 @@ func (h *Handler) approve(w http.ResponseWriter, r *http.Request, body []byte) {
 		return
 	}
 	writeEvidence(w, http.StatusCreated, evidence)
+}
+
+func writeApprovalAuthorizationError(w http.ResponseWriter, requireSelfApproval bool, message string) {
+	if !requireSelfApproval {
+		http.Error(w, message, http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"error": "Budget self-approval requires a current named operator session and both budget.approve and approval.self in the independent backend grant.",
+	}); err != nil {
+		log.Printf("Budget self-approval denial could not be written: %T", err)
+	}
 }
 
 // revoke persists an explicitly authorized revocation for one organization.
@@ -298,6 +318,10 @@ func (h *Handler) recordOperatorRequest(
 	if _, err := rand.Read(correlation[:]); err != nil {
 		return err
 	}
+	outcome := "requested"
+	if action == "budget.approval.create" && slices.Contains(grant.Permissions, "approval.self") {
+		outcome = "self-approval-requested"
+	}
 	_, err := h.auditRepository.Append(r.Context(), auditcontract.Event{
 		OrganizationID: organizationID,
 		OccurredAt:     now.UTC(),
@@ -305,7 +329,7 @@ func (h *Handler) recordOperatorRequest(
 		ActorSubject:   grant.Subject,
 		Action:         action,
 		Target:         target,
-		Outcome:        "requested",
+		Outcome:        outcome,
 		Source:         "control-service",
 		CorrelationID:  hex.EncodeToString(correlation[:]),
 	})

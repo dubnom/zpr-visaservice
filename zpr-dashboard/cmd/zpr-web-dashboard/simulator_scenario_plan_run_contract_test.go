@@ -88,6 +88,7 @@ func TestSimulatorScenarioPlanApprovalRunHTTPContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !approval.Approved || approval.ApprovalID == "" ||
+		approval.ApprovalReference != simulatorScenarioPlanApprovalReference(approval.ApprovalID) ||
 		approval.OrganizationID != organization.ID || approval.ScenarioID != scenario.ID ||
 		approval.PlanDigest != preflight.PlanDigest ||
 		!reflect.DeepEqual(approval.MachineIDs, preflight.MachineIDs) {
@@ -121,7 +122,8 @@ func TestSimulatorScenarioPlanApprovalRunHTTPContract(t *testing.T) {
 	}
 	wantNamespace := organization.ID + "/" + scenario.ID + "/" + run.RunID
 	if run.State != "running" || run.RunID == "" || run.RunNamespace != wantNamespace ||
-		run.PlanDigest != approval.PlanDigest || run.OrganizationID != organization.ID ||
+		run.PlanDigest != approval.PlanDigest || run.ApprovalReference != approval.ApprovalReference ||
+		run.OrganizationID != organization.ID ||
 		run.ScenarioID != scenario.ID || !reflect.DeepEqual(run.MachineIDs, approval.MachineIDs) {
 		t.Fatalf("run snapshot = %+v", run)
 	}
@@ -243,8 +245,10 @@ func newSimulatorScenarioPlanRunContractHandler(
 	setCurrentSimulatorBudgetEvidenceResolver(manager)
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/simulator/scenario-plans/preflight", planHandler.Preflight)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-plans/preflight", planHandler.Preflight)
 	mux.HandleFunc("POST /api/simulator/scenario-plans/approve", planHandler.Approve)
-	mux.HandleFunc("POST /api/simulator/scenarios/{scenario}/run", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-plans/approve", planHandler.Approve)
+	runScenario := func(w http.ResponseWriter, r *http.Request) {
 		var request workspaceScenarioRunRequest
 		if !decodeSimulatorScenarioPlanRequest(w, r, &request) {
 			return
@@ -258,7 +262,8 @@ func newSimulatorScenarioPlanRunContractHandler(
 			writeWorkspaceError(w, http.StatusConflict, "scenario path does not match the selected scenario")
 			return
 		}
-		if err := manager.startApprovedVersioned(
+		if err := manager.startApprovedVersionedContext(
+			r.Context(),
 			scenario, manifest, organization, executor, organization.ID, 7, request.ApprovalID, request.PlanDigest,
 		); err != nil {
 			if errors.Is(err, errSimulatorScenarioApprovalUnknown) ||
@@ -272,7 +277,9 @@ func newSimulatorScenarioPlanRunContractHandler(
 		}
 		w.WriteHeader(http.StatusAccepted)
 		writeSimulatorJSON(w, manager.snapshot())
-	})
+	}
+	mux.HandleFunc("POST /api/simulator/scenarios/{scenario}/run", runScenario)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenarios/{scenario}/run", runScenario)
 	return mux
 }
 

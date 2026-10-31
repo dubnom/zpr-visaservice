@@ -140,7 +140,7 @@ func TestSimulatorRetainedTopologyPlanPreservesOriginalScenarioAndOtherGates(t *
 	if plan.Status != simulatorRuntimePlanBlocked ||
 		plan.PackageContractStatus != "retained-topology-only" ||
 		!hasSimulatorRuntimePlanBlocker(plan, "retained runtime machine lifecycle consumer is not installed") ||
-		!hasSimulatorRuntimePlanBlocker(plan, "approved budget evidence is absent") ||
+		!hasSimulatorRuntimePlanBlocker(plan, "approved authorization evidence is absent") ||
 		!hasSimulatorRuntimePlanBlocker(plan, "policy resolution is required") {
 		t.Fatalf("binding weakened readiness: %+v", plan)
 	}

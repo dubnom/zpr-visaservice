@@ -10,10 +10,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -71,6 +71,7 @@ type simulatorScenarioBudgetEvidenceUnavailableResponse struct {
 type simulatorScenarioPlanApprovalResponse struct {
 	Approved                 bool     `json:"approved"`
 	ApprovalID               string   `json:"approval_id"`
+	ApprovalReference        string   `json:"approval_reference"`
 	OrganizationID           string   `json:"organization_id"`
 	ScenarioID               string   `json:"scenario_id"`
 	PlanDigest               string   `json:"plan_digest"`
@@ -94,6 +95,7 @@ type simulatorScenarioPlanApproval struct {
 	ID         string
 	Plan       simulatorRuntimePlan
 	PlanDigest string
+	Principal  simulatorScenarioPrincipal
 }
 
 type simulatorScenarioPlanApprovalStore struct {
@@ -120,13 +122,21 @@ func newSimulatorScenarioPlanApprovalStore() *simulatorScenarioPlanApprovalStore
 	}
 }
 
+func validateSimulatorScenarioPlanIDs(w http.ResponseWriter, organizationID, scenarioID string) bool {
+	if !validSimulatorRunNamespaceID(organizationID) || !validSimulatorRunNamespaceID(scenarioID) {
+		http.Error(w, fmt.Sprintf("organization_id and scenario_id must be valid lowercase IDs of at most %d characters",
+			maxSimulatorRunNamespaceIDLength), http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
 func (h *simulatorScenarioPlanHandler) Preflight(w http.ResponseWriter, r *http.Request) {
 	var request simulatorScenarioPlanRequest
 	if !decodeSimulatorScenarioPlanRequest(w, r, &request) {
 		return
 	}
-	if !validScenarioID(request.OrganizationID) || !validScenarioID(request.ScenarioID) {
-		http.Error(w, "valid organization_id and scenario_id are required", http.StatusBadRequest)
+	if !validateSimulatorScenarioPlanIDs(w, request.OrganizationID, request.ScenarioID) {
 		return
 	}
 	if !h.requestOrganizationMatches(w, r, request.OrganizationID) {
@@ -159,10 +169,10 @@ func writeSimulatorScenarioBudgetEvidenceUnavailable(
 	plan simulatorRuntimePlan,
 ) {
 	if !validSimulatorScenarioAuthorizationScopeDigest(plan.AuthorizationScopeDigest) {
-		http.Error(w, "current approved budget evidence is unavailable or invalid", http.StatusServiceUnavailable)
+		http.Error(w, "current approved authorization evidence is unavailable or invalid", http.StatusServiceUnavailable)
 		return
 	}
-	const blocker = "current approved budget evidence is unavailable or invalid"
+	const blocker = "current approved authorization evidence is unavailable or invalid"
 	blockers := append([]string(nil), plan.Blockers...)
 	found := false
 	for _, existing := range blockers {
@@ -184,14 +194,14 @@ func writeSimulatorScenarioBudgetEvidenceUnavailable(
 	}
 	content, err := json.Marshal(response)
 	if err != nil {
-		http.Error(w, "budget evidence failure response could not be encoded", http.StatusInternalServerError)
+		http.Error(w, "authorization evidence failure response could not be encoded", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusServiceUnavailable)
 	if _, err := w.Write(append(content, '\n')); err != nil {
-		log.Printf("write Simulator budget evidence failure response: %v", err)
+		log.Printf("write Simulator authorization evidence failure response: %v", err)
 	}
 }
 
@@ -200,9 +210,11 @@ func (h *simulatorScenarioPlanHandler) Approve(w http.ResponseWriter, r *http.Re
 	if !decodeSimulatorScenarioPlanRequest(w, r, &request) {
 		return
 	}
-	if !validScenarioID(request.OrganizationID) || !validScenarioID(request.ScenarioID) ||
-		request.PlanDigest == "" {
-		http.Error(w, "organization_id, scenario_id, and plan_digest are required", http.StatusBadRequest)
+	if !validateSimulatorScenarioPlanIDs(w, request.OrganizationID, request.ScenarioID) {
+		return
+	}
+	if request.PlanDigest == "" {
+		http.Error(w, "plan_digest is required", http.StatusBadRequest)
 		return
 	}
 	if !request.Approved {
@@ -210,6 +222,11 @@ func (h *simulatorScenarioPlanHandler) Approve(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if !h.requestOrganizationMatches(w, r, request.OrganizationID) {
+		return
+	}
+	principal, err := simulatorScenarioPrincipalFromContext(r.Context())
+	if err != nil {
+		writeWorkspaceError(w, http.StatusForbidden, simulatorScenarioOperatorDeniedMessage)
 		return
 	}
 	plan, err := h.buildPlan(request.OrganizationID, request.ScenarioID)
@@ -223,7 +240,7 @@ func (h *simulatorScenarioPlanHandler) Approve(w http.ResponseWriter, r *http.Re
 	}
 	h.resolveNorthstarPolicyReadback(r.Context(), &plan)
 	if err := h.resolvePlanBudgetEvidence(r.Context(), &plan); err != nil {
-		http.Error(w, "current approved budget evidence is unavailable or invalid", http.StatusServiceUnavailable)
+		http.Error(w, "current approved authorization evidence is unavailable or invalid", http.StatusServiceUnavailable)
 		return
 	}
 	digest, err := simulatorScenarioPlanDigest(plan)
@@ -237,27 +254,33 @@ func (h *simulatorScenarioPlanHandler) Approve(w http.ResponseWriter, r *http.Re
 	}
 	if plan.Status != simulatorRuntimePlanOnly ||
 		plan.BudgetStatus != simulatorRuntimeBudgetApproved || len(plan.Blockers) != 0 {
-		http.Error(w, "blocked scenario plan or unapproved budget cannot be approved", http.StatusConflict)
+		http.Error(w, "blocked scenario plan or unapproved authorization cannot be approved", http.StatusConflict)
 		return
 	}
 	if h.approvals == nil {
 		http.Error(w, "scenario plan approval store is unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	approvalID, err := h.approvals.issue(plan)
+	if err := revalidateSimulatorScenarioPrincipal(r.Context(), principal); err != nil {
+		writeWorkspaceError(w, http.StatusForbidden, simulatorScenarioOperatorDeniedMessage)
+		return
+	}
+	approvalID, err := h.approvals.issueOrResumeForPrincipal(plan, principal)
 	if err != nil {
 		if errors.Is(err, errSimulatorScenarioPlanApprovalPending) {
-			http.Error(w, "an unconsumed approval already exists for this plan", http.StatusConflict)
+			writeWorkspaceError(w, http.StatusConflict, "An unconsumed approval for this plan belongs to a different operator or authorization mode.")
 			return
 		}
+		log.Printf("Simulator scenario plan approval could not be issued or resumed: %v", err)
 		http.Error(w, "scenario plan approval could not be issued", http.StatusInternalServerError)
 		return
 	}
 	writeSimulatorJSON(w, simulatorScenarioPlanApprovalResponse{
 		Approved: true, ApprovalID: approvalID,
-		OrganizationID: plan.OrganizationID, ScenarioID: plan.ScenarioID,
+		ApprovalReference: simulatorScenarioPlanApprovalReference(approvalID),
+		OrganizationID:    plan.OrganizationID, ScenarioID: plan.ScenarioID,
 		PlanDigest: digest, AuthorizationScopeDigest: plan.AuthorizationScopeDigest,
-		MachineIDs: append([]string(nil), plan.MachineIDs...),
+		MachineIDs: append([]string{}, plan.MachineIDs...),
 	})
 }
 
@@ -412,7 +435,7 @@ func setSimulatorRuntimePolicyReadback(plan *simulatorRuntimePlan, status, block
 
 func withoutSimulatorRuntimeBudgetEvidenceBlockers(blockers []string) []string {
 	const (
-		absent        = "approved budget evidence is absent"
+		absent        = "approved authorization evidence is absent"
 		unapproved    = "budget is not approved"
 		missingID     = "budget approval reference is required"
 		scopeMismatch = "budget approval does not match the selected organization and scenario"
@@ -610,7 +633,29 @@ func validSimulatorScenarioAuthorizationScopeDigest(digest string) bool {
 
 var errSimulatorScenarioPlanApprovalPending = errors.New("scenario plan approval is already pending")
 
-func (store *simulatorScenarioPlanApprovalStore) issue(plan simulatorRuntimePlan) (string, error) {
+func simulatorScenarioPlanApprovalReference(approvalID string) string {
+	digest := sha256.Sum256([]byte("simulator-scenario-approval-reference-v1\x00" + approvalID))
+	return "sha256:" + hex.EncodeToString(digest[:])
+}
+
+func (store *simulatorScenarioPlanApprovalStore) issueForPrincipal(
+	plan simulatorRuntimePlan, principal simulatorScenarioPrincipal,
+) (string, error) {
+	return store.issueOrResume(plan, principal, false)
+}
+
+func (store *simulatorScenarioPlanApprovalStore) issueOrResumeForPrincipal(
+	plan simulatorRuntimePlan, principal simulatorScenarioPrincipal,
+) (string, error) {
+	return store.issueOrResume(plan, principal, true)
+}
+
+func (store *simulatorScenarioPlanApprovalStore) issueOrResume(
+	plan simulatorRuntimePlan, principal simulatorScenarioPrincipal, resume bool,
+) (string, error) {
+	if !principal.valid() {
+		return "", errSimulatorScenarioOperatorDenied
+	}
 	plan = cloneSimulatorRuntimePlan(plan)
 	digest, err := simulatorScenarioPlanDigest(plan)
 	if err != nil {
@@ -625,8 +670,21 @@ func (store *simulatorScenarioPlanApprovalStore) issue(plan simulatorRuntimePlan
 		store.pendingByScope = make(map[string]string)
 	}
 	scope := simulatorScenarioPlanApprovalScope(plan.OrganizationID, plan.ScenarioID, digest)
-	if _, exists := store.pendingByScope[scope]; exists {
-		return "", errSimulatorScenarioPlanApprovalPending
+	if approvalID, exists := store.pendingByScope[scope]; exists {
+		if !resume {
+			return "", errSimulatorScenarioPlanApprovalPending
+		}
+		approval, exists := store.byID[approvalID]
+		if !exists {
+			return "", errors.New("pending scenario approval index is inconsistent")
+		}
+		if _, err := store.matchingApprovalLocked(approvalID, plan.OrganizationID, plan.ScenarioID, digest, approval.Principal); err != nil {
+			return "", fmt.Errorf("pending scenario approval is inconsistent: %w", err)
+		}
+		if approval.Principal != principal {
+			return "", errSimulatorScenarioPlanApprovalPending
+		}
+		return approvalID, nil
 	}
 	token := make([]byte, 32)
 	if _, err := rand.Read(token); err != nil {
@@ -637,7 +695,7 @@ func (store *simulatorScenarioPlanApprovalStore) issue(plan simulatorRuntimePlan
 		return "", errors.New("scenario plan approval identifier collision")
 	}
 	approval := simulatorScenarioPlanApproval{
-		ID: approvalID, Plan: plan, PlanDigest: digest,
+		ID: approvalID, Plan: plan, PlanDigest: digest, Principal: principal,
 	}
 	store.byID[approvalID] = approval
 	store.pendingByScope[scope] = approvalID
@@ -649,10 +707,12 @@ var (
 	errSimulatorScenarioApprovalScopeMismatch = errors.New("scenario plan approval scope does not match")
 )
 
-func (store *simulatorScenarioPlanApprovalStore) consume(approvalID, organizationID, scenarioID, planDigest string) (simulatorRuntimePlan, error) {
+func (store *simulatorScenarioPlanApprovalStore) consumeForPrincipal(
+	approvalID, organizationID, scenarioID, planDigest string, principal simulatorScenarioPrincipal,
+) (simulatorRuntimePlan, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	approval, err := store.matchingApprovalLocked(approvalID, organizationID, scenarioID, planDigest)
+	approval, err := store.matchingApprovalLocked(approvalID, organizationID, scenarioID, planDigest, principal)
 	if err != nil {
 		return simulatorRuntimePlan{}, err
 	}
@@ -664,10 +724,12 @@ func (store *simulatorScenarioPlanApprovalStore) consume(approvalID, organizatio
 	return cloneSimulatorRuntimePlan(approval.Plan), nil
 }
 
-func (store *simulatorScenarioPlanApprovalStore) lookup(approvalID, organizationID, scenarioID, planDigest string) (simulatorRuntimePlan, error) {
+func (store *simulatorScenarioPlanApprovalStore) lookupForPrincipal(
+	approvalID, organizationID, scenarioID, planDigest string, principal simulatorScenarioPrincipal,
+) (simulatorRuntimePlan, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	approval, err := store.matchingApprovalLocked(approvalID, organizationID, scenarioID, planDigest)
+	approval, err := store.matchingApprovalLocked(approvalID, organizationID, scenarioID, planDigest, principal)
 	if err != nil {
 		return simulatorRuntimePlan{}, err
 	}
@@ -675,8 +737,11 @@ func (store *simulatorScenarioPlanApprovalStore) lookup(approvalID, organization
 }
 
 func (store *simulatorScenarioPlanApprovalStore) matchingApprovalLocked(
-	approvalID, organizationID, scenarioID, planDigest string,
+	approvalID, organizationID, scenarioID, planDigest string, principal simulatorScenarioPrincipal,
 ) (simulatorScenarioPlanApproval, error) {
+	if !principal.valid() {
+		return simulatorScenarioPlanApproval{}, errSimulatorScenarioOperatorDenied
+	}
 	approval, exists := store.byID[approvalID]
 	if !exists {
 		return simulatorScenarioPlanApproval{}, errSimulatorScenarioApprovalUnknown
@@ -684,7 +749,8 @@ func (store *simulatorScenarioPlanApprovalStore) matchingApprovalLocked(
 	if approval.ID != approvalID ||
 		approval.Plan.OrganizationID != organizationID ||
 		approval.Plan.ScenarioID != scenarioID ||
-		approval.PlanDigest != planDigest {
+		approval.PlanDigest != planDigest ||
+		approval.Principal != principal {
 		return simulatorScenarioPlanApproval{}, errSimulatorScenarioApprovalScopeMismatch
 	}
 	actualDigest, err := simulatorScenarioPlanDigest(approval.Plan)
@@ -695,14 +761,6 @@ func (store *simulatorScenarioPlanApprovalStore) matchingApprovalLocked(
 		return simulatorScenarioPlanApproval{}, errSimulatorScenarioApprovalScopeMismatch
 	}
 	return approval, nil
-}
-
-func consumeSimulatorScenarioApproval(approvalID, organizationID, scenarioID, planDigest string) (simulatorRuntimePlan, error) {
-	return simulatorScenarioPlanApprovals.consume(approvalID, organizationID, scenarioID, planDigest)
-}
-
-func lookupSimulatorScenarioApproval(approvalID, organizationID, scenarioID, planDigest string) (simulatorRuntimePlan, error) {
-	return simulatorScenarioPlanApprovals.lookup(approvalID, organizationID, scenarioID, planDigest)
 }
 
 func simulatorScenarioPlanApprovalScope(organizationID, scenarioID, planDigest string) string {
@@ -719,10 +777,10 @@ func (failure *simulatorScenarioPlanBuildFailure) Error() string { return failur
 func writeSimulatorScenarioPlanBuildError(w http.ResponseWriter, err error) {
 	var failure *simulatorScenarioPlanBuildFailure
 	if errors.As(err, &failure) {
-		http.Error(w, failure.message, failure.status)
+		writeWorkspaceError(w, failure.status, failure.message)
 		return
 	}
-	http.Error(w, "scenario plan input is unavailable", http.StatusServiceUnavailable)
+	writeWorkspaceError(w, http.StatusServiceUnavailable, "scenario plan input is unavailable")
 }
 
 func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simulatorRuntimePlan, error) {
@@ -739,14 +797,27 @@ func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simul
 		}
 	}
 	manifest.OrganizationID = organizationID
-	scenario, err := readExplicitSimulatorScenario(scenarioID)
+	path, err := workspaceDatabasePath(organizationID)
 	if err != nil {
-		var failure *simulatorScenarioPlanBuildFailure
+		return simulatorRuntimePlan{}, &simulatorScenarioPlanBuildFailure{
+			status: http.StatusBadRequest, message: "valid organization_id is required",
+		}
+	}
+	store, err := openExistingWorkspaceRepository(path)
+	if err != nil {
+		return simulatorRuntimePlan{}, &simulatorScenarioPlanBuildFailure{
+			status: http.StatusServiceUnavailable, message: "published scenario workspace is unavailable; load the scenario catalog first",
+		}
+	}
+	defer store.Close()
+	scenario, _, err := readPublishedSimulatorScenario(context.Background(), store, organizationID, scenarioID)
+	if err != nil {
+		var failure *simulatorPublishedScenarioFailure
 		if errors.As(err, &failure) {
-			return simulatorRuntimePlan{}, failure
+			return simulatorRuntimePlan{}, &simulatorScenarioPlanBuildFailure{status: failure.status, message: failure.message}
 		}
 		return simulatorRuntimePlan{}, &simulatorScenarioPlanBuildFailure{
-			status: http.StatusUnprocessableEntity, message: "scenario input is invalid",
+			status: http.StatusServiceUnavailable, message: "published scenario is unavailable",
 		}
 	}
 
@@ -776,6 +847,9 @@ func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simul
 	}
 	input.AuthorizationScopeDigest = scopeDigest
 	plan := buildSimulatorRuntimePlan(input)
+	if err := validateSimulatorScenarioMachineRuntime(organization, manifest, plan.MachineIDs); err != nil {
+		addSimulatorRuntimePlanBlocker(&plan, "scenario runtime is unavailable: "+err.Error())
+	}
 	if organization.RetainedTopologyBinding != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		resolveSimulatorRetainedTopology(ctx, &plan, organization)
@@ -831,48 +905,6 @@ func simulatorRuntimeNorthstarAssets(organization simulatorOrganization, organiz
 		Resolved: len(missing) == 0,
 		Missing:  missing,
 	}
-}
-
-func readExplicitSimulatorScenario(scenarioID string) (simulatorScenario, error) {
-	var scenario simulatorScenario
-	if !validScenarioID(scenarioID) {
-		return scenario, &simulatorScenarioPlanBuildFailure{
-			status: http.StatusBadRequest, message: "valid scenario_id is required",
-		}
-	}
-	filename := filepath.Join(simulatorScenarioDirectory(), scenarioID+".json")
-	info, err := os.Stat(filename)
-	if errors.Is(err, os.ErrNotExist) {
-		return scenario, &simulatorScenarioPlanBuildFailure{
-			status: http.StatusNotFound, message: "scenario was not found",
-		}
-	}
-	if err != nil || info.Size() > maxScenarioFileSize {
-		return scenario, &simulatorScenarioPlanBuildFailure{
-			status: http.StatusServiceUnavailable, message: "scenario file is unavailable",
-		}
-	}
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		return scenario, &simulatorScenarioPlanBuildFailure{
-			status: http.StatusServiceUnavailable, message: "scenario file is unavailable",
-		}
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(content)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&scenario); err != nil {
-		return scenario, err
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return scenario, errors.New("scenario file contains trailing data")
-	}
-	if scenario.ID != scenarioID {
-		return scenario, &simulatorScenarioPlanBuildFailure{
-			status: http.StatusUnprocessableEntity, message: "scenario identity does not match its filename",
-		}
-	}
-	return scenario, nil
 }
 
 func addSimulatorRuntimePlanBlocker(plan *simulatorRuntimePlan, message string) {

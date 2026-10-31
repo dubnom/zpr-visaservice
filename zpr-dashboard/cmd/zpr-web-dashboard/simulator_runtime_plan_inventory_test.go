@@ -141,7 +141,7 @@ func TestSimulatorRuntimePlanInventoryMatchesBundledScenarios(t *testing.T) {
 		}
 		if plan.Status != simulatorRuntimePlanBlocked ||
 			plan.BudgetStatus != simulatorRuntimeBudgetAbsent ||
-			!hasSimulatorRuntimePlanBlocker(plan, "approved budget evidence is absent") {
+			!hasSimulatorRuntimePlanBlocker(plan, "approved authorization evidence is absent") {
 			t.Errorf("%s without approval evidence must remain blocked: status=%q budget=%q blockers=%v",
 				scenario.ID, plan.Status, plan.BudgetStatus, plan.Blockers)
 		}
@@ -167,8 +167,8 @@ func TestSimulatorRuntimePlanInventoryKeepsLoadLabBudgetsUnapproved(t *testing.T
 			plan := buildSimulatorRuntimePlan(input)
 			if plan.Status != simulatorRuntimePlanBlocked ||
 				plan.BudgetStatus != simulatorRuntimeBudgetAbsent ||
-				!hasSimulatorRuntimePlanBlocker(plan, "approved budget evidence is absent") {
-				t.Fatalf("LoadLab plan must remain blocked without approved budget evidence: %+v", plan)
+				!hasSimulatorRuntimePlanBlocker(plan, "approved authorization evidence is absent") {
+				t.Fatalf("LoadLab plan must remain blocked without approved authorization evidence: %+v", plan)
 			}
 			if !reflect.DeepEqual(plan.MachineIDs, []string{"machine-03", "machine-05"}) {
 				t.Fatalf("LoadLab machine refs = %v, want machine-03 and machine-05 only", plan.MachineIDs)

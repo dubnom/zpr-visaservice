@@ -162,11 +162,15 @@ Invitation, approval, and credential lifetimes are independently configured,
 positive, bounded, and visible in the relevant response. Expiry of one does
 not imply expiry of another. Approval requires a current invitation and asset
 revision, an authorized human decision, the exact claimed key, and any
-profile-required evidence. In the initial single-operator configuration, the
-creator may approve their own invitation; this exception must be explicitly
-configured and audited. Before multi-operator production use, creator
-self-approval is a deferred security issue: enforce distinct issuer/subject
-for creator and approver in this service's transaction and test it. See the
+profile-required evidence. The creator may approve their own invitation in
+single- or multi-operator configurations when their organization-scoped grants
+include both approval permission and `approval.self`. Delegated operations
+require self-approval permission in the current session and independent backend
+grants. Creating and approving remain separate actions; there is no mandatory
+distinct creator/approver identity. Self-approval must be attributable and
+warned about in Audit; the warning is advisory, not an authorization bypass or
+an additional confirmation gate. Broader Audit warning coverage remains an
+implementation/qualification requirement, not a claim of live deployment. See the
 [security hardening tracker](./SECURITY_HARDENING.md#p1-enrollment-approval-separation-of-duties).
 
 ## Device API

@@ -228,7 +228,7 @@ func validateRuntimeOutput(t *testing.T, output, stdout string) {
 		simulatorAuth.ClientID != "zpr-simulator" || simulatorAuth.RedirectURL != runtimeSimulatorOrigin+"/auth/operator/callback" ||
 		len(simulatorAuth.Grants) != 1 || simulatorAuth.Grants[0].Subject != "synthetic-cli-test-subject" ||
 		!reflect.DeepEqual(simulatorAuth.Grants[0].Organizations, []string{"demo"}) ||
-		!reflect.DeepEqual(simulatorAuth.Grants[0].Permissions, []string{"organization.read", "scenario.read", "scenario.run"}) {
+		!reflect.DeepEqual(simulatorAuth.Grants[0].Permissions, []string{"organization.read", "scenario.read", "scenario.run", "approval.self"}) {
 		t.Fatal("Simulator operator configuration is not limited to the explicit scenario scope")
 	}
 	loopbackCA := readFile(t, filepath.Join(output, "simulator-loopback-ca.pem"))
@@ -297,7 +297,8 @@ func validateRuntimeOutput(t *testing.T, output, stdout string) {
 	if err := json.Unmarshal(trustBytes, &trust); err != nil || trust.Validate() != nil {
 		t.Fatalf("generated delegation trust invalid: %v", err)
 	}
-	if len(trust.Grants) != 1 || trust.Grants[0].Subject != "synthetic-cli-test-subject" {
+	if len(trust.Grants) != 1 || trust.Grants[0].Subject != "synthetic-cli-test-subject" ||
+		!reflect.DeepEqual(trust.Grants[0].Permissions, []string{"monitor.read", "budget.approve", "approval.self"}) {
 		t.Fatal("delegation trust did not use the explicit test subject")
 	}
 	for _, check := range []struct {

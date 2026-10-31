@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/budgetauthority"
+	"neboagency.com/zpr-dashborad/internal/simulator/setupmode"
 )
 
 const (
@@ -35,6 +36,7 @@ var errScenarioAlreadyRunning = errors.New("a scenario is already running")
 var errSimulatorOrganizationActivationInProgress = errors.New("organization activation is in progress")
 var errSimulatorScenarioApprovalRequired = errors.New("an approved scenario plan is required")
 var errSimulatorScenarioApprovalPlanMismatch = errors.New("approved scenario plan does not match the requested run")
+var errSimulatorScenarioRuntimeUnavailable = errors.New("scenario runtime is unavailable")
 
 type simulatorScenario struct {
 	ID             string                     `json:"id"`
@@ -103,6 +105,7 @@ type simulatorScenarioRun struct {
 	RunID             string                        `json:"run_id,omitempty"`
 	RunNamespace      string                        `json:"run_namespace,omitempty"`
 	PlanDigest        string                        `json:"plan_digest,omitempty"`
+	ApprovalReference string                        `json:"approval_reference,omitempty"`
 	MachineIDs        []string                      `json:"machine_ids,omitempty"`
 	WorkspaceRevision int                           `json:"workspace_revision,omitempty"`
 	State             string                        `json:"state"`
@@ -516,22 +519,6 @@ func (manager *simulatorScenarioManager) startVersioned(scenario simulatorScenar
 	return nil
 }
 
-func (manager *simulatorScenarioManager) startApprovedVersioned(
-	scenario simulatorScenario,
-	manifest simulatorManifest,
-	organization simulatorOrganization,
-	execute simulatorScenarioExecutor,
-	organizationID string,
-	revision int,
-	approvalID string,
-	planDigest string,
-) error {
-	return manager.startApprovedVersionedContext(
-		context.Background(), scenario, manifest, organization, execute,
-		organizationID, revision, approvalID, planDigest,
-	)
-}
-
 func (manager *simulatorScenarioManager) startApprovedVersionedContext(
 	ctx context.Context,
 	scenario simulatorScenario,
@@ -546,6 +533,10 @@ func (manager *simulatorScenarioManager) startApprovedVersionedContext(
 	if ctx == nil {
 		return errors.New("scenario run context is required")
 	}
+	principal, err := simulatorScenarioPrincipalFromContext(ctx)
+	if err != nil {
+		return err
+	}
 	manager.mu.RLock()
 	if err := manager.validateStartLocked(); err != nil {
 		manager.mu.RUnlock()
@@ -555,12 +546,16 @@ func (manager *simulatorScenarioManager) startApprovedVersionedContext(
 	if approvalID == "" || planDigest == "" {
 		return errSimulatorScenarioApprovalRequired
 	}
-	plan, err := lookupSimulatorScenarioApproval(approvalID, organizationID, scenario.ID, planDigest)
+	plan, err := simulatorScenarioPlanApprovals.lookupForPrincipal(
+		approvalID, organizationID, scenario.ID, planDigest, principal)
 	if err != nil {
 		return err
 	}
 	if !simulatorScenarioApprovedPlanMatchesRun(plan, planDigest, organizationID, scenario, manifest, organization) {
 		return errSimulatorScenarioApprovalPlanMismatch
+	}
+	if err := validateSimulatorScenarioMachineRuntime(organization, manifest, plan.MachineIDs); err != nil {
+		return fmt.Errorf("%w: %v", errSimulatorScenarioRuntimeUnavailable, err)
 	}
 	if organization.EvaluationRuntime != nil {
 		if err := validateEvaluationScenario(scenario, organization); err != nil {
@@ -591,12 +586,8 @@ func (manager *simulatorScenarioManager) startApprovedVersionedContext(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	consumedPlan, err := consumeSimulatorScenarioApproval(approvalID, organizationID, scenario.ID, planDigest)
-	if err != nil {
+	if err := revalidateSimulatorScenarioPrincipal(ctx, principal); err != nil {
 		return err
-	}
-	if !reflect.DeepEqual(consumedPlan, plan) {
-		return errSimulatorScenarioApprovalPlanMismatch
 	}
 	runID, err := newSimulatorScenarioRunID()
 	if err != nil {
@@ -606,9 +597,21 @@ func (manager *simulatorScenarioManager) startApprovedVersionedContext(
 	if err != nil {
 		return fmt.Errorf("create simulator run namespace: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	consumedPlan, err := simulatorScenarioPlanApprovals.consumeForPrincipal(
+		approvalID, organizationID, scenario.ID, planDigest, principal)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(consumedPlan, plan) {
+		return errSimulatorScenarioApprovalPlanMismatch
+	}
 	approval := &simulatorScenarioRunApproval{
 		runID: runID, namespace: namespace.Canonical(), planDigest: planDigest,
-		machineIDs: append([]string(nil), consumedPlan.MachineIDs...),
+		approvalReference: simulatorScenarioPlanApprovalReference(approvalID),
+		machineIDs:        append([]string(nil), consumedPlan.MachineIDs...),
 	}
 	manager.startLocked(scenario, manifest, execute, organizationID, revision, approval)
 	return nil
@@ -619,7 +622,7 @@ func (manager *simulatorScenarioManager) resolveCurrentBudgetEvidence(
 	scope budgetauthority.Scope,
 ) (budgetauthority.Evidence, error) {
 	if ctx == nil {
-		return budgetauthority.Evidence{}, errors.New("budget evidence request context is required")
+		return budgetauthority.Evidence{}, errors.New("authorization evidence request context is required")
 	}
 	if manager == nil {
 		return budgetauthority.Evidence{}, budgetauthority.ErrUnavailable
@@ -632,22 +635,23 @@ func (manager *simulatorScenarioManager) resolveCurrentBudgetEvidence(
 	}
 	evidence, err := resolver.ResolveCurrent(ctx, scope)
 	if err != nil {
-		return budgetauthority.Evidence{}, fmt.Errorf("resolve current scenario budget evidence: %w", err)
+		return budgetauthority.Evidence{}, fmt.Errorf("resolve current scenario authorization evidence: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return budgetauthority.Evidence{}, err
 	}
 	if err := budgetauthority.ValidateCurrent(evidence, scope, time.Now()); err != nil {
-		return budgetauthority.Evidence{}, fmt.Errorf("current scenario budget evidence is invalid: %w", err)
+		return budgetauthority.Evidence{}, fmt.Errorf("current scenario authorization evidence is invalid: %w", err)
 	}
 	return evidence, nil
 }
 
 type simulatorScenarioRunApproval struct {
-	runID      string
-	namespace  string
-	planDigest string
-	machineIDs []string
+	runID             string
+	namespace         string
+	planDigest        string
+	approvalReference string
+	machineIDs        []string
 }
 
 func simulatorScenarioApprovedPlanMatchesRun(
@@ -743,6 +747,7 @@ func (manager *simulatorScenarioManager) startLocked(
 		manager.run.RunID = approval.runID
 		manager.run.RunNamespace = approval.namespace
 		manager.run.PlanDigest = approval.planDigest
+		manager.run.ApprovalReference = approval.approvalReference
 		manager.run.MachineIDs = append([]string(nil), approval.machineIDs...)
 	}
 	go manager.execute(ctx, scenario, manifest, execute, manager.done)
@@ -1813,6 +1818,9 @@ func withScenarioMachineStart(ctx context.Context, execute func() (string, error
 }
 
 func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID string) (string, error) {
+	if _, err := simulatorSetupMode(); err != nil {
+		return "", err
+	}
 	if output, handled, err := simulatorRetainedMachineAction(ctx, manifest, machineID, "start"); handled || err != nil {
 		return output, err
 	}
@@ -1822,6 +1830,9 @@ func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machi
 	}
 	if packaged {
 		return startPackagedScenarioMachine(ctx, manifest, machineID, container)
+	}
+	if err := requireLegacySimulatorMachineRuntime(); err != nil {
+		return "", err
 	}
 	states := simulatorMachineContainerStates([]string{machineID})
 	var output string
@@ -1872,11 +1883,24 @@ func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machi
 }
 
 func startPackagedScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID, container string) (string, error) {
+	mode, err := simulatorSetupMode()
+	if err != nil {
+		return "", err
+	}
 	state, err := simulatorScenarioContainerState(ctx, container)
 	if err != nil {
 		return "", err
 	}
 	if state == "running" {
+		if mode == setupmode.OrdinaryClient {
+			verified, err := simulatorScenarioProvisioningAction(ctx, manifest, machineID, "status")
+			if err != nil {
+				return "", err
+			}
+			if verified != "running" && verified != "ready" {
+				return "", fmt.Errorf("packaged runtime did not verify the running machine: %q", verified)
+			}
+		}
 		return "machine already running", nil
 	}
 	machineIDs := make([]string, 0, len(manifest.Machines))
@@ -1948,6 +1972,10 @@ func validateScenarioMachineCapacity(running int, starting bool) error {
 }
 
 func stopScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID string) (string, error) {
+	mode, err := simulatorSetupMode()
+	if err != nil {
+		return "", err
+	}
 	if output, handled, err := simulatorRetainedMachineAction(ctx, manifest, machineID, "stop"); handled || err != nil {
 		if err == nil {
 			simulatorSessions.clear(machineID)
@@ -1965,13 +1993,14 @@ func stopScenarioMachine(ctx context.Context, manifest simulatorManifest, machin
 		if err != nil {
 			return "", err
 		}
-		if state == "missing" || state == "exited" || state == "created" {
+		stopped := state == "missing" || state == "exited" || state == "created"
+		if stopped && mode == setupmode.LegacyLauncher {
 			simulatorSessions.clear(machineID)
 			simulatorControllers.clear(machineID)
 			simulatorMachineCommands.clear(machineID)
 			return "machine already stopped", nil
 		}
-		if simulatorSessions.snapshot([]string{machineID})[machineID].Authenticated {
+		if !stopped && simulatorSessions.snapshot([]string{machineID})[machineID].Authenticated {
 			logoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			_, _ = simulatorMachineCommands.enqueueAndWait(logoutCtx, machineID, machineControlCommand{Action: "logout"})
 			cancel()
@@ -1987,6 +2016,9 @@ func stopScenarioMachine(ctx context.Context, manifest simulatorManifest, machin
 		simulatorControllers.clear(machineID)
 		simulatorMachineCommands.clear(machineID)
 		return "packaged machine stopped", nil
+	}
+	if err := requireLegacySimulatorMachineRuntime(); err != nil {
+		return "", err
 	}
 	states := simulatorMachineContainerStates([]string{machineID})
 	if states[machineID] == "missing" || states[machineID] == "exited" {

@@ -105,7 +105,7 @@ The query supports optional RFC 3339 `from`/`until` bounds, exact `source`,
 (default 50).
 
 The History view keeps fictional sample data separate from live results. Its
-**Load live audit feed** control requests the authenticated same-origin
+**Query audit history** control requests the authenticated same-origin
 `/api/audit/events` endpoint; the standalone development server has no
 authentication and will not provide that endpoint. Unauthorized and unavailable
 responses are shown explicitly. An empty page is not evidence that no activity
@@ -116,6 +116,24 @@ and outcome matches are optional. Changing filters starts a new query;
 pagination continues with the exact query used for its first page. This is a
 short-term lookback, not a live operational dashboard or comprehensive
 historical archive.
+
+The History view recognizes two narrowly scoped `control-service` advisories:
+
+- `budget.approval.create` with outcome `self-approval-requested` means the
+  verified delegation contained `approval.self` at request time. The event
+  precedes the mutation: it does not prove that author and approver were the
+  same person, that approval succeeded, or that the permission remains active.
+- `subject-link.approve` with outcome `approved-single-operator` reports that a
+  subject-link review was approved by its proposer. The source appends this
+  event after the review commits; it does not establish publication or
+  enforcement. An exact retry can append another event, so its timestamp need
+  not be the original approval time.
+
+Each advisory stays with the event's actor, target and evidence references. The
+UI labels unavailable organization, role and revision information rather than
+inventing it. Event recording can fail; missing events or advisories do not
+establish safety. These source-tested warnings are not a current role/grant
+analysis engine, comprehensive self-approval coverage or live acceptance.
 
 The endpoint reads events explicitly appended to the new store. Producers now
 record authorized Audit-history reads as `audit.history.read`, and the embedded
@@ -134,9 +152,11 @@ without its event store.
 The authoritative Control-Service budget-authority handler also records
 delegated approval requests as `budget.approval.create` and revocation requests
 as `budget.approval.revoke`. These events are organization-scoped, attribute the
-verified operator, and use the same `requested` semantics. They are appended
-before the mutation; if event creation or persistence fails, the approval or
-revocation is blocked.
+verified operator, and are appended before the mutation. An approval request
+uses `self-approval-requested` when its verified delegation includes
+`approval.self`; otherwise its outcome is `requested`. Neither outcome reports
+whether the mutation succeeded. If event creation or persistence fails, the
+approval or revocation is blocked.
 No existing Control Room audit tables have been migrated or bridged, and no
 underlying policy, visa, identity or service operations are produced. The
 external enrollment-service proxy remains uncovered. There are also no

@@ -101,7 +101,7 @@ function organizationAllowed(identity, organizationID) {
   return identity.organizations.includes("*") || identity.organizations.includes(organizationID);
 }
 
-test("live Control Room OIDC and Simulator catalog/preflight are available without mutations", async ({ page }) => {
+test("live Control Room OIDC and Simulator catalogs are available without mutations", async ({ page }) => {
   if (!storageStatePath) validatedStorageStatePath();
   const controlRoom = liveOrigin("ZPR_LIVE_CONTROL_ROOM_URL");
   const simulator = liveOrigin("ZPR_LIVE_SIMULATOR_URL");
@@ -256,49 +256,9 @@ test("live Control Room OIDC and Simulator catalog/preflight are available witho
     throw new Error("Live acceptance blocker: selected organization has no published scenario to preview.");
   }
   await expect(scenarioSelect.locator(`option[value=${JSON.stringify(publishedScenario.id)}]`)).toHaveCount(1);
-  await scenarioSelect.selectOption(publishedScenario.id);
-
-  const preflightResponsePromise = page.waitForResponse(response =>
-    new URL(response.url()).origin === simulator &&
-    new URL(response.url()).pathname === "/api/simulator/scenario-plans/preflight" &&
-    response.request().method() === "POST");
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
-  const preflightResponse = await preflightResponsePromise;
-  const preflightRequest = preflightResponse.request();
-  expect(preflightRequest.postDataJSON()).toEqual({
-    organization_id: selectedOrganization.id,
-    scenario_id: publishedScenario.id,
-  });
-  expect(preflightRequest.headers()["x-zpr-csrf"]).toBeTruthy();
-  evidence.http.push({
-    method: "POST", service: "simulator", path: "/api/simulator/scenario-plans/preflight",
-    status: preflightResponse.status(),
-  });
-  if (![200, 503].includes(preflightResponse.status())) {
-    console.log(`[live-acceptance-evidence] ${JSON.stringify(evidence)}`);
-    throw new Error(`Live acceptance blocker: read-only Simulator preflight returned HTTP ${preflightResponse.status()}.`);
-  }
-  const preflight = await preflightResponse.json();
-  if (preflightResponse.status() === 200) {
-    if (preflight.organization_id !== selectedOrganization.id ||
-        preflight.scenario_id !== publishedScenario.id ||
-        !/^sha256:[0-9a-f]{64}$/.test(preflight.plan_digest || "") ||
-        !/^sha256:[0-9a-f]{64}$/.test(preflight.authorization_scope_digest || "")) {
-      throw new Error("Live acceptance blocker: successful preflight response failed scope/digest validation.");
-    }
-    await expect(page.locator("#scenario-plan-preview")).toBeVisible();
-    evidence.simulator.preflight = "plan-response";
-  } else {
-    if (preflight.organization_id !== selectedOrganization.id ||
-        preflight.scenario_id !== publishedScenario.id ||
-        !/^sha256:[0-9a-f]{64}$/.test(preflight.authorization_scope_digest || "") ||
-        !Array.isArray(preflight.blockers) || !preflight.blockers.length ||
-        preflight.blockers.some(blocker => typeof blocker !== "string" || !blocker)) {
-      throw new Error("Live acceptance blocker: unavailable-budget preflight response failed scope/digest validation.");
-    }
-    await expect(page.locator("#scenario-plan-budget-handoff")).toBeVisible();
-    evidence.simulator.preflight = "validated-unavailable-evidence-response";
-  }
+  await expect(scenarioSelect).toHaveValue("");
+  evidence.simulator.scenarioSelection =
+    "not-requested; selecting a scenario starts authorized work";
 
   const unexpectedMutations = evidence.browser.unexpectedPosts;
   if (unexpectedMutations.length) {

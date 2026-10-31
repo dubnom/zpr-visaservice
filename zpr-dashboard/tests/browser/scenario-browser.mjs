@@ -5,8 +5,9 @@ export function registerScenarioBrowserTests(test, expect) {
     steps: [{ action: "delay", timeout_seconds: 1 }], cleanup: [],
   });
   const setup = (api, scenarios) => {
-    const data = { active_organization_id: "alpha", scenarios, run: { state: "idle", steps: [] } };
+    const data = { active_organization_id: "alpha", organization: { id: "alpha" }, scenarios, run: { state: "idle", steps: [] } };
     api.handlers.set("/api/simulator/scenarios", route => route.fulfill({ json: data }));
+    api.handlers.set("/api/simulator/organizations/alpha/scenarios", route => route.fulfill({ json: data }));
     return data;
   };
 
@@ -15,11 +16,6 @@ export function registerScenarioBrowserTests(test, expect) {
     const two = scenario("two", "Runtime");
     const draft = scenario("draft", "Drafts", 0);
     const data = setup(api, [one, two, draft]);
-    api.handlers.set("/api/simulator/scenarios/two/run", route => {
-      expect(route.request().method()).toBe("POST");
-      data.run = { scenario_id: "two", state: "running", scenario: two, steps: [] };
-      return route.fulfill({ json: data.run });
-    });
     api.handlers.set("/api/simulator/scenarios/cancel", route => {
       data.run = { ...data.run, state: "cancelled" };
       return route.fulfill({ json: data.run });
@@ -30,8 +26,10 @@ export function registerScenarioBrowserTests(test, expect) {
     await page.goto(appURL + "/scenarios.html");
     await expect(page.locator("#scenario-list")).toContainText("Scenario one");
     await expect(page.locator(".scenario-run-pane")).toBeHidden();
-    await expect(page.locator("#scenario-start")).toBeHidden();
+    await expect(page.locator("#scenario-start")).toHaveCount(0);
     await expect(page.locator(".organization-navigation")).toBeVisible();
+    await expect(page.locator('#scenario-plan-scenario option[value="two"]')).toHaveCount(1);
+    await expect(page.locator('#scenario-plan-scenario option[value="draft"]')).toHaveCount(0);
     const simulate = page.locator('.primary-nav a[href="/scenarios.html#simulate"]');
     await simulate.click();
     await expect(page).toHaveURL(appURL + "/scenarios.html#simulate");
@@ -39,26 +37,14 @@ export function registerScenarioBrowserTests(test, expect) {
     await expect(page.locator("#organization-workspace")).toBeHidden();
     await expect(page.locator(".scenario-list-pane")).toBeHidden();
     await expect(page.locator(".scenario-run-pane")).toBeVisible();
-    await expect(page.locator("#scenario-run-selection")).toHaveValue("one");
-    expect(api.counts.get("/api/simulator/scenarios/two/run") || 0).toBe(0);
-    await page.locator("#scenario-run-selection").selectOption("draft");
-    await expect(page.locator("#scenario-start")).toBeDisabled();
-    await page.locator("#scenario-run-selection").selectOption("two");
-    await expect(page.locator("#scenario-start")).toBeEnabled();
-    await page.getByRole("link", { name: "Configure scenarios", exact: true }).click();
-    await expect(page.locator(".scenario-run-pane")).toBeHidden();
-    await expect(page.locator("#scenario-list")).toContainText(two.name);
-    await page.locator("#scenario-list").getByRole("link", { name: "Simulate", exact: true }).click();
-    await expect(page.locator("#scenario-run-selection")).toHaveValue("two");
-    await page.locator("#scenario-start").click();
+    data.run = { scenario_id: "two", scenario_name: two.name, state: "running", scenario: two, steps: [] };
     await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
-    await expect(page.locator("#scenario-start")).toBeDisabled();
-    expect(api.counts.get("/api/simulator/scenarios/two/run")).toBe(1);
+    await expect(page.locator("#scenario-cancel")).toBeVisible();
     await page.locator('.primary-nav a[href="/organizations.html"]').click();
     await expect(page.locator("#organization-workspace")).toBeVisible();
     await page.getByRole("navigation", { name: "Organization sections", exact: true }).getByRole("link", { name: "Scenarios", exact: true }).click();
     await expect(page.locator(".scenario-run-pane")).toBeHidden();
-    await expect(page.locator("#scenario-list")).toContainText(two.name);
+    await expect(page.locator("#scenario-list")).toContainText(one.name);
     await simulate.click();
     await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
     await page.locator("#scenario-cancel").click();
@@ -66,7 +52,6 @@ export function registerScenarioBrowserTests(test, expect) {
     expect(api.counts.get("/api/simulator/scenarios/cancel")).toBe(1);
     data.run = { ...data.run, state: "passed", steps: [{ index: 0, action: "delay", state: "passed", result_error: "Fixture result detail" }] };
     await expect(page.locator("#scenario-run-state")).toHaveClass(/passed/);
-    await expect(page.locator("#scenario-start")).toBeEnabled();
     await page.getByRole("tab", { name: /^Results/ }).click();
     await expect(page.locator("#scenario-results")).toBeVisible();
     await page.reload();
@@ -81,7 +66,7 @@ export function registerScenarioBrowserTests(test, expect) {
     await expect(page.locator(".scenario-run-pane")).toBeVisible();
     for (const width of [1440, 820, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await expect(page.locator("#scenario-start")).toBeVisible();
+      await expect(page.locator("#scenario-run-title")).toBeVisible();
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
     await expect(page.locator("#scenario-clear")).toHaveCount(0);
@@ -90,9 +75,7 @@ export function registerScenarioBrowserTests(test, expect) {
     await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
     await expect(page.locator("#scenario-run-state")).toHaveClass(/passed/);
     expect(api.counts.get("/api/simulator/scenarios/clear") || 0).toBe(0);
-    data.active_organization_id = "beta";
-    await expect(page.locator("#scenario-start")).toBeDisabled();
-    expect(api.counts.get("/api/simulator/scenarios/two/run")).toBe(1);
+    expect([...api.counts.keys()].some(path => path.endsWith("/run"))).toBe(false);
   });
 
   test("Scenario browser selects folder files without running and leaves full-width tracks", async ({ page, appURL, api }) => {
@@ -135,7 +118,7 @@ export function registerScenarioBrowserTests(test, expect) {
     await expect(page.locator("#scenario-list")).not.toContainText("Scenario two");
   });
 
-  test("Scenario browser File operations preserve draft and busy run guards", async ({ page, appURL, api }) => {
+  test("Scenario browser File operations preserve unpublished drafts and a running result", async ({ page, appURL, api }) => {
     const draft = scenario("draft", "");
     draft.published_revision = 0;
     const data = setup(api, [draft]);
@@ -144,7 +127,9 @@ export function registerScenarioBrowserTests(test, expect) {
     } }));
     api.handlers.set("/api/simulator/organizations/alpha/scenarios/draft/revisions", route => route.fulfill({ json: [] }));
     await page.goto(appURL + "/scenarios.html");
-    await expect(page.locator("[data-run-scenario]")).toBeDisabled();
+    await expect(page.locator("#scenario-list")).toContainText("Unpublished draft");
+    await expect(page.locator('#scenario-plan-scenario option[value="draft"]')).toHaveCount(0);
+    await expect(page.locator("#scenario-plan-scenario")).toBeDisabled();
     await page.locator("#scenario-files-toggle").click();
     await page.getByRole("menuitem", { name: "New Scenario...", exact: true }).click();
     await expect(page.locator("#scenario-editor-dialog")).toBeVisible();
@@ -154,41 +139,37 @@ export function registerScenarioBrowserTests(test, expect) {
     await expect(page.locator("#scenario-editor-name")).toHaveValue(draft.name);
     await page.locator("#scenario-editor-form .sim-editor-close").click();
     draft.published_revision = 1;
-    await expect(page.locator("[data-run-scenario]")).toBeEnabled();
+    await expect(page.locator('#scenario-plan-scenario option[value="draft"]')).toHaveCount(1);
+    await expect(page.locator("#scenario-plan-scenario")).toHaveValue("");
     data.run = { scenario_id: "draft", state: "running", steps: [], scenario: draft };
-    await expect(page.locator("[data-run-scenario]")).toBeDisabled();
-    data.active_organization_id = "beta";
+    await page.locator('.primary-nav a[href="/scenarios.html#simulate"]').click();
+    await expect(page.locator("#scenario-run-state")).toHaveClass(/running/);
+    await page.locator('.primary-nav a[href="/organizations.html"]').click();
+    await page.getByRole("navigation", { name: "Organization sections", exact: true }).getByRole("link", { name: "Scenarios", exact: true }).click();
     data.scenarios = [];
-    await page.locator("#scenario-browse").click();
-    await expect(page.locator("#scenario-browser-dialog")).not.toBeVisible();
     await expect(page.locator("#scenario-edit-selected")).toBeDisabled();
     await expect(page.locator("#scenario-list .scenario-empty")).toBeVisible();
+    await expect(page.locator("#scenario-plan-scenario")).toBeDisabled();
+    expect([...api.counts.keys()].some(path => path.endsWith("/run"))).toBe(false);
   });
 
-  test("Scenario browser runs only the selected published file and preserves the active run when browsing", async ({ page, appURL, api }) => {
+  test("Scenario browser preserves the active run while browsing files", async ({ page, appURL, api }) => {
     const one = scenario("one", "Runtime");
     const two = scenario("two", "Runtime");
     const data = setup(api, [one, two]);
-    api.handlers.set("/api/simulator/scenarios/two/run", route => {
-      expect(route.request().method()).toBe("POST");
-      data.run = { scenario_id: "two", state: "running", scenario: two, steps: [] };
-      return route.fulfill({ json: data.run });
-    });
+    data.run = { scenario_id: "two", scenario_name: two.name, state: "running", scenario: two, steps: [] };
     await page.goto(appURL + "/scenarios.html");
     await page.locator("#scenario-browse").click();
     await page.locator('[data-select-scenario="two"]').click();
     await page.locator('.primary-nav a[href="/scenarios.html#simulate"]').click();
-    await page.locator("[data-run-scenario]").click();
     await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
-    expect(api.counts.get("/api/simulator/scenarios/two/run")).toBe(1);
-    expect(api.counts.get("/api/simulator/scenarios/one/run") || 0).toBe(0);
     await page.locator('.primary-nav a[href="/organizations.html"]').click();
     await page.getByRole("navigation", { name: "Organization sections", exact: true }).getByRole("link", { name: "Scenarios", exact: true }).click();
     await page.locator("#scenario-browse").click();
     await page.locator('[data-select-scenario="one"]').click();
     await expect(page.locator("#scenario-list")).toContainText(one.name);
     await expect(page.locator("#scenario-run-title")).toHaveText(two.name);
-    await expect(page.locator("[data-run-scenario]")).toBeDisabled();
+    expect([...api.counts.keys()].some(path => path.endsWith("/run"))).toBe(false);
     api.handlers.set("/api/simulator/organizations/alpha/scenarios/one", route =>
       route.fulfill({ status: 503, json: { error: "Scenario store unavailable" } }));
     await page.locator("#scenario-files-toggle").click();
@@ -197,11 +178,12 @@ export function registerScenarioBrowserTests(test, expect) {
     await expect(page.locator("#scenario-editor-dialog")).not.toBeVisible();
   });
 
-  test("Scenario browser selects a newly saved draft and enables Run only after publishing", async ({ page, appURL, api }) => {
+  test("Scenario browser makes a newly published draft available without starting it", async ({ page, appURL, api }) => {
     const data = setup(api, [scenario("one", "Runtime")]);
     let artifact;
     const endpoint = "/api/simulator/organizations/alpha/scenarios";
     api.handlers.set(endpoint, route => {
+      if (route.request().method() === "GET") return route.fulfill({ json: data });
       const request = route.request().postDataJSON();
       expect(request.expected_revision).toBe(0);
       artifact = { id: request.scenario.id, revision: 1, published_revision: 0, content: request.scenario };
@@ -219,6 +201,9 @@ export function registerScenarioBrowserTests(test, expect) {
       const content = JSON.parse(route.request().postDataJSON().source);
       return route.fulfill({ json: { valid: true, scenario: content, canonical_json: JSON.stringify(content), diagnostics: "Valid draft" } });
     });
+    const preflight = "/api/simulator/organizations/alpha/scenario-plans/preflight";
+    api.handlers.set(preflight, route =>
+      route.fulfill({ status: 409, json: { error: "Fixture preflight blocked." } }));
     await page.goto(appURL + "/scenarios.html");
     await page.locator("#scenario-files-toggle").click();
     await page.locator("#scenario-new").click();
@@ -228,12 +213,18 @@ export function registerScenarioBrowserTests(test, expect) {
     await page.locator("#scenario-editor-save").click();
     await expect(page.locator("#scenario-editor-status")).toHaveText("Saved version 1. Publish it to enable runs.");
     await expect(page.locator("#scenario-list")).toContainText("Created draft");
-    await expect(page.locator("[data-run-scenario]")).toBeDisabled();
+    await expect(page.locator('#scenario-plan-scenario option[value="created"]')).toHaveCount(0);
     await page.locator("#scenario-editor-files-toggle").click();
     await page.locator("#scenario-editor-publish").click();
     await expect(page.locator("#scenario-editor-status")).toHaveText("Published version 1 for alpha.");
     await page.locator("#scenario-editor-form .sim-editor-close").click();
-    await expect(page.locator('[data-run-scenario="created"]')).toBeEnabled();
+    await expect(page.locator('#scenario-plan-scenario option[value="created"]')).toHaveCount(1);
+    await expect(page.locator("#scenario-plan-scenario")).toHaveValue("");
+    expect(api.counts.get(preflight) || 0).toBe(0);
+    expect([...api.counts.keys()].some(path => path.endsWith("/run"))).toBe(false);
+    await page.locator("#scenario-plan-scenario").selectOption("created");
+    await expect(page.locator("#scenario-plan-error")).toContainText("Fixture preflight blocked.");
+    expect(api.counts.get(preflight)).toBe(1);
     expect([...api.counts.keys()].some(path => path.endsWith("/run"))).toBe(false);
   });
 

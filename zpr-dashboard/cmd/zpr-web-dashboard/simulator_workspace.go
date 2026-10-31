@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -35,6 +36,53 @@ type workspaceScenarioListEntry struct {
 	CurrentRevision   int                `json:"current_revision"`
 	PublishedRevision int                `json:"published_revision"`
 	PublishedScenario *simulatorScenario `json:"published_scenario,omitempty"`
+}
+
+type simulatorPublishedScenarioFailure struct {
+	status  int
+	message string
+}
+
+func (failure *simulatorPublishedScenarioFailure) Error() string { return failure.message }
+
+func readPublishedSimulatorScenario(ctx context.Context, store *workspaceRepository, organizationID, scenarioID string) (simulatorScenario, int, error) {
+	fail := func(status int, message string) (simulatorScenario, int, error) {
+		return simulatorScenario{}, 0, &simulatorPublishedScenarioFailure{status: status, message: message}
+	}
+	if !validScenarioID(scenarioID) {
+		return fail(http.StatusBadRequest, "valid scenario_id is required")
+	}
+	artifact, err := store.Get(ctx, organizationID, workspaceScenarioKind, scenarioID)
+	if errors.Is(err, errWorkspaceArtifactNotFound) {
+		return fail(http.StatusNotFound, "workspace artifact not found")
+	}
+	if err != nil {
+		return fail(http.StatusInternalServerError, "workspace request failed")
+	}
+	if artifact.PublishedRevision < 1 {
+		return fail(http.StatusConflict, "publish a scenario revision before running it")
+	}
+	revision, err := store.GetRevision(ctx, organizationID, workspaceScenarioKind, artifact.ID, artifact.PublishedRevision)
+	if err != nil {
+		return fail(http.StatusInternalServerError, "published scenario revision unavailable")
+	}
+	if len(revision.Content) > maxScenarioFileSize {
+		return fail(http.StatusInternalServerError, "published scenario is invalid")
+	}
+	var scenario simulatorScenario
+	decoder := json.NewDecoder(bytes.NewReader(revision.Content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&scenario); err != nil {
+		return fail(http.StatusInternalServerError, "published scenario is invalid")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return fail(http.StatusInternalServerError, "published scenario is invalid")
+	}
+	if scenario.ID != artifact.ID || scenario.OrganizationID != organizationID {
+		return fail(http.StatusConflict, "published scenario identity does not match the requested organization")
+	}
+	return scenario, revision.Revision, nil
 }
 
 func openSimulatorWorkspace(organizationID string) (*workspaceRepository, error) {
@@ -412,27 +460,14 @@ func handleWorkspaceScenarioRun(w http.ResponseWriter, r *http.Request) {
 	}
 	defer store.Close()
 	scenarioID := r.PathValue("scenario")
-	artifact, err := store.Get(r.Context(), organizationID, workspaceScenarioKind, scenarioID)
+	scenario, revision, err := readPublishedSimulatorScenario(r.Context(), store, organizationID, scenarioID)
 	if err != nil {
-		writeWorkspaceNotFoundOrError(w, err)
-		return
-	}
-	if artifact.PublishedRevision < 1 {
-		writeWorkspaceError(w, http.StatusConflict, "publish a scenario revision before running it")
-		return
-	}
-	revision, err := store.GetRevision(r.Context(), organizationID, workspaceScenarioKind, artifact.ID, artifact.PublishedRevision)
-	if err != nil {
-		writeWorkspaceError(w, http.StatusInternalServerError, "published scenario revision unavailable")
-		return
-	}
-	var scenario simulatorScenario
-	if err := json.Unmarshal(revision.Content, &scenario); err != nil {
-		writeWorkspaceError(w, http.StatusInternalServerError, "published scenario is invalid")
-		return
-	}
-	if scenario.ID != artifact.ID || scenario.OrganizationID != organizationID {
-		writeWorkspaceError(w, http.StatusConflict, "published scenario identity does not match the requested organization")
+		var failure *simulatorPublishedScenarioFailure
+		if errors.As(err, &failure) {
+			writeWorkspaceError(w, failure.status, failure.message)
+		} else {
+			writeWorkspaceError(w, http.StatusInternalServerError, "published scenario is unavailable")
+		}
 		return
 	}
 	if err := validateSimulatorScenario(scenario, manifest); err != nil {
@@ -442,11 +477,15 @@ func handleWorkspaceScenarioRun(w http.ResponseWriter, r *http.Request) {
 	if err := activeSimulatorScenario.startApprovedVersionedContext(
 		r.Context(),
 		scenario, manifest, organization, simulatorScenarioExecutorForManifest,
-		organizationID, revision.Revision, request.ApprovalID, request.PlanDigest,
+		organizationID, revision, request.ApprovalID, request.PlanDigest,
 	); err != nil {
 		switch {
 		case errors.Is(err, errSimulatorScenarioApprovalRequired):
 			writeWorkspaceError(w, http.StatusBadRequest, "approval_id and plan_digest are required")
+		case errors.Is(err, errSimulatorScenarioOperatorDenied):
+			writeWorkspaceError(w, http.StatusForbidden, simulatorScenarioOperatorDeniedMessage)
+		case errors.Is(err, errSimulatorScenarioRuntimeUnavailable):
+			writeWorkspaceError(w, http.StatusConflict, "scenario runtime is unavailable or changed; run preflight again")
 		case errors.Is(err, errScenarioAlreadyRunning),
 			errors.Is(err, errSimulatorOrganizationActivationInProgress),
 			errors.Is(err, errSimulatorScenarioApprovalUnknown),

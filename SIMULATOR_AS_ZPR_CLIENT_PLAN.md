@@ -18,13 +18,14 @@ or production readiness.
 
 ## Active turn-key delivery plan (2026-10-30)
 
-**Goal (updated user decision, 2026-10-30):** in every Simulator installation,
-after authentication, choosing an organization or a scenario is the only
-required operator input. Organization selection automatically prepares its
-authorized runtime; scenario selection automatically prepares and runs that
-scenario. No separate review, approval, acknowledgment or credential-retrieval
-prompts. Simulator orchestrates ordinary ZPR contracts; production services
-must work without it.
+**Goal (clarified user decision, 2026-10-31):** in every Simulator
+installation, after authentication, explicitly activating an organization
+starts only that organization's authorized setup; selecting or browsing an
+organization is passive. Selecting a scenario separately prepares and runs
+only that scenario; it must not activate or reset an organization. Automatic
+named self-approval remains part of each authorized workflow, without a
+separate approval prompt. Simulator orchestrates ordinary ZPR contracts;
+production services must work without it.
 
 **Baseline:** the unchanged Velocity scenario passes sequential direct-action
 diagnostics, repeats and an independent base restart. That is not canonical
@@ -50,9 +51,11 @@ authoring requirements. Each organization has isolated retained state.
 - Restart reuses endpoint identities and obtains fresh authentication; it does
   not re-enroll or regenerate keys. New endpoints receive unique identities.
 - **Superseded for Simulator:** the earlier separate deliberate self-approval
-  click and run acknowledgment. Login alone does not execute a change; selection
-  triggers submission, automatic named self-approval and execution as distinct
-  recorded operations. Production Control Room approval UX remains unchanged.
+  click and run acknowledgment. Login and passive organization browsing alone
+  do not execute a change; explicit organization activation and scenario
+  selection start their separate authorized workflows, with automatic named
+  self-approval recorded as a distinct operation. Production Control Room
+  approval UX remains unchanged.
 - Every installation must configure its intended Simulator operator with
   `approval.self` plus the required domain/action and organization grants.
   Credentials identify the operator; they do not bypass backend authorization.
@@ -67,12 +70,74 @@ authoring requirements. Each organization has isolated retained state.
   through production-owned evidence contracts. Audit should warn on risky
   self-approval role combinations or assertion findings, with the rule,
   affected role/identity and evidence references. Warnings are advisory and
-  do not replace authorization or add a mandatory run confirmation. This is
-  a requirement, not an implemented Audit capability; see the
+  do not replace authorization or add a mandatory run confirmation. The
+  budget request-time advisory does not establish an observed self-approval;
+  a separate observed subject-link-review advisory covers only that event.
+  Role-risk analysis and broader coverage remain open. See the
   [Audit owner](ENTITY_HISTORY_PLAN.md#self-approval-role-risk-warnings).
+- Passive organization selection and explicit organization activation are
+  separate actions. The current organization browser selects without mutation;
+  its explicit Activate action requires confirmation before calling the legacy
+  Simulator activation route. With `SIMULATION_SETUP_MODE=ordinary-client`,
+  web activation and Restore, legacy packaged `approve-and-provision` and
+  `verify`, global legacy stack/agent lifecycle, and unbound legacy machine
+  start/stop fail explicitly. Packaged status and existing-machine start/stop
+  remain available; status can update local inventory and issue readiness
+  traffic. Scenario preflight reports the unbound machine fallback before
+  approval, but these scoped guards do not implement enrollment. The paired evaluation launcher
+  forwards the explicit setting to the Simulator process, while the legacy
+  default remains available for compatibility. The setting is process-local
+  and must be repeated on restart; it does not cover every Simulator
+  entrypoint or separately invoked scripts.
+  The approved independent setup contracts are not yet wired under
+  `U01-ACTIVATION`. Scenario selection independently drives the
+  scoped preflight/approval/run flow and does not activate the organization.
+  Focused desktop/tablet browser fixtures assert that passive organization
+  selection submits no setup or scenario mutation, scenario selection submits
+  no activation/reset, and confirmed activation submits only the activation
+  request. Changing the selected organization also invalidates pending reset
+  intent immediately and ignores stale catalog responses. These fixtures do
+  not establish live authorized setup acceptance.
 - The separate Velocity Simulator OIDC client/signer has already been approved
-  at port 24788 using the existing issuer/operator. Implementation is pending;
-  do not reuse Room secrets/signing keys or ask for the same approval again.
+  at port 24788 using the existing issuer/operator. A source-only, resumable
+  add-later registration slice is implemented and tested, including an
+  explicitly supplied operator trust override; the retained Velocity install
+  has not been paired or deployed. A separate isolated workbench install
+  verified add-later pairing and named login, and another source-built
+  starter-directory install verified the bounded automatic scenario, including
+  a repeat after Simulator restart. Neither is Velocity or package acceptance.
+  New-install Simulator grants now include scoped
+  `approval.self`, and scenario/budget approval routes require the active
+  session permission. Control-Service distinguishes signed self-approval
+  requests in its audit outcome. Existing backend grants are not silently
+  expanded. Scenario selection now drives scoped preflight, eligible bounded
+  budget self-approval, plan self-approval and run submission in source; focused
+  browser coverage passes for the automatic sequence, blockers, stale selections
+  and uncertain run responses. The in-memory plan permit is bound to the named
+  operator issuer/subject (or the explicitly unauthenticated local mode), and
+  issuance and run admission recheck `scenario.run` and `approval.self` in the
+  current session. Session grants are snapshots from login, not a dynamic
+  revocation feed. For automatic bounded budget approval, Simulator sends
+  explicit self-approval intent through the independent budget contract; the
+  current session and backend delegation grant must both include
+  `budget.approve` and `approval.self`. Ordinary budget approvals without that
+  intent retain their existing contract. This intent does not establish a
+  recorded requester or prove an observed self-approval. Run namespace
+  preparation precedes permit consumption, but
+  there is no durable actor/permit/run evidence or restart-safe reconciliation.
+  After the plan, budget and session are rechecked, the same named operator (or
+  explicit local mode) can recover an unconsumed in-memory permit for the exact
+  organization, scenario and plan digest. Another operator cannot recover it
+  and remains blocked while that scope is pending. A domain-separated,
+  non-secret permit fingerprint links an approval response to the current
+  in-memory run. After an ambiguous run response, the UI makes one bounded
+  catalog read and recognizes only a matching fingerprint, plan and scope; it
+  never retries the run automatically. An absent, replaced or unavailable
+  snapshot is still unknown, not proof that no run started. This is neither
+  durable run reconciliation nor production Audit evidence and does not
+  survive a restart. Velocity pairing and named login and installed-package
+  acceptance remain open. Do not reuse
+  Room secrets/signing keys or ask for the approved pairing again.
 - Existing exact-ID traffic grants remain effective. Broader role/profile-based
   policy is a separately reviewed proposal, not permission granted by this plan.
 - DNS locates services; it does not establish identity, trust or authorization.
@@ -90,10 +155,10 @@ instructions. No full platform rewrite is a prerequisite.
 | Gate | Deliverable | Required proof before proceeding |
 | --- | --- | --- |
 | **G0: Freeze contracts and acceptance** | Trace existing enrollment/issuance/readback, operator pairing and DNS contracts. Record any genuinely missing public operation before adding orchestration. Pin original Velocity scenario, runtime artifacts and immutable approval scope. | Each step has a supported operation, state owner and authoritative result. Full runtime configuration changes invalidate resource approval. No private DB writes, shared bootstrap keys or undocumented shell fallback. |
-| **G1: Establish operator access and automatic self-approval** | Implement resumable add-later registration of the approved separate Velocity Simulator client/signer and selection-triggered named self-approval. Define the same operator grant configuration contract for every Simulator installation; preserve Room and retained install recovery/integrity. | Real named OIDC login at 24788; authorized selection submits, self-approves and proceeds with no extra prompt. Reviewer/missing domain grant/expired session/cross-org cases fail closed. Login alone makes no changes. Restart retains pairing. Room approval UX and availability remain unchanged with Simulator stopped. |
-| **G2: Automate endpoint onboarding** | Wire selection -> inventory comparison -> endpoint key generation -> enrollment request -> authorized automatic self-approval -> issuance/readback -> protected runtime handoff. Persist operation IDs and endpoint identity references. Reuse existing helpers. | One genuinely new endpoint enrolls from selection alone without credential preparation, token retrieval or approval dialogs. Retry/restart produces no duplicate identity; interrupted issuance reconciles safely. Unapproved/revoked endpoints cannot join. Missing or expired authorization is explicit, never a fallback. |
+| **G1: Establish operator access and automatic self-approval** | Implement resumable add-later registration of the approved separate Velocity Simulator client/signer and scenario-selection-triggered named self-approval. Define the same operator grant configuration contract for every Simulator installation; preserve Room and retained install recovery/integrity. | Real named OIDC login at 24788; authorized scenario selection submits, self-approves and proceeds with no extra approval prompt. Reviewer/missing domain grant/expired session/cross-org cases fail closed. Login and passive organization browsing make no changes. Restart retains pairing. Room approval UX and availability remain unchanged with Simulator stopped. |
+| **G2: Automate endpoint onboarding** | On explicit organization activation, wire inventory comparison -> endpoint key generation -> enrollment request -> authorized automatic self-approval -> issuance/readback -> protected runtime handoff. Persist operation IDs and endpoint identity references. Reuse existing helpers. | One genuinely new endpoint enrolls from explicit activation without credential preparation, token retrieval or approval dialogs beyond any separately retained activation-safety confirmation. Retry/restart produces no duplicate identity; interrupted issuance reconciles safely. Unapproved/revoked endpoints cannot join. Missing or expired authorization is explicit, never a fallback. |
 | **G3: Replace brittle discovery** | Use independently configured bootstrap endpoints before admission; use published production DNS/service contracts afterward. Remove unnecessary fixed workload/service addresses. Use only discovery mechanisms actually supported by those contracts. | After service restart/address change, the client resolves the published service and reaches it through ZPR. Missing/stale DNS, wrong certificate and unreachable enrollment report distinct failures; no legacy DNS-container edits. |
-| **G4: Qualify the actual Simulator path and evidence** | Run the unchanged original Velocity scenario through named login, automatic preflight/self-approval and the real scenario manager, including parallel scheduling. Verify selection-only UX and production-owned self-approval evidence; connect Audit warning rules/assertions. | No post-login input except organization/scenario selection. Original owner sessions, controllers/workloads, HTTP 200, exactly 100 warmed samples and 16,777,216 bytes within the original 75-second deadline; full cleanup. Repeat, restart, cancellation and partial-start failures leave no owned runtime/listener leaks. Foreign/stale resources are not silently removed. A risky-role fixture yields an evidence-linked Audit warning without a blocking confirmation; missing evidence is labeled, never reported as safe. |
+| **G4: Qualify the actual Simulator path and evidence** | Run the unchanged original Velocity scenario through named login, explicit organization activation, scenario-selection-triggered preflight/self-approval and the real scenario manager, including parallel scheduling. Verify the separate triggers and production-owned self-approval evidence; connect Audit warning rules/assertions. | No post-login input except explicit organization activation and scenario selection. Passive organization selection submits no activation or scenario mutation; activation does not launch a scenario; scenario selection does not activate/reset an organization. Original owner sessions, controllers/workloads, HTTP 200, exactly 100 warmed samples and 16,777,216 bytes within the original 75-second deadline; full cleanup. Repeat, restart, cancellation and partial-start failures leave no owned runtime/listener leaks. Foreign/stale resources are not silently removed. A risky-role fixture yields an evidence-linked Audit warning without a blocking confirmation; missing evidence is labeled, never reported as safe. |
 | **G5: Package and deploy dev** | Pin matching package/config/catalog/registry, verify authoritative policy readback, qualify installation/recovery, then deploy on the existing dev ports. Keep stable unchanged. | Installed artifacts match tested hashes; UI acceptance reruns from the package without source/toolchain or shell repair. Production health works with Simulator unavailable. Maintained environment page reports actual versions/status and development credentials only. Record verified rollback procedure. |
 | **G6: Expand the proven path** | Apply the same orchestration to Northstar, Great Lakes, Load Lab and Redwood; do not create per-organization enrollment scripts or generic replacement scenarios. | All five original organizations and all 17 original scenarios pass their own expected outcomes, organization switching, isolation and retained restart checks. Update dev status only with the measured acceptance matrix. |
 
@@ -103,6 +168,75 @@ permissions. Its onboarding proof and the original retained
 scenario proof are distinct. G4/G6 must exercise the maintained onboarding path
 when a scenario needs a genuinely new endpoint, not rely solely on the original
 pre-enrolled diagnostic inventory.
+
+### G1 registration implementation record (2026-10-30)
+
+Source implementation with isolated source-built evidence; the G1 gate remains
+open. The maintained resumable add-later
+registration is implemented and unit-tested in the bootstrap:
+`zpr-lab-bootstrap -evaluation-simulator-pairing` (and `./demo.sh pair` in the
+installed package) registers the separate `zpr-simulator` OIDC client with a
+new independent secret and an independent Simulator delegation signer pinned
+to its own CA-issued mTLS client certificate on an existing stopped install,
+through a recorded, resumable, fail-closed transaction that preserves the Room
+client/secret/signing key, retained operator identities, frozen inventory
+integrity and admin recovery. Recorded preparation and commit recovery verify
+owned staging, retained targets, directly referenced operator inputs and
+stopped ports; unrelated suffix-matching files are never discarded. Changed or
+unrecorded files and older plans without preservation fingerprints fail closed.
+New installs with `-simulator-port` now freeze
+the same independent signer, and the paired companion uses the Simulator-owned
+signer and transport identity instead of the Room's; the runtime-written
+delegation trust carries both pinned keys. Usage and override implications are
+documented in the
+[evaluation runbook](zpr-dashboard/packaging/evaluation/README.md#add-later-simulator-pairing-for-an-existing-installation).
+Not done: no deployment or live Velocity registration at 24788 occurred.
+Scenario selection now performs
+scoped preflight, eligible bounded budget self-approval, plan self-approval and
+run submission in source, with focused browser tests in
+[`evaluation-scenario-budget.spec.mjs`](zpr-dashboard/tests/browser/evaluation-scenario-budget.spec.mjs),
+[`scenario-plan-preflight.spec.mjs`](zpr-dashboard/tests/browser/scenario-plan-preflight.spec.mjs)
+and
+[`scenario-scoped-preflight-blockers.spec.mjs`](zpr-dashboard/tests/browser/scenario-scoped-preflight-blockers.spec.mjs).
+These tests alone do not establish Velocity pairing, package acceptance or the complete
+reviewer/expiry/cross-organization gate. The source-only
+[`simulator_scenario_principal_test.go`](zpr-dashboard/cmd/zpr-web-dashboard/simulator_scenario_principal_test.go)
+also exercises issuer/subject and local/named isolation, organization scope,
+permission/session denial, revalidation after budget resolution, cancellation,
+replay and concurrent consumption through the middleware and scenario manager.
+It also exercises real operator-auth sessions against a test OIDC provider,
+including CSRF, another operator and logout; its mid-request permission changes
+use a mutable authorizer fixture. The real session implementation rechecks the
+grant snapshot captured at login, not live grant revocation. A separate
+[`simulator_budget_self_approval_test.go`](zpr-dashboard/cmd/zpr-web-dashboard/simulator_budget_self_approval_test.go)
+exercises the actual Simulator budget route, mTLS and signed delegation to a
+local independent authority, including missing backend permission and changed
+session/actor. It does not prove Velocity integration or that ordinary approvals
+have a recorded requester. No durable production-owned scenario approval or
+run evidence is established by these tests. The per-installation operator
+grant contract and durable scenario-run permit reconciliation remain open. A
+local TLS browser/service fixture also tests same-operator permit recovery and
+matching-run readback after synthetic lost responses; this is not live or
+restart-safe evidence.
+
+**Isolated workbench evidence (2026-10-31):** On Ubuntu, a fresh source-built
+installation was paired add-later with a protected operator trust override.
+The original named grants and Room identity were retained; real Room and
+Simulator logins used the same named operator and exact test organization.
+With Simulator stopped, the paired Room and issuer remained healthy; after
+Simulator restart, login and the ordinary-client activation guard were
+rechecked. A separate fresh `-scenario-demo` installation then completed
+preflight, eligible budget self-approval, plan self-approval and one run
+automatically from scenario selection. Its fifteen fresh peer probes matched,
+including six Visa-denial checks. After a Simulator-only restart, a new run
+used the retained approved budget and again verified all fifteen probes; CA,
+client, signer and endpoint identities were unchanged. The temporary installs
+were stopped and removed. This is starter-directory evaluation evidence, not
+Velocity, onboarding, durable recovery, matched-package or gate acceptance.
+The retained Velocity installation still has a custom directory and no
+bootstrap-admitted evaluation endpoints, and its installed bootstrap lacks the
+new signer support. Its supported Simulator catalog/lifecycle wiring and
+independent downstream trust remain work before pairing can be deployed safely.
 
 ### Delivery discipline and completion
 

@@ -77,7 +77,7 @@ func TestResolveSimulatorNorthstarPolicyReadbackRequiresExactIdentity(t *testing
 				Status: simulatorRuntimePlanBlocked,
 				Blockers: []string{
 					"policy resolution is required",
-					"approved budget evidence is absent",
+					"approved authorization evidence is absent",
 				},
 			}
 			resolveSimulatorNorthstarPolicyReadback(context.Background(), plan, organization, test.resolver)
@@ -90,7 +90,7 @@ func TestResolveSimulatorNorthstarPolicyReadbackRequiresExactIdentity(t *testing
 			if test.wantBlocker == "" && hasSimulatorRuntimePlanBlocker(*plan, "policy resolution is required") {
 				t.Fatalf("resolved policy retained generic blocker: %v", plan.Blockers)
 			}
-			if !hasSimulatorRuntimePlanBlocker(*plan, "approved budget evidence is absent") {
+			if !hasSimulatorRuntimePlanBlocker(*plan, "approved authorization evidence is absent") {
 				t.Fatalf("policy resolution changed unrelated blockers: %v", plan.Blockers)
 			}
 		})

@@ -3,22 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Budget Authority - ZPR Control Room</title>
+  <title>Operation Approvals - ZPR Control Room</title>
   <link rel="stylesheet" href="/change-review.css?v=3">
   <script src="/control-room-shell.js" defer></script>
-  <script src="/budget-authority.js?v=1" defer></script>
+  <script src="/budget-authority.js?v=2" defer></script>
 </head>
 <body>
-  <header><a href="/">Control Room</a><h1>Budget Authority</h1><span id="budget-identity"></span></header>
+  <header><a href="/">Control Room</a><h1>Operation Approvals</h1><span id="budget-identity"></span></header>
   <main>
-    <p class="boundary">This form records or revokes source-backed budget evidence for an exact operator-supplied scope. It does not query the Simulator, start a run, provision hosts, or deploy services.</p>
+    <p class="boundary">This form records or revokes source-backed authorization evidence for an exact operator-supplied scope. It does not query the Simulator, start a run, provision hosts, or deploy services.</p>
     <p id="budget-session-status" role="status" aria-live="polite" aria-atomic="true">Checking operator session</p>
     <p id="budget-error" role="alert" aria-live="assertive" aria-atomic="true" hidden></p>
     <form id="budget-login" method="post" action="/auth/operator/login" hidden>
       <button type="submit">Sign in</button>
     </form>
     <fieldset id="budget-workspace" disabled>
-      <legend>Organization-scoped budget authority</legend>
+      <legend>Organization-scoped operation approvals</legend>
       <p id="budget-permission-status">An authorized named-user session with budget.approve for the exact organization is required.</p>
       <form id="budget-approval-form">
         <label for="budget-organization">Organization ID</label>
@@ -31,11 +31,11 @@
         <label for="budget-expires-at">Approval expiry</label>
         <input id="budget-expires-at" name="expires_at" type="datetime-local" required aria-describedby="budget-expiry-help">
         <small id="budget-expiry-help">Choose an explicit future time no more than one hour from now.</small>
-        <button id="budget-approve" type="submit" disabled>Review budget approval</button>
+        <button id="budget-approve" type="submit" disabled>Review operation approval</button>
       </form>
 
       <section id="budget-evidence" aria-labelledby="budget-evidence-title" hidden>
-        <h2 id="budget-evidence-title">Returned budget evidence</h2>
+        <h2 id="budget-evidence-title">Returned authorization evidence</h2>
         <dl>
           <dt>Approval ID</dt><dd id="budget-evidence-approval-id"></dd>
           <dt>Organization</dt><dd id="budget-evidence-organization"></dd>
@@ -65,10 +65,10 @@
     </fieldset>
 
     <dialog id="budget-confirm-dialog" aria-labelledby="budget-confirm-title" aria-describedby="budget-confirm-description">
-      <h2 id="budget-confirm-title" tabindex="-1">Confirm budget authority action</h2>
+      <h2 id="budget-confirm-title" tabindex="-1">Confirm operation approval service action</h2>
       <p id="budget-confirm-description"></p>
       <dl id="budget-confirm-details"></dl>
-      <label><input id="budget-explicit-confirm" type="checkbox"> I explicitly confirm this exact budget authority action.</label>
+      <label><input id="budget-explicit-confirm" type="checkbox"> I explicitly confirm this exact operation approval service action.</label>
       <div>
         <button id="budget-confirm-cancel" type="button">Cancel</button>
         <button id="budget-confirm-submit" type="button" disabled>Confirm action</button>

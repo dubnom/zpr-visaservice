@@ -185,7 +185,7 @@ func buildSimulatorRuntimePlan(input simulatorRuntimePlanInput) simulatorRuntime
 
 	if input.Budget == nil {
 		plan.BudgetStatus = simulatorRuntimeBudgetAbsent
-		addBlocker("approved budget evidence is absent")
+		addBlocker("approved authorization evidence is absent")
 	} else {
 		switch input.Budget.Status {
 		case simulatorRuntimeBudgetApproved:

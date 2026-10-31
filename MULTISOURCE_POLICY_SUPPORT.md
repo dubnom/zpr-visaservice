@@ -3569,8 +3569,13 @@ not a complete authorization decision: callers must first authorize the
 reviewer and load the proposer from the authoritative reviewed proposal.
 No active approval handler or proposal store exists yet, so the helper is not
 currently an enforced two-person approval workflow. Proposal/version/digest
-checks and independent-reviewer enforcement at the durable commit remain
-required before enabling approval.
+checks remain required before enabling approval.
+**Superseded separation requirement (2026-10-30):** independent-reviewer
+enforcement is not a mandatory gate. The current HTTP boundary permits
+self-approval with ordinary approval authority and organization-scoped
+`approval.self` in session and backend grants, with an advisory Audit warning.
+The helper discussion above is historical groundwork, not current handler
+capability or a requirement for two people.
 
 Enrollment delegation's independent grant validator accepts the dedicated
 permission names through the shared validator, but its signed-request route
@@ -3623,7 +3628,11 @@ The only decision transition is
 the immutable proposer inside the transaction, compares exact digest/version
 and the supplied current registry revision, requires a verified issuer/subject (the proposer may approve; the event is
 flagged as a single-operator review), and writes the decision and event together. Decision (2026-10-28): the
-two-person rule is removed; self-approval is allowed and flagged in the audit. A changed display name or caller-side proposal copy cannot bypass
+two-person rule is removed; self-approval is allowed and flagged in the audit.
+Clarification (2026-10-30): the HTTP caller must additionally authorize
+organization-scoped `approval.self` in session and backend grants, and Audit
+must warn about the self-approval without blocking it.
+A changed display name or caller-side proposal copy cannot bypass
 the persisted-author check. Failed/stale/conflicting decisions write no audit
 event; an audit write failure rolls back the state transition. The immutable
 proposal/event triggers reject updates/deletion of the review evidence.
@@ -4049,6 +4058,16 @@ retry APIs using test-owned candidate capture and pinned request TLS fixtures:
 - A verified author cannot self-review. An injected approval-audit failure
   writes no decision receipt, and a fresh proof can retry the same decision
   key successfully. A later identical approval returns the original evidence.
+
+  **Historical evidence, superseded requirement (2026-10-30):** the author
+  rejection above describes the earlier fixture without self-approval authority,
+  not a current blanket two-person rule. An author with the ordinary approval
+  permission and organization-scoped `approval.self` in both session and backend
+  grants may approve their own proposal. Such approval is recorded as
+  `self_review` and must receive an advisory warning in
+  [Audit](ENTITY_HISTORY_PLAN.md#self-approval-role-risk-warnings).
+  Missing authorization still denies approval; this clarification does not
+  claim new runtime qualification.
 - A reconstructed verifier with the reviewer's grant removed denies the
   attempt before any receipt access; wrong-organization verification also
   denies without consuming the nonce. Existing verifier instances retain

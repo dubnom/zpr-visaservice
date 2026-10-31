@@ -150,26 +150,8 @@ func loadEvaluationOperatorServices(path, state string, inventory evaluationInve
 		if err := decodeEvaluationDelegationTrust(base, &original); err != nil {
 			return nil, err
 		}
-		if configured.Version != original.Version || configured.Audience != original.Audience ||
-			!reflect.DeepEqual(configured.Keys, original.Keys) || len(configured.Grants) != len(original.Grants) {
-			return nil, errors.New("operator delegation override must preserve retained audience, keys and named identities")
-		}
-		for i, grant := range configured.Grants {
-			base := original.Grants[i]
-			if grant.Issuer != base.Issuer || grant.Subject != base.Subject ||
-				!slices.Equal(grant.Organizations, base.Organizations) ||
-				!slices.Equal(grant.Organizations, []string{config.Organization}) {
-				return nil, errors.New("operator delegation override must preserve exact named organization grants")
-			}
-			permissions := slices.Clone(grant.Permissions)
-			if !slices.Contains(base.Permissions, "approval.self") {
-				permissions = slices.DeleteFunc(permissions, func(permission string) bool { return permission == "approval.self" })
-			}
-			if !slices.Equal(permissions, base.Permissions) ||
-				(slices.Contains(grant.Permissions, "approval.self") &&
-					!slices.Contains(base.Permissions, "subject-link.approve") && !slices.Contains(base.Permissions, "approve")) {
-				return nil, errors.New("operator delegation override may add approval.self only to existing named approvers")
-			}
+		if err := validateEvaluationDelegationOverride(configured, original, config.Organization); err != nil {
+			return nil, err
 		}
 	}
 	if config.OperatorOIDCConfigFile != "" {
@@ -348,6 +330,31 @@ func decodeEvaluationDelegationTrust(data []byte, config *operatordelegation.Con
 		return errors.New("operator delegation trust requires one JSON object")
 	}
 	return config.Validate()
+}
+
+func validateEvaluationDelegationOverride(configured, original operatordelegation.Config, organization string) error {
+	if configured.Version != original.Version || configured.Audience != original.Audience ||
+		!reflect.DeepEqual(configured.Keys, original.Keys) || len(configured.Grants) != len(original.Grants) {
+		return errors.New("operator delegation override must preserve retained audience, keys and named identities")
+	}
+	for i, grant := range configured.Grants {
+		base := original.Grants[i]
+		if grant.Issuer != base.Issuer || grant.Subject != base.Subject ||
+			!slices.Equal(grant.Organizations, base.Organizations) ||
+			!slices.Equal(grant.Organizations, []string{organization}) {
+			return errors.New("operator delegation override must preserve exact named organization grants")
+		}
+		permissions := slices.Clone(grant.Permissions)
+		if !slices.Contains(base.Permissions, "approval.self") {
+			permissions = slices.DeleteFunc(permissions, func(permission string) bool { return permission == "approval.self" })
+		}
+		if !slices.Equal(permissions, base.Permissions) ||
+			(slices.Contains(grant.Permissions, "approval.self") &&
+				!slices.Contains(base.Permissions, "subject-link.approve") && !slices.Contains(base.Permissions, "approve")) {
+			return errors.New("operator delegation override may add approval.self only to existing named approvers")
+		}
+	}
+	return nil
 }
 
 func evaluationOperatorDataPlaneArguments(state string, inventory evaluationInventory, image string, installPolicy bool, services *evaluationOperatorServices) []string {

@@ -169,7 +169,7 @@ func TestSimulatorScenarioRunContextCancellationPreservesApproval(t *testing.T) 
 		},
 	))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(simulatorScenarioTestLocalContext(context.Background()))
 	result := make(chan error, 1)
 	go func() {
 		result <- manager.startApprovedVersionedContext(

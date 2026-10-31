@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -180,13 +181,12 @@ async function prepareScenario(page, context) {
   await page.goto(`${fixture.origin}/scenarios.html#simulate`);
   await expect(page.locator("#operator-login-status")).toHaveText(/^User: Synthetic Browser Operator/);
   await expect(page.locator("#scenario-plan-organization")).toHaveValue(fixture.organization);
+  await expect(page.locator(`#scenario-plan-scenario option[value="${fixture.scenario}"]`)).toHaveCount(1);
   await page.locator("#scenario-plan-scenario").selectOption(fixture.scenario);
 }
 
-async function previewUntilHandoffOrPlan(page) {
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
+async function waitForAutomaticPreflight(page) {
   await Promise.race([
-    page.locator("#scenario-plan-budget-handoff").waitFor({ state: "visible" }),
     page.locator("#scenario-plan-preview").waitFor({ state: "visible" }),
     page.locator("#scenario-plan-error").waitFor({ state: "visible" }),
   ]);
@@ -211,20 +211,13 @@ async function grantExactDisplayedScope(context) {
   return evidence;
 }
 
-async function previewApprove(page) {
-  await page.getByRole("button", { name: "Preview plan", exact: true }).click();
-  await expect(page.locator("#scenario-plan-preview")).toBeVisible();
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
+async function selectAndRunScenario(page) {
+  await page.reload();
+  await expect(page.locator(`#scenario-plan-scenario option[value="${fixture.scenario}"]`)).toHaveCount(1);
+  await page.locator("#scenario-plan-scenario").selectOption(fixture.scenario);
   await expect(page.locator("#scenario-plan-summary")).toContainText("approved");
-  await expect(page.locator("#scenario-plan-summary")).toContainText(fixture.scopeDigest);
-  await page.locator("#scenario-plan-approve").click();
-  const dialog = page.getByRole("dialog", { name: "Explicitly approve scenario plan" });
-  await expect(dialog).toBeVisible();
-  await dialog.locator("#scenario-plan-explicit-confirm").check();
-  await dialog.locator("#scenario-plan-confirm-approval").click();
-  await expect(dialog).toBeHidden();
+  await expect(page.locator("#scenario-plan-run-id")).not.toBeEmpty();
   await expect(page.locator("#scenario-plan-approval-status")).toContainText("Approval recorded");
-  await expect(page.locator("#scenario-plan-run-button")).toBeEnabled();
 }
 
 test.beforeEach(async () => {
@@ -240,7 +233,7 @@ test.afterEach(async () => {
   }
 });
 
-test("real dashboard previews empty authority, then grants via synthetic mTLS and runs through the in-memory executor", async ({ page, context }) => {
+test("scenario selection blocks without budget evidence, then self-approves and runs after an exact grant", async ({ page, context }) => {
   page.on("request", request => {
     const url = new URL(request.url());
     if (url.origin !== fixture.origin) return;
@@ -252,13 +245,8 @@ test("real dashboard previews empty authority, then grants via synthetic mTLS an
     });
   });
   await prepareScenario(page, context);
-  await previewUntilHandoffOrPlan(page);
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeVisible();
-  await expect(page.locator("#scenario-plan-handoff-organization")).toHaveText(fixture.organization);
-  await expect(page.locator("#scenario-plan-handoff-scenario")).toHaveText(fixture.scenario);
-  await expect(page.locator("#scenario-plan-handoff-digest")).toHaveText(fixture.scopeDigest);
-  await expect(page.locator("#scenario-plan-approve")).toBeDisabled();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
+  await waitForAutomaticPreflight(page);
+  await expect(page.locator("#scenario-plan-error")).toContainText("Authorization is unavailable");
   expect(requests.filter(request => request.path === "/api/budget-authority/approvals")).toEqual([]);
 
   const initialState = await fixtureStatus(context);
@@ -267,24 +255,22 @@ test("real dashboard previews empty authority, then grants via synthetic mTLS an
   expect(initialState.authority_calls).toBeGreaterThan(0);
 
   const grant = await grantExactDisplayedScope(context);
-  await previewApprove(page);
-  expect(requests.some(request => request.path === "/api/simulator/scenario-plans/approve")).toBe(true);
+  await selectAndRunScenario(page);
+  expect(requests.some(request =>
+    request.path === `/api/simulator/organizations/${fixture.organization}/scenario-plans/approve`,
+  )).toBe(true);
   expect(requests.every(request => request.path !== "/api/budget-authority/approvals")).toBe(true);
 
-  const runResponsePromise = page.waitForResponse(response =>
-    new URL(response.url()).pathname === `/api/simulator/scenarios/${fixture.scenario}/run` &&
-    response.request().method() === "POST");
-  await page.locator("#scenario-plan-run-button").click();
-  const runResponse = await runResponsePromise;
-  expect(runResponse.status()).toBe(202);
   await expect(page.locator("#scenario-plan-run-id")).not.toBeEmpty();
   const runRequest = requests.find(request =>
-    request.method === "POST" && request.path === `/api/simulator/scenarios/${fixture.scenario}/run`);
+    request.method === "POST" &&
+    request.path === `/api/simulator/organizations/${fixture.organization}/scenarios/${fixture.scenario}/run`);
   expect(runRequest.headers["x-zpr-csrf"]).toBe(fixture.csrf);
   const runBody = JSON.parse(runRequest.postData);
   expect(runBody.approval_id).toBeTruthy();
   expect(runBody.plan_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   expect(runBody.approval_id).not.toBe(grant.approval_id);
+  await expect(page.locator("#scenario-plan-approval-status")).not.toContainText(runBody.approval_id);
 
   const replay = await page.evaluate(async ({ scenario, body }) => {
     const response = await window.zprOperatorFetch(`/api/simulator/scenarios/${scenario}/run`, {
@@ -301,7 +287,77 @@ test("real dashboard previews empty authority, then grants via synthetic mTLS an
   expect(completed.run.run_id).not.toBe("");
   expect(completed.authority_calls).toBeGreaterThan(initialState.authority_calls);
   expect(requests.filter(request =>
-    request.path === `/api/simulator/scenarios/${fixture.scenario}/run`)).toHaveLength(2);
+    request.path.endsWith(`/scenarios/${fixture.scenario}/run`))).toHaveLength(2);
+});
+
+test("lost approval response recovers the same permit on a later selection", async ({ page, context }) => {
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if (url.origin === fixture.origin && request.method() === "POST") {
+      requests.push({ path: url.pathname, postData: request.postData() });
+    }
+  });
+  await prepareScenario(page, context);
+  await waitForAutomaticPreflight(page);
+  await grantExactDisplayedScope(context);
+  let firstApproval;
+  const approvalPath = `**/api/simulator/organizations/${fixture.organization}/scenario-plans/approve`;
+  const loseResponse = async route => {
+    const actual = await route.fetch({ maxRetries: 0 });
+    expect(actual.status()).toBe(200);
+    firstApproval = await actual.json();
+    await route.fulfill({ status: 502, json: { error: "Synthetic approval response loss." } });
+  };
+  await context.route(approvalPath, loseResponse);
+  await page.reload();
+  await page.locator("#scenario-plan-scenario").selectOption(fixture.scenario);
+  await expect(page.locator("#scenario-plan-error")).toContainText("Synthetic approval response loss.");
+  expect((await fixtureStatus(context)).executor_calls).toBe(0);
+  expect(firstApproval.approval_id).toBeTruthy();
+
+  await context.unroute(approvalPath, loseResponse);
+  await selectAndRunScenario(page);
+  const runRequests = requests.filter(request =>
+    request.path === `/api/simulator/organizations/${fixture.organization}/scenarios/${fixture.scenario}/run`);
+  expect(runRequests).toHaveLength(1);
+  expect(JSON.parse(runRequests[0].postData).approval_id).toBe(firstApproval.approval_id);
+  expect((await fixtureStatus(context)).executor_calls).toBe(1);
+});
+
+test("lost run response is reconciled against the real fixture without duplicate execution", async ({ page, context }) => {
+  page.on("request", request => {
+    const url = new URL(request.url());
+    if (url.origin === fixture.origin && request.method() === "POST") {
+      requests.push({ path: url.pathname, postData: request.postData() });
+    }
+  });
+  await prepareScenario(page, context);
+  await waitForAutomaticPreflight(page);
+  await grantExactDisplayedScope(context);
+  await context.route(
+    `**/api/simulator/organizations/${fixture.organization}/scenarios/${fixture.scenario}/run`,
+    async route => {
+      const actual = await route.fetch({ maxRetries: 0 });
+      expect(actual.status()).toBe(202);
+      await route.fulfill({ status: 502, json: { error: "Synthetic response loss." } });
+    },
+  );
+  await selectAndRunScenario(page);
+  await expect(page.locator("#scenario-plan-error")).toBeHidden();
+  const runRequests = requests.filter(request =>
+    request.path === `/api/simulator/organizations/${fixture.organization}/scenarios/${fixture.scenario}/run`);
+  expect(runRequests).toHaveLength(1);
+  const approvalID = JSON.parse(runRequests[0].postData).approval_id;
+  const reference = `sha256:${createHash("sha256")
+    .update(`simulator-scenario-approval-reference-v1\0${approvalID}`).digest("hex")}`;
+  const completed = await fixtureStatus(context);
+  expect(completed.executor_calls).toBe(1);
+  expect(completed.run.approval_reference).toBe(reference);
+  expect(JSON.stringify(completed.run)).not.toContain(approvalID);
+  await page.waitForTimeout(300);
+  expect(requests.filter(request =>
+    request.path === `/api/simulator/organizations/${fixture.organization}/scenarios/${fixture.scenario}/run`))
+    .toHaveLength(1);
 });
 
 test("revoked synthetic grant denies the actual run HTTP request before fake execution", async ({ page, context }) => {
@@ -316,27 +372,46 @@ test("revoked synthetic grant denies the actual run HTTP request before fake exe
     });
   });
   await prepareScenario(page, context);
-  await previewUntilHandoffOrPlan(page);
-  await expect(page.locator("#scenario-plan-budget-handoff")).toBeVisible();
+  await waitForAutomaticPreflight(page);
+  await expect(page.locator("#scenario-plan-error")).toContainText("Authorization is unavailable");
   await grantExactDisplayedScope(context);
-  await previewApprove(page);
+  let releaseRun;
+  await context.route(
+    `**/api/simulator/organizations/${fixture.organization}/scenarios/${fixture.scenario}/run`,
+    route =>
+    new Promise(resolve => {
+      releaseRun = async () => {
+        await route.continue();
+        resolve();
+      };
+    }),
+  );
+  const runRequestPromise = page.waitForRequest(request =>
+    new URL(request.url()).pathname ===
+      `/api/simulator/organizations/${fixture.organization}/scenarios/${fixture.scenario}/run` &&
+    request.method() === "POST");
 
+  await page.reload();
+  await expect(page.locator(`#scenario-plan-scenario option[value="${fixture.scenario}"]`)).toHaveCount(1);
+  await page.locator("#scenario-plan-scenario").selectOption(fixture.scenario);
+  await runRequestPromise;
+
+  const runResponsePromise = page.waitForResponse(response =>
+    new URL(response.url()).pathname ===
+      `/api/simulator/organizations/${fixture.organization}/scenarios/${fixture.scenario}/run` &&
+    response.request().method() === "POST");
   const revoked = await fixtureRequest(context, "/__fixture__/revoke", {});
   expect(revoked.status()).toBe(200);
   expect((await revoked.json()).revoked).toBe(true);
-
-  const runResponsePromise = page.waitForResponse(response =>
-    new URL(response.url()).pathname === `/api/simulator/scenarios/${fixture.scenario}/run` &&
-    response.request().method() === "POST");
-  await page.locator("#scenario-plan-run-button").click();
+  await expect.poll(() => typeof releaseRun).toBe("function");
+  await releaseRun();
   const runResponse = await runResponsePromise;
   expect(runResponse.status()).toBe(500);
   await expect(page.locator("#scenario-plan-error")).toContainText("could not be started");
   await expect(page.locator("#scenario-plan-run-id")).toBeEmpty();
-  await expect(page.locator("#scenario-plan-run-button")).toBeDisabled();
   const denied = await fixtureStatus(context);
   expect(denied.executor_calls).toBe(0);
   expect(denied.run.state).toBe("idle");
   expect(requests.filter(request =>
-    request.path === `/api/simulator/scenarios/${fixture.scenario}/run`)).toHaveLength(1);
+    request.path.endsWith(`/scenarios/${fixture.scenario}/run`))).toHaveLength(1);
 });

@@ -51,18 +51,32 @@ func TestScenarioPlanRunAuthorizationDeniesBeforeApprovalConsumption(t *testing.
 		resolvedOrganization string
 		allowedOrganization  string
 		permissions          map[string]bool
+		wantPermission       string
+		wantCalls            int
 	}{
 		{
 			name:                 "authenticated organization mismatch",
 			resolvedOrganization: "other-org",
 			allowedOrganization:  "approved-org",
 			permissions:          map[string]bool{"scenario.run": true},
+			wantPermission:       "scenario.run",
+			wantCalls:            1,
 		},
 		{
 			name:                 "insufficient permission",
 			resolvedOrganization: "approved-org",
 			allowedOrganization:  "approved-org",
 			permissions:          map[string]bool{"scenario.read": true},
+			wantPermission:       "scenario.run",
+			wantCalls:            1,
+		},
+		{
+			name:                 "self-approval permission revoked",
+			resolvedOrganization: "approved-org",
+			allowedOrganization:  "approved-org",
+			permissions:          map[string]bool{"scenario.run": true},
+			wantPermission:       "approval.self",
+			wantCalls:            2,
 		},
 	}
 	for _, test := range tests {
@@ -70,7 +84,9 @@ func TestScenarioPlanRunAuthorizationDeniesBeforeApprovalConsumption(t *testing.
 			scenario, manifest, organization := simulatorScenarioPlanRunContractInputs()
 			plan := simulatorScenarioPlanRunContractPlan(t, scenario, manifest, organization)
 			store := newSimulatorScenarioPlanApprovalStore()
-			approvalID, err := store.issue(plan)
+			approvalID, err := store.issueForPrincipal(plan, simulatorScenarioPrincipal{
+				mode: simulatorAuthorizationNamed, issuer: "https://issuer.example", subject: "operator-17",
+			})
 			if err != nil {
 				t.Fatalf("issue approval: %v", err)
 			}
@@ -99,8 +115,8 @@ func TestScenarioPlanRunAuthorizationDeniesBeforeApprovalConsumption(t *testing.
 					http.Error(w, "invalid request", http.StatusBadRequest)
 					return
 				}
-				if err := manager.startApprovedVersioned(
-					scenario, manifest, organization, executor, organization.ID, 1,
+				if err := manager.startApprovedVersionedContext(
+					r.Context(), scenario, manifest, organization, executor, organization.ID, 1,
 					request.ApprovalID, request.PlanDigest,
 				); err != nil {
 					http.Error(w, "run rejected", http.StatusConflict)
@@ -129,8 +145,8 @@ func TestScenarioPlanRunAuthorizationDeniesBeforeApprovalConsumption(t *testing.
 			if response.Code != http.StatusForbidden {
 				t.Fatalf("run status=%d, want %d: %s", response.Code, http.StatusForbidden, response.Body)
 			}
-			if authorizer.calls != 1 || authorizer.organization != test.resolvedOrganization ||
-				authorizer.permission != "scenario.run" {
+			if authorizer.calls != test.wantCalls || authorizer.organization != test.resolvedOrganization ||
+				authorizer.permission != test.wantPermission {
 				t.Fatalf("authorization scope=%q/%q calls=%d", authorizer.organization, authorizer.permission, authorizer.calls)
 			}
 			if downstreamCalls != 0 || executorCalls != 0 {
@@ -154,7 +170,9 @@ func TestScenarioPlanRunAuthorizationAllowsScopedOneUseApproval(t *testing.T) {
 	scenario, manifest, organization := simulatorScenarioPlanRunContractInputs()
 	plan := simulatorScenarioPlanRunContractPlan(t, scenario, manifest, organization)
 	store := newSimulatorScenarioPlanApprovalStore()
-	approvalID, err := store.issue(plan)
+	approvalID, err := store.issueForPrincipal(plan, simulatorScenarioPrincipal{
+		mode: simulatorAuthorizationNamed, issuer: "https://issuer.example", subject: "operator-17",
+	})
 	if err != nil {
 		t.Fatalf("issue approval: %v", err)
 	}
@@ -187,7 +205,7 @@ func TestScenarioPlanRunAuthorizationAllowsScopedOneUseApproval(t *testing.T) {
 
 	authorizer := &scenarioPlanRunAuthorizationTestAuthorizer{
 		allowedOrganization: organization.ID,
-		permissions:         map[string]bool{"scenario.run": true},
+		permissions:         map[string]bool{"scenario.run": true, "approval.self": true},
 	}
 	var downstreamCalls int
 	var authorizedOrganization string
@@ -207,8 +225,8 @@ func TestScenarioPlanRunAuthorizationAllowsScopedOneUseApproval(t *testing.T) {
 			http.Error(w, "scenario mismatch", http.StatusConflict)
 			return
 		}
-		if err := manager.startApprovedVersioned(
-			scenario, manifest, organization, executor, organization.ID, 7,
+		if err := manager.startApprovedVersionedContext(
+			r.Context(), scenario, manifest, organization, executor, organization.ID, 7,
 			request.ApprovalID, request.PlanDigest,
 		); err != nil {
 			http.Error(w, "run rejected", http.StatusConflict)
@@ -235,8 +253,8 @@ func TestScenarioPlanRunAuthorizationAllowsScopedOneUseApproval(t *testing.T) {
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("authorized run status=%d body=%s", response.Code, response.Body)
 	}
-	if authorizer.calls != 1 || authorizer.organization != organization.ID ||
-		authorizer.permission != "scenario.run" || downstreamCalls != 1 ||
+	if authorizer.calls != 4 || authorizer.organization != organization.ID ||
+		authorizer.permission != "approval.self" || downstreamCalls != 1 ||
 		authorizedOrganization != organization.ID {
 		t.Fatalf("authorized request scope=%q/%q calls=%d downstream=%d context org=%q",
 			authorizer.organization, authorizer.permission, authorizer.calls, downstreamCalls, authorizedOrganization)
@@ -278,8 +296,8 @@ func TestScenarioPlanRunAuthorizationAllowsScopedOneUseApproval(t *testing.T) {
 	)
 	replayRequest.RemoteAddr = "127.0.0.1:1234"
 	handler.ServeHTTP(replay, replayRequest)
-	if replay.Code != http.StatusConflict || authorizer.calls != 2 ||
-		authorizer.organization != organization.ID || authorizer.permission != "scenario.run" ||
+	if replay.Code != http.StatusConflict || authorizer.calls != 6 ||
+		authorizer.organization != organization.ID || authorizer.permission != "approval.self" ||
 		downstreamCalls != 2 || executorCalls.Load() != 1 {
 		t.Fatalf("replay status=%d auth=%q/%q calls=%d downstream=%d executor=%d body=%s",
 			replay.Code, authorizer.organization, authorizer.permission, authorizer.calls,
@@ -328,7 +346,9 @@ func TestScenarioPlanRunAuthorizationRejectsMismatchedOrInvalidRequestsBeforeCon
 			scenario, manifest, organization := simulatorScenarioPlanRunContractInputs()
 			plan := simulatorScenarioPlanRunContractPlan(t, scenario, manifest, organization)
 			store := newSimulatorScenarioPlanApprovalStore()
-			approvalID, err := store.issue(plan)
+			approvalID, err := store.issueForPrincipal(plan, simulatorScenarioPrincipal{
+				mode: simulatorAuthorizationNamed, issuer: "https://issuer.example", subject: "operator-17",
+			})
 			if err != nil {
 				t.Fatalf("issue approval: %v", err)
 			}
@@ -361,8 +381,8 @@ func TestScenarioPlanRunAuthorizationRejectsMismatchedOrInvalidRequestsBeforeCon
 				}
 				runScenario := scenario
 				runScenario.ID = r.PathValue("scenario")
-				if err := manager.startApprovedVersioned(
-					runScenario, manifest, organization, executor, organization.ID, 1,
+				if err := manager.startApprovedVersionedContext(
+					r.Context(), runScenario, manifest, organization, executor, organization.ID, 1,
 					request.ApprovalID, request.PlanDigest,
 				); err != nil {
 					writeWorkspaceError(w, http.StatusConflict, "scenario run could not be started with this approval")
@@ -372,7 +392,7 @@ func TestScenarioPlanRunAuthorizationRejectsMismatchedOrInvalidRequestsBeforeCon
 			})
 			authorizer := &scenarioPlanRunAuthorizationTestAuthorizer{
 				allowedOrganization: organization.ID,
-				permissions:         map[string]bool{"scenario.run": true},
+				permissions:         map[string]bool{"scenario.run": true, "approval.self": true},
 			}
 			handler := simulatorAPIProxy(
 				authorizer,
@@ -395,8 +415,8 @@ func TestScenarioPlanRunAuthorizationRejectsMismatchedOrInvalidRequestsBeforeCon
 			if response.Code != test.wantStatus {
 				t.Fatalf("run status=%d, want %d: %s", response.Code, test.wantStatus, response.Body)
 			}
-			if authorizer.calls != 1 || authorizer.organization != organization.ID ||
-				authorizer.permission != "scenario.run" || downstreamCalls != 1 {
+			if authorizer.calls != 2 || authorizer.organization != organization.ID ||
+				authorizer.permission != "approval.self" || downstreamCalls != 1 {
 				t.Fatalf("authorized request did not reach run validation: scope=%q/%q auth calls=%d handler calls=%d",
 					authorizer.organization, authorizer.permission, authorizer.calls, downstreamCalls)
 			}
