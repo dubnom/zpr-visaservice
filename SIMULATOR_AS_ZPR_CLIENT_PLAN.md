@@ -10,10 +10,119 @@ newer narrowly scoped source evidence or to claim full acceptance.
 
 Date: 2026-10-23
 
-Status: proposed functional/demo delivery plan. Packet B completed the B01
-inventory and added targeted C06 regression evidence; production boundary
-violations remain open. Other tasks/acceptance gates remain pending; this
-document does not claim deployment or production readiness.
+Status (2026-10-30): turn-key evaluation delivery direction; implementation and
+canonical UI/package acceptance remain partial. The active delivery sequence
+below governs the next work. Earlier packet records retain their dated scope;
+production boundary gates remain open. This document does not claim deployment
+or production readiness.
+
+## Active turn-key delivery plan (2026-10-30)
+
+**Goal (updated user decision, 2026-10-30):** in every Simulator installation,
+after authentication, choosing an organization or a scenario is the only
+required operator input. Organization selection automatically prepares its
+authorized runtime; scenario selection automatically prepares and runs that
+scenario. No separate review, approval, acknowledgment or credential-retrieval
+prompts. Simulator orchestrates ordinary ZPR contracts; production services
+must work without it.
+
+**Baseline:** the unchanged Velocity scenario passes sequential direct-action
+diagnostics, repeats and an independent base restart. That is not canonical
+Simulator UI, parallel-scheduler or matched-package acceptance. Its five
+pre-enrolled identities and exact-ID policy grants are diagnostic scaffolding,
+not the general organization onboarding contract. See the
+[current delivery evidence and gaps](GUI%20work.md#current-status).
+
+### Preparation and ownership
+
+| Prepared once | Automated by Simulator through ordinary contracts |
+| --- | --- |
+| Independent ZPR services, reachable nodes, trusted enrollment/authentication authorities and a trusted bootstrap endpoint/CA | Check readiness and report the exact missing prerequisite |
+| Organization directory/source references, operator issuer/subject grants including scoped domain approvals and self-approval, permitted workload/service policy | Compare required inventory with retained state; automatically submit and self-approve exact authorized setup |
+| Separate Simulator operator client, transport identity and delegation signer | Generate endpoint-owned keys for genuinely new machines/adapters; request enrollment and securely deliver approved credentials |
+| Reviewed infrastructure topology; adding nodes uses the separate infrastructure join model | Authenticate retained endpoints with fresh short-lived tokens, start workloads and observe production-owned DNS publication |
+
+Organization profiles describe people, topology, workloads and expected results.
+They do not contain private keys or runtime tokens. Runtime paths and artifact
+pins may remain installation-owned implementation details, not manual profile
+authoring requirements. Each organization has isolated retained state.
+
+- Restart reuses endpoint identities and obtains fresh authentication; it does
+  not re-enroll or regenerate keys. New endpoints receive unique identities.
+- **Superseded for Simulator:** the earlier separate deliberate self-approval
+  click and run acknowledgment. Login alone does not execute a change; selection
+  triggers submission, automatic named self-approval and execution as distinct
+  recorded operations. Production Control Room approval UX remains unchanged.
+- Every installation must configure its intended Simulator operator with
+  `approval.self` plus the required domain/action and organization grants.
+  Credentials identify the operator; they do not bypass backend authorization.
+  Unauthorized or expired sessions fail closed with an actionable error, not
+  an extra approval prompt or a fallback identity. No blanket grant expansion.
+- Bind automatic approval to the exact inventory, candidate/configuration
+  digest, target, generation and current verified operator. Revalidate grants
+  and current state before each mutation; invalidate stale approvals. Unexpected
+  trust/policy changes or destructive identity resets outside the authorized
+  selection scope stop rather than silently expanding that scope.
+- Record requester/approver identity, self-approval, scope, operation and outcome
+  through production-owned evidence contracts. Audit should warn on risky
+  self-approval role combinations or assertion findings, with the rule,
+  affected role/identity and evidence references. Warnings are advisory and
+  do not replace authorization or add a mandatory run confirmation. This is
+  a requirement, not an implemented Audit capability; see the
+  [Audit owner](ENTITY_HISTORY_PLAN.md#self-approval-role-risk-warnings).
+- The separate Velocity Simulator OIDC client/signer has already been approved
+  at port 24788 using the existing issuer/operator. Implementation is pending;
+  do not reuse Room secrets/signing keys or ask for the same approval again.
+- Existing exact-ID traffic grants remain effective. Broader role/profile-based
+  policy is a separately reviewed proposal, not permission granted by this plan.
+- DNS locates services; it does not establish identity, trust or authorization.
+  Pre-admission discovery needs an independently trusted bootstrap address.
+  Nodes follow the [infrastructure join model](System%20release%20plan.md#multi-host-role-based-deployment),
+  not generic adapter enrollment. Endpoint issuance follows the
+  [provisioning contract](../Provisioning%20plan.md).
+
+### Ordered milestones and exit gates
+
+Execute in order; keep Velocity the only live qualification target until G5
+passes. Each implementation slice includes focused tests and maintained
+instructions. No full platform rewrite is a prerequisite.
+
+| Gate | Deliverable | Required proof before proceeding |
+| --- | --- | --- |
+| **G0: Freeze contracts and acceptance** | Trace existing enrollment/issuance/readback, operator pairing and DNS contracts. Record any genuinely missing public operation before adding orchestration. Pin original Velocity scenario, runtime artifacts and immutable approval scope. | Each step has a supported operation, state owner and authoritative result. Full runtime configuration changes invalidate resource approval. No private DB writes, shared bootstrap keys or undocumented shell fallback. |
+| **G1: Establish operator access and automatic self-approval** | Implement resumable add-later registration of the approved separate Velocity Simulator client/signer and selection-triggered named self-approval. Define the same operator grant configuration contract for every Simulator installation; preserve Room and retained install recovery/integrity. | Real named OIDC login at 24788; authorized selection submits, self-approves and proceeds with no extra prompt. Reviewer/missing domain grant/expired session/cross-org cases fail closed. Login alone makes no changes. Restart retains pairing. Room approval UX and availability remain unchanged with Simulator stopped. |
+| **G2: Automate endpoint onboarding** | Wire selection -> inventory comparison -> endpoint key generation -> enrollment request -> authorized automatic self-approval -> issuance/readback -> protected runtime handoff. Persist operation IDs and endpoint identity references. Reuse existing helpers. | One genuinely new endpoint enrolls from selection alone without credential preparation, token retrieval or approval dialogs. Retry/restart produces no duplicate identity; interrupted issuance reconciles safely. Unapproved/revoked endpoints cannot join. Missing or expired authorization is explicit, never a fallback. |
+| **G3: Replace brittle discovery** | Use independently configured bootstrap endpoints before admission; use published production DNS/service contracts afterward. Remove unnecessary fixed workload/service addresses. Use only discovery mechanisms actually supported by those contracts. | After service restart/address change, the client resolves the published service and reaches it through ZPR. Missing/stale DNS, wrong certificate and unreachable enrollment report distinct failures; no legacy DNS-container edits. |
+| **G4: Qualify the actual Simulator path and evidence** | Run the unchanged original Velocity scenario through named login, automatic preflight/self-approval and the real scenario manager, including parallel scheduling. Verify selection-only UX and production-owned self-approval evidence; connect Audit warning rules/assertions. | No post-login input except organization/scenario selection. Original owner sessions, controllers/workloads, HTTP 200, exactly 100 warmed samples and 16,777,216 bytes within the original 75-second deadline; full cleanup. Repeat, restart, cancellation and partial-start failures leave no owned runtime/listener leaks. Foreign/stale resources are not silently removed. A risky-role fixture yields an evidence-linked Audit warning without a blocking confirmation; missing evidence is labeled, never reported as safe. |
+| **G5: Package and deploy dev** | Pin matching package/config/catalog/registry, verify authoritative policy readback, qualify installation/recovery, then deploy on the existing dev ports. Keep stable unchanged. | Installed artifacts match tested hashes; UI acceptance reruns from the package without source/toolchain or shell repair. Production health works with Simulator unavailable. Maintained environment page reports actual versions/status and development credentials only. Record verified rollback procedure. |
+| **G6: Expand the proven path** | Apply the same orchestration to Northstar, Great Lakes, Load Lab and Redwood; do not create per-organization enrollment scripts or generic replacement scenarios. | All five original organizations and all 17 original scenarios pass their own expected outcomes, organization switching, isolation and retained restart checks. Update dev status only with the measured acceptance matrix. |
+
+G2 first uses an exact test endpoint within the operator's authorized scope,
+automatically self-approved without broadening existing Velocity traffic
+permissions. Its onboarding proof and the original retained
+scenario proof are distinct. G4/G6 must exercise the maintained onboarding path
+when a scenario needs a genuinely new endpoint, not rely solely on the original
+pre-enrolled diagnostic inventory.
+
+### Delivery discipline and completion
+
+- One coordinator owns live changes. Parallel chats may take bounded source-only
+  work on independent contracts/tests; they do not change shared runtime state.
+- At each 60-90 minute engineering checkpoint, report the gate, passing evidence,
+  exact blocker and next bounded action. If the gate makes no measurable
+  progress, stop expanding configuration and reproduce the failing contract.
+- Diagnose with a focused test, fix the owning layer, then rerun the failed gate.
+  A manual repair is diagnosis, not accepted delivery; replace it with a tested,
+  maintained path before recording success.
+- Do not deploy other organizations or main dev from sequential diagnostic
+  success. Do not change policy/trust scope or reset retained identities without
+  separate review.
+- **Done means:** a new permitted endpoint can be enrolled from the UI without
+  manual credentials or additional prompts after selection, named self-approval
+  is recorded and Audit role-risk warnings are verified, retained identities
+  survive restart, all original
+  scenarios pass from the installed dev package, cleanup/recovery are proven,
+  and production remains independent. Source tests alone do not satisfy this.
 
 ## Packet A implementation record (2026-10-23)
 
@@ -534,9 +643,11 @@ Depends on M1 and the required M2 operator contracts.
   Missing source/setup becomes an actionable preflight error, not auto-create
   or silent selection of another directory.
 - [ ] **U04:** Use ordinary endpoint enrollment/authentication and unique
-  endpoint identities. For the demo, pre-enroll a small fixed set through
-  existing supported tools rather than making native key/helper development a
-  prerequisite. Persist each identity; do not clone endpoint keys.
+  endpoint identities. The fixed pre-enrolled demo set is a diagnostic stepping
+  stone, not the turn-key completion gate. Automate new-endpoint enrollment and
+  retained-identity reuse through existing supported tools/contracts under G2
+  above; native platform-helper certification is not a prerequisite for the
+  selected Linux evaluation runtime. Do not clone endpoint keys.
 - [x] **U05:** Run normal allow/deny workloads against services. Compare one
   generated client and one non-Simulator client under equivalent policy.
   Scenario intent/expected outcomes stay in Simulator; Control Room reports

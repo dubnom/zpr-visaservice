@@ -125,10 +125,12 @@
     for (const button of byId("decision").querySelectorAll("button")) {
       const action = button.dataset.action;
       button.disabled = !pending || (action === "cancel" ? !permissions("change.submit") || !sameAuthor(selected)
-        : !permissions("change.review"));
+        : !permissions("change.review") || (action === "approve" && sameAuthor(selected) && !permissions("approval.self")));
     }
     byId("decision-note").textContent = uncertain ? "Outcome unknown. Reload the queue and reconcile before another decision."
-      : sameAuthor(selected) ? "You submitted this change. Approving it is a single-operator review: it is allowed, but less secure and is flagged in the audit."
+      : sameAuthor(selected) ? permissions("approval.self")
+        ? "You may explicitly approve your own request. Self-approval is recorded in the audit; it does not deploy the revision."
+        : "You submitted this change. Another authorized reviewer must approve it because your identity does not have self-approval permission."
       : "Approval does not apply this revision.";
   }
   async function load(offset = 0) {
@@ -149,7 +151,7 @@
       capabilities = caps; nextOffset = page.next_offset;
       records = offset ? [...new Map([...records, ...page.requests].map(record => [record.id, record])).values()] : page.requests;
       selected = records.find(record => record.id === selected?.id) || null;
-      byId("capabilities").textContent = "Submit and approve are separate steps; one operator may do both (flagged in the audit). Application disabled.";
+      byId("capabilities").textContent = `Submit and approve are separate steps. Self-approval requires an explicit identity permission. Application ${caps.application_enabled ? "requires a separately authorized apply action" : "is disabled"}.`;
       uncertain = false;
       for (const button of byId("submission").querySelectorAll("button")) button.disabled = !permissions("change.submit");
       render(); status("Queue refreshed. Approval is separate from application.");

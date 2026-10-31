@@ -23,37 +23,46 @@ type organizationActivation struct {
 }
 
 type organizationActivationManager struct {
-	mu    sync.RWMutex
-	run   organizationActivation
-	done  chan struct{}
-	reset func(context.Context, string, string) error
+	mu       sync.RWMutex
+	run      organizationActivation
+	done     chan struct{}
+	reset    func(context.Context, string, string) error
+	activate func(context.Context, string, string, func() error) error
 }
 
 var activeOrganizationActivation = &organizationActivationManager{
-	run: organizationActivation{State: "idle"},
-	reset: func(ctx context.Context, organizationID, operation string) error {
+	run:   organizationActivation{State: "idle"},
+	reset: resetOrganization,
+	activate: func(ctx context.Context, organizationID, operation string, commit func() error) error {
 		if registry := simulatorEvaluationInstallRegistry; registry != nil {
-			return registry.activate(ctx, organizationID, operation)
+			return registry.activateAndCommit(ctx, organizationID, operation, commit)
 		}
-		script := strings.TrimSpace(os.Getenv("SIMULATION_ORGANIZATION_RESET_SCRIPT"))
-		if script == "" {
-			return errors.New("organization reset is not configured")
+		if err := resetOrganization(ctx, organizationID, operation); err != nil {
+			return err
 		}
-		if operation != "reset-organization" && operation != "restore-base" {
-			return errors.New("organization operation is invalid")
-		}
-		command := exec.CommandContext(ctx, "sh", script, operation, organizationID)
-		command.Env = append(os.Environ(), "SIMULATION_ACTIVATION_STATUS_FILE="+simulatorActiveOrganizationPath()+".progress")
-		command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
-		command.WaitDelay = 2 * time.Minute
-		if err := command.Run(); err != nil {
-			if progress, readErr := os.ReadFile(simulatorActiveOrganizationPath() + ".progress"); readErr == nil && strings.TrimSpace(string(progress)) != "" {
-				return errors.New(strings.TrimSpace(string(progress)) + "; check the local reset log")
-			}
-			return errors.New("organization reset failed; check the local reset log")
-		}
-		return nil
+		return commit()
 	},
+}
+
+func resetOrganization(ctx context.Context, organizationID, operation string) error {
+	script := strings.TrimSpace(os.Getenv("SIMULATION_ORGANIZATION_RESET_SCRIPT"))
+	if script == "" {
+		return errors.New("organization reset is not configured")
+	}
+	if operation != "reset-organization" && operation != "restore-base" {
+		return errors.New("organization operation is invalid")
+	}
+	command := exec.CommandContext(ctx, "sh", script, operation, organizationID)
+	command.Env = append(os.Environ(), "SIMULATION_ACTIVATION_STATUS_FILE="+simulatorActiveOrganizationPath()+".progress")
+	command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
+	command.WaitDelay = 2 * time.Minute
+	if err := command.Run(); err != nil {
+		if progress, readErr := os.ReadFile(simulatorActiveOrganizationPath() + ".progress"); readErr == nil && strings.TrimSpace(string(progress)) != "" {
+			return errors.New(strings.TrimSpace(string(progress)) + "; check the local reset log")
+		}
+		return errors.New("organization reset failed; check the local reset log")
+	}
+	return nil
 }
 
 func (manager *organizationActivationManager) snapshot() organizationActivation {
@@ -95,13 +104,21 @@ func (manager *organizationActivationManager) execute(operation, organizationID,
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 	clearMachineControlRuntime()
-	err := manager.reset(ctx, organizationID, operation)
+	commit := func() error {
+		manager.setProgress("Saving active organization")
+		return saveActiveOrganization(selectionFile, organizationID)
+	}
+	var err error
+	if manager.activate != nil {
+		err = manager.activate(ctx, organizationID, operation, commit)
+	} else {
+		err = manager.reset(ctx, organizationID, operation)
+		if err == nil {
+			err = commit()
+		}
+	}
 	clearMachineControlRuntime()
 	close(progressDone)
-	if err == nil {
-		manager.setProgress("Saving active organization")
-		err = saveActiveOrganization(selectionFile, organizationID)
-	}
 	_ = os.Remove(progressFile)
 	manager.mu.Lock()
 	defer manager.mu.Unlock()

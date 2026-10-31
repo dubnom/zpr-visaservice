@@ -62,21 +62,24 @@ type simulatorRuntimePlanInput struct {
 }
 
 type simulatorRuntimePlan struct {
-	Status                   simulatorRuntimePlanStatus     `json:"status"`
-	OrganizationID           string                         `json:"organization_id"`
-	ScenarioID               string                         `json:"scenario_id"`
-	ManifestName             string                         `json:"manifest_name"`
-	MachineIDs               []string                       `json:"machine_ids"`
-	Topology                 *simulatorScenarioTopology     `json:"topology,omitempty"`
-	Workloads                []simulatorRuntimePlanWorkload `json:"workloads"`
-	BudgetInputs             []simulatorRuntimeBudgetInput  `json:"budget_inputs"`
-	BudgetStatus             simulatorRuntimeBudgetStatus   `json:"budget_status"`
-	TopologyStatus           string                         `json:"topology_status"`
-	PolicyStatus             string                         `json:"policy_status"`
-	NorthstarAssetsStatus    string                         `json:"northstar_assets_status"`
-	PackageContractStatus    string                         `json:"package_contract_status"`
-	Blockers                 []string                       `json:"blockers"`
-	AuthorizationScopeDigest string                         `json:"authorization_scope_digest"`
+	Status                   simulatorRuntimePlanStatus         `json:"status"`
+	OrganizationID           string                             `json:"organization_id"`
+	ScenarioID               string                             `json:"scenario_id"`
+	ManifestName             string                             `json:"manifest_name"`
+	MachineIDs               []string                           `json:"machine_ids"`
+	Topology                 *simulatorScenarioTopology         `json:"topology,omitempty"`
+	RetainedTopologyBinding  *simulatorRetainedTopologyBinding  `json:"retained_topology_binding,omitempty"`
+	Workloads                []simulatorRuntimePlanWorkload     `json:"workloads"`
+	MachineRuntimeIdentities []simulatorRuntimeIdentity         `json:"machine_runtime_identities,omitempty"`
+	MachineRuntimeTrust      []simulatorRuntimeTrustRequirement `json:"machine_runtime_trust,omitempty"`
+	BudgetInputs             []simulatorRuntimeBudgetInput      `json:"budget_inputs"`
+	BudgetStatus             simulatorRuntimeBudgetStatus       `json:"budget_status"`
+	TopologyStatus           string                             `json:"topology_status"`
+	PolicyStatus             string                             `json:"policy_status"`
+	NorthstarAssetsStatus    string                             `json:"northstar_assets_status"`
+	PackageContractStatus    string                             `json:"package_contract_status"`
+	Blockers                 []string                           `json:"blockers"`
+	AuthorizationScopeDigest string                             `json:"authorization_scope_digest"`
 }
 
 type simulatorRuntimePlanWorkload struct {
@@ -88,6 +91,9 @@ type simulatorRuntimePlanWorkload struct {
 // buildSimulatorRuntimePlan describes a plan only; it does not authorize or
 // execute scenario actions. Evidence fields must be supplied by their owners.
 func buildSimulatorRuntimePlan(input simulatorRuntimePlanInput) simulatorRuntimePlan {
+	if binding := input.Organization.RetainedTopologyBinding; binding != nil && input.Scenario.Topology == nil {
+		input.Scenario.Topology = binding.topology()
+	}
 	plan := simulatorRuntimePlan{
 		Status:                   simulatorRuntimePlanBlocked,
 		OrganizationID:           input.OrganizationID,
@@ -137,6 +143,15 @@ func buildSimulatorRuntimePlan(input simulatorRuntimePlanInput) simulatorRuntime
 	if err := validateSimulatorOrganization(input.Organization); err != nil {
 		addBlocker("organization profile is invalid: " + err.Error())
 	}
+	if binding := input.Organization.RetainedTopologyBinding; binding != nil {
+		copy := *binding
+		plan.RetainedTopologyBinding = &copy
+		if input.Scenario.Topology == nil || len(input.Scenario.Topology.Nodes) != 1 ||
+			len(input.Scenario.Topology.Links) != 0 ||
+			input.Scenario.Topology.Nodes[0] != binding.topology().Nodes[0] {
+			addBlocker("scenario topology does not match the explicit retained topology binding")
+		}
+	}
 	if err := validateSimulatorManifest(input.Manifest); err != nil {
 		addBlocker("manifest is invalid: " + err.Error())
 	}
@@ -150,6 +165,9 @@ func buildSimulatorRuntimePlan(input simulatorRuntimePlanInput) simulatorRuntime
 		addBlocker("scenario topology is invalid: " + err.Error())
 	} else if !input.TopologyResolved {
 		plan.TopologyStatus = "unresolved"
+		if input.Organization.RetainedTopologyBinding != nil {
+			plan.Topology = cloneSimulatorRuntimePlanTopology(input.Scenario.Topology)
+		}
 		addBlocker("scenario topology has not been resolved")
 	} else {
 		plan.TopologyStatus = "resolved"
@@ -206,7 +224,14 @@ func buildSimulatorRuntimePlan(input simulatorRuntimePlanInput) simulatorRuntime
 		}
 	}
 
-	if input.Organization.EvaluationRuntime != nil {
+	if input.Organization.RetainedTopologyBinding != nil {
+		if input.Organization.RetainedMachineRuntime == nil {
+			plan.PackageContractStatus = "retained-topology-only"
+			addBlocker("retained runtime machine lifecycle consumer is not installed")
+		} else {
+			plan.PackageContractStatus = "retained-machine-bas-v1"
+		}
+	} else if input.Organization.EvaluationRuntime != nil {
 		if err := validateEvaluationScenario(input.Scenario, input.Organization); err != nil {
 			plan.PackageContractStatus = "unsupported"
 			addBlocker("evaluation runtime contract: " + err.Error())
@@ -246,6 +271,9 @@ func buildSimulatorRuntimePlan(input simulatorRuntimePlanInput) simulatorRuntime
 	}
 
 	plan.Workloads = simulatorRuntimePlanWorkloads(input, addBlocker)
+	if input.Organization.EvaluationRuntime == nil {
+		plan.MachineRuntimeIdentities, plan.MachineRuntimeTrust = simulatorRuntimeMachineIdentities(plan)
+	}
 	plan.BudgetInputs = simulatorRuntimePlanBudgetInputs(input)
 	sort.Strings(plan.Blockers)
 	if len(plan.Blockers) == 0 {

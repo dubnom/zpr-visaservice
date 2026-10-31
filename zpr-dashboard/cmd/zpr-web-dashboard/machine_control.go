@@ -44,12 +44,13 @@ type machineControllerRegistry struct {
 var simulatorControllers = machineControllerRegistry{lastSeen: make(map[string]time.Time)}
 
 type machineControlCommand struct {
-	ID       string   `json:"id"`
-	Action   string   `json:"action"`
-	User     string   `json:"user,omitempty"`
-	Workload string   `json:"workload,omitempty"`
-	Services []string `json:"services,omitempty"`
-	Expires  int64    `json:"expires_unix_ms"`
+	ID             string   `json:"id"`
+	Action         string   `json:"action"`
+	User           string   `json:"user,omitempty"`
+	Workload       string   `json:"workload,omitempty"`
+	Services       []string `json:"services,omitempty"`
+	ServiceAddress string   `json:"service_address,omitempty"`
+	Expires        int64    `json:"expires_unix_ms"`
 }
 
 type machineControlCommandResult struct {
@@ -185,8 +186,13 @@ func (registry *machineControllerRegistry) snapshot(machineIDs []string, now tim
 }
 
 func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBinary, bootstrapKey, nodeAddress, zprAddress string) error {
-	if machineID == "" || controlURL == "" || caFile == "" || certFile == "" || keyFile == "" || phBinary == "" || bootstrapKey == "" || nodeAddress == "" {
-		return errors.New("machine controller requires machine id, control URL, TLS identity, PH binary, bootstrap key, and node address")
+	if machineID == "" || controlURL == "" || caFile == "" || certFile == "" || keyFile == "" || phBinary == "" || nodeAddress == "" {
+		return errors.New("machine controller requires machine id, control URL, TLS identity, PH binary, authentication, and node address")
+	}
+	authenticationConfig := os.Getenv("SIMULATION_MACHINE_AUTHENTICATION_CONFIG")
+	authenticationArgs, err := machinePHAuthenticationArguments(bootstrapKey, authenticationConfig)
+	if err != nil {
+		return err
 	}
 	const runtimeDir = "/run/zpr-workloads"
 	if err := os.MkdirAll(runtimeDir, 0755); err != nil {
@@ -195,13 +201,24 @@ func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBi
 	if err := os.WriteFile(filepath.Join(runtimeDir, "node-address"), []byte(nodeAddress+"\n"), 0600); err != nil {
 		return fmt.Errorf("write machine workload node address: %w", err)
 	}
+	authenticationMode := "bootstrap\n"
+	if authenticationConfig != "" {
+		authenticationMode = "enrollment-bas\n"
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, machineAuthenticationModeFile), []byte(authenticationMode), 0600); err != nil {
+		return fmt.Errorf("write machine workload authentication mode: %w", err)
+	}
 	phControlPath := "/run/zpr-workloads/machine-control.sock"
 	phCapturePath := "/run/zpr-workloads/machine-control-cap.sock"
 	phLog, err := os.OpenFile("/tmp/machine-control-ph.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("open machine PH log: %w", err)
 	}
-	phArgs := []string{"adapter", "--io-engine", simulatorPacketIOEngine, "--logging", "all=INFO", "--control-path", phControlPath, "--capture-path", phCapturePath, "--self-addr", "0.0.0.0:0", "--ca-file", "/opt/zpr-workloads/ca.crt", "--bootstrap-key", bootstrapKey, "--name", machineID, "--km-impl", "noise", "--tun-if", machineControlTun, "--node-addr", nodeAddress}
+	phArgs := []string{"adapter", "--io-engine", simulatorPacketIOEngine, "--logging", "all=INFO", "--control-path", phControlPath, "--capture-path", phCapturePath, "--self-addr", "0.0.0.0:0", "--ca-file", "/opt/zpr-workloads/ca.crt", "--name", machineID, "--km-impl", "noise", "--tun-if", machineControlTun, "--node-addr", nodeAddress}
+	if os.Getenv("SIMULATION_RETAINED_ENDPOINT_ROOT") != "" {
+		phArgs = append(phArgs, "--tun-route-table", "105")
+	}
+	phArgs = append(phArgs, authenticationArgs...)
 	if zprAddress != "" {
 		phArgs = append(phArgs, "--zpr-addr", zprAddress)
 	}
@@ -398,6 +415,22 @@ func executeMachineControlCommand(machineID string, command machineControlComman
 			return result
 		}
 		result.Output = command.Workload + " " + strings.TrimSuffix(command.Action, "-workload")
+	case "start-test-service", "stop-test-service":
+		if _, ok := machineWorkload(command.Workload); !ok {
+			result.Error = "unknown machine workload"
+			return result
+		}
+		var err error
+		if command.Action == "start-test-service" {
+			err = startOwnedMachineTestService(command.Workload, command.ServiceAddress)
+		} else {
+			err = machineProcesses.stop("test-service:"+command.Workload, 2*time.Second)
+		}
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		result.Output = command.Workload + " " + command.Action
 	default:
 		result.Error = "unsupported machine-control command"
 	}
@@ -465,9 +498,16 @@ func startMachineWorkload(agent string, serviceNames []string) error {
 	if err != nil {
 		return err
 	}
+	authenticationArgs, err := machineWorkloadAuthenticationArguments(runtimeDir, assets, agent, filepath.Join(assets, config.key))
+	if err != nil {
+		return err
+	}
 	socket := filepath.Join(runtimeDir, agent+".sock")
 	linkSummary, _ := exec.Command(filepath.Join(assets, "ph-cli"), "-p", socket, "link", "show").CombinedOutput()
 	if strings.Contains(string(linkSummary), "(Active)") {
+		if !machineProcesses.owns("workload:" + agent) {
+			return errors.New("active workload adapter is not owned by this controller; restart the machine before replacing it")
+		}
 		if len(serviceNames) == 0 {
 			return startTestLogServer(agent)
 		}
@@ -475,7 +515,9 @@ func startMachineWorkload(agent string, serviceNames []string) error {
 			return err
 		}
 	}
-	_ = exec.Command("pkill", "-TERM", "-f", "[p]h adapter.*--name "+agent).Run()
+	if err := machineProcesses.stop("workload:"+agent, 2*time.Second); err != nil {
+		return err
+	}
 	_ = os.Remove(socket)
 	_ = os.Remove(filepath.Join(runtimeDir, agent+"_cap.sock"))
 	addresses, err := net.InterfaceByName("eth0")
@@ -501,21 +543,22 @@ func startMachineWorkload(agent string, serviceNames []string) error {
 	if err != nil {
 		return err
 	}
-	command := exec.Command(filepath.Join(assets, "ph"), "adapter", "--io-engine", simulatorPacketIOEngine, "--logging", "all=INFO", "--control-path", socket, "--capture-path", filepath.Join(runtimeDir, agent+"_cap.sock"), "--self-addr", substrateAddress, "--ca-file", filepath.Join(assets, "ca.crt"), "--bootstrap-key", filepath.Join(assets, config.key), "--name", agent, "--km-impl", "noise", "--tun-if", config.tun, "--node-addr", nodeAddress, "--zpr-addr", config.address)
+	arguments := []string{"adapter", "--io-engine", simulatorPacketIOEngine, "--logging", "all=INFO", "--control-path", socket, "--capture-path", filepath.Join(runtimeDir, agent+"_cap.sock"), "--self-addr", substrateAddress, "--ca-file", filepath.Join(assets, "ca.crt"), "--name", agent, "--km-impl", "noise", "--tun-if", config.tun, "--node-addr", nodeAddress, "--zpr-addr", config.address}
+	if os.Getenv("SIMULATION_RETAINED_ENDPOINT_ROOT") != "" {
+		arguments = append(arguments, "--tun-route-table", fmt.Sprint(config.routeTable))
+	}
+	command := exec.Command(filepath.Join(assets, "ph"), append(arguments, authenticationArgs...)...)
 	registeredServices := config.services
 	if len(serviceNames) > 0 {
 		registeredServices = strings.Join(serviceNames, ",")
 	}
 	command.Env = append(os.Environ(), "ZPR_ADAPTER_SERVICES="+registeredServices)
 	command.Stdout, command.Stderr = logFile, logFile
-	if err := command.Start(); err != nil {
+	if err := machineProcesses.start("workload:"+agent, command); err != nil {
 		_ = logFile.Close()
 		return err
 	}
-	go func() {
-		_ = command.Wait()
-		_ = logFile.Close()
-	}()
+	_ = logFile.Close()
 	return startTestLogServer(agent)
 }
 
@@ -523,11 +566,17 @@ func stopMachineWorkload(agent string) error {
 	if _, ok := machineWorkload(agent); !ok {
 		return fmt.Errorf("unknown machine workload %q", agent)
 	}
+	if err := machineProcesses.stop("test-service:"+agent, 2*time.Second); err != nil {
+		return err
+	}
 	stopTestLogServer(agent)
 	assets := "/opt/zpr-workloads"
 	runtimeDir := "/run/zpr-workloads"
 	socket := filepath.Join(runtimeDir, agent+".sock")
 	linkSummary, _ := exec.Command(filepath.Join(assets, "ph-cli"), "-p", socket, "link", "show").CombinedOutput()
+	if strings.Contains(string(linkSummary), "(Active)") && !machineProcesses.owns("workload:"+agent) {
+		return errors.New("active workload adapter is not owned by this controller; restart the machine before stopping it")
+	}
 	for _, line := range strings.Split(string(linkSummary), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && strings.HasSuffix(fields[0], ":") {
@@ -536,13 +585,21 @@ func stopMachineWorkload(agent string) error {
 			break
 		}
 	}
-	_ = exec.Command("pkill", "-TERM", "-f", "[p]h adapter.*--name "+agent).Run()
+	if err := machineProcesses.stop("workload:"+agent, 2*time.Second); err != nil {
+		return err
+	}
 	_ = os.Remove(socket)
 	_ = os.Remove(filepath.Join(runtimeDir, agent+"_cap.sock"))
 	return nil
 }
 
 func runMachineControlProxy(listenAddress, upstreamAddress string) error {
+	if node := os.Getenv("SIMULATION_RETAINED_CALLBACK_NODE"); node != "" {
+		if listenAddress != "["+retainedCallbackAddress+"]:8792" {
+			return errors.New("retained callback proxy requires its configured ZPR listener")
+		}
+		return runRetainedMachineCallback(node, upstreamAddress)
+	}
 	if listenAddress == "" || upstreamAddress == "" {
 		return errors.New("machine control proxy requires listen and upstream addresses")
 	}

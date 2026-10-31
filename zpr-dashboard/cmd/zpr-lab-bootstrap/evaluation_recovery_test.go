@@ -36,7 +36,7 @@ func recoveryFixture(t *testing.T) (string, evaluationInventory) {
 
 func recoveryFixtureWith(t *testing.T, config evaluationConfig) (string, evaluationInventory) {
 	t.Helper()
-	ports := []*int{&config.RoomPort, &config.ServicePort, &config.OIDCPort, &config.LDAPPort, &config.LogPort}
+	ports := []*int{&config.RoomPort, &config.ServicePort, &config.OIDCPort, &config.LDAPPort, &config.LDAPAdminPort, &config.LogPort}
 	if config.VisaService {
 		ports = append(ports, &config.VSAdminPort, &config.VSAPIPort, &config.ValkeyPort)
 	}

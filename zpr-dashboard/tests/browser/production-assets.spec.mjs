@@ -50,6 +50,7 @@ test.afterAll(async () => {
 });
 
 const forbiddenAssets = [
+  "simulator-info.html", "simulator-info.js",
   "scenarios.html", "organizations.html", "activity.html", "agents.html", "machine-logs.html",
   "trusted-source.html", "world.html", "simulator-provisioning.html", "simulator-nav.js", "simulator.css",
   "scenarios.js", "scenario-source-editor.js", "scenario-results.css", "organizations.js",
@@ -94,8 +95,21 @@ test("Simulator build keeps its own documents, redirect and navigation", async (
   const origin = fixtures[0].ready.simulator;
   expect(origin).toBeTruthy();
   expect(fixtures[1].ready.simulator).toBeUndefined();
-  for (const name of forbiddenAssets.filter(name => /\.(html|js|css)$/.test(name))) {
+  const removedAssets = ["world.js", "world.css", "simulator-provisioning.js"];
+  for (const name of removedAssets) {
+    for (const method of ["GET", "HEAD"]) {
+      expect((await request.fetch(`${origin}/${name}`, { method })).status(), `${method} ${name}`).toBe(404);
+    }
+  }
+  for (const name of forbiddenAssets.filter(name => /\.(html|js|css)$/.test(name) && !removedAssets.includes(name))) {
     expect((await request.get(`${origin}/${name}`)).status(), name).toBe(200);
+  }
+  for (const name of ["world.html", "simulator-provisioning.html"]) {
+    const response = await request.get(`${origin}/${name}`, { maxRedirects: 0 });
+    expect(response.status(), name).toBe(302);
+    expect(response.headers().location, name).toBe("/scenarios.html#simulate");
+    await page.goto(`${origin}/${name}`);
+    await expect(page).toHaveURL(`${origin}/scenarios.html#simulate`);
   }
   await page.goto(origin);
   await expect(page).toHaveURL(`${origin}/organizations.html`);
@@ -104,6 +118,8 @@ test("Simulator build keeps its own documents, redirect and navigation", async (
   await expect(page.locator("body")).not.toHaveClass(/operator-auth-gated/);
   const navigation = page.locator('nav[aria-label="Simulator navigation"]');
   await expect(navigation).toBeAttached();
+  await expect(navigation.locator('a[href="/world.html"], a[href="/simulator-provisioning.html"]')).toHaveCount(0);
+  await expect(navigation.locator('a[href="/simulator-info.html"]')).toHaveCount(1);
   const activity = page.locator('nav a[href="/activity.html"]').first();
   if (!await activity.isVisible()) await page.locator(".sidebar-toggle").click();
   await expect(activity).toBeVisible();
@@ -114,5 +130,10 @@ test("Simulator build keeps its own documents, redirect and navigation", async (
   await page.goto(`${origin}/activity.html`);
   await expect(page).toHaveTitle("ZPR Simulator Activity");
   await expect(page.locator('nav[aria-label="Simulator navigation"]')).toBeAttached();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.goto(`${origin}/simulator-info.html`);
+  await expect(page).toHaveTitle("ZPR Simulator Info");
+  await expect(page.locator("#policy-operation-status-form")).toBeVisible();
+  await expect(page.locator("#scenario-plan-form")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

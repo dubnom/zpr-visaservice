@@ -157,10 +157,14 @@ func operatorEnrollmentProxy(auth *operatorauth.Auth, signer *operatordelegation
 		permission := ""
 		switch {
 		case r.Method == "GET" && (path == "catalog" || path == "invitations" || path == "preflight" ||
-			(len(parts) == 2 && parts[0] == "invitations" && parts[1] != "")):
+			(len(parts) == 2 && (parts[0] == "invitations" || parts[0] == "invitation-batches") && parts[1] != "")):
 			permission = "read"
 		case r.Method == "POST" && (path == "invitations" || path == "preflight"):
 			permission = "create"
+		case r.Method == "POST" && path == "invitation-batches/review":
+			permission = "read"
+		case r.Method == "POST" && path == "invitation-batches/approve":
+			permission = "approve"
 		case r.Method == "POST" && len(parts) == 3 && parts[0] == "invitations" && parts[1] != "" &&
 			slices.Contains([]string{"cancel", "approve", "reject"}, parts[2]):
 			permission = parts[2]

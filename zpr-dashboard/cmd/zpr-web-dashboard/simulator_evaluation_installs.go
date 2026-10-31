@@ -14,23 +14,28 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // EVALUATION ONLY (D5): each Simulator organization is backed by its own,
-// independently started evaluation install. The Simulator only selects among
-// registered installs; it never starts, stops or reconfigures them.
+// independently configured evaluation install. Optional operator-owned lifecycle
+// commands supervise on-demand installs; production never reads Simulator state.
 const simulatorEvaluationInstallsEnv = "SIMULATOR_EVALUATION_INSTALLS_FILE"
 
 type simulatorEvaluationInstall struct {
-	OrganizationID         string `json:"organization_id"`
-	ControlRoomURL         string `json:"control_room_url,omitempty"`
-	OperatorServiceURL     string `json:"operator_service_url"`
-	ClientCertFile         string `json:"client_cert_file"`
-	ClientKeyFile          string `json:"client_key_file"`
-	ServiceCAFile          string `json:"service_ca_file"`
-	DataPlaneEndpointsFile string `json:"data_plane_endpoints_file,omitempty"`
-	VisaAdminURL           string `json:"visa_admin_url,omitempty"`
-	VisaAdminKeyFile       string `json:"visa_admin_key_file,omitempty"`
+	OrganizationID          string                            `json:"organization_id"`
+	ControlRoomURL          string                            `json:"control_room_url,omitempty"`
+	OperatorServiceURL      string                            `json:"operator_service_url"`
+	PolicyServiceURL        string                            `json:"policy_service_url,omitempty"`
+	ClientCertFile          string                            `json:"client_cert_file"`
+	ClientKeyFile           string                            `json:"client_key_file"`
+	ServiceCAFile           string                            `json:"service_ca_file"`
+	DataPlaneEndpointsFile  string                            `json:"data_plane_endpoints_file,omitempty"`
+	VisaAdminURL            string                            `json:"visa_admin_url,omitempty"`
+	VisaAdminKeyFile        string                            `json:"visa_admin_key_file,omitempty"`
+	LifecycleCommand        []string                          `json:"lifecycle_command,omitempty"`
+	RetainedTopologyBinding *simulatorRetainedTopologyBinding `json:"retained_topology_binding,omitempty"`
+	RetainedMachineRuntime  *simulatorRetainedMachineRuntime  `json:"retained_machine_runtime,omitempty"`
 }
 
 type simulatorEvaluationInstallsFile struct {
@@ -46,6 +51,11 @@ type simulatorEvaluationInstalls struct {
 	workloads map[string]*simulatorDataPlaneWorkloads
 	// selectOrganization reports the Simulator's selected organization.
 	selectOrganization func() (string, error)
+	lifecycleMu        sync.Mutex
+	workersContext     context.Context
+	workers            map[string]simulatorInstallWorkers
+	runLifecycle       func(context.Context, []string, string) error
+	readSnapshot       func(context.Context, simulatorOperatorTarget) error
 }
 
 // simulatorEvaluationInstallRegistry is set once at Simulator startup.
@@ -83,14 +93,33 @@ func loadSimulatorEvaluationInstalls(path, organizationsDirectory string) (*simu
 	networks := map[string]string{}
 	for _, install := range registry.Installs {
 		id := install.OrganizationID
-		if _, err := loadSimulatorOrganization(organizationsDirectory, id); err != nil {
+		if len(install.LifecycleCommand) != 0 {
+			if err := validateSimulatorInstallLifecycle(path, install.LifecycleCommand); err != nil {
+				return nil, fmt.Errorf("organization %q lifecycle: %w", id, err)
+			}
+		}
+		organization, err := loadSimulatorOrganization(organizationsDirectory, id)
+		if err != nil {
 			return nil, fmt.Errorf("evaluation install for unknown organization %q", id)
+		}
+		if install.RetainedTopologyBinding != nil {
+			organization.RetainedTopologyBinding = install.RetainedTopologyBinding
+			if err := validateSimulatorRetainedTopology(organization); err != nil {
+				return nil, fmt.Errorf("organization %q retained topology: %w", id, err)
+			}
+		}
+		organization.RetainedMachineRuntime = install.RetainedMachineRuntime
+		if err := validateSimulatorRetainedMachineRuntime(organization); err != nil {
+			return nil, fmt.Errorf("organization %q retained machine runtime: %w", id, err)
 		}
 		if _, exists := result.installs[id]; exists {
 			return nil, fmt.Errorf("organization %q has more than one evaluation install", id)
 		}
 		if !exactHTTPSOrigin(install.OperatorServiceURL) {
 			return nil, fmt.Errorf("organization %q operator service URL must be an exact HTTPS origin", id)
+		}
+		if install.PolicyServiceURL != "" && !exactHTTPSOrigin(install.PolicyServiceURL) {
+			return nil, fmt.Errorf("organization %q policy service URL must be an exact HTTPS origin", id)
 		}
 		if install.VisaAdminURL != "" || install.VisaAdminKeyFile != "" {
 			if !exactHTTPSOrigin(install.VisaAdminURL) || !filepath.IsAbs(install.VisaAdminKeyFile) {
@@ -147,15 +176,6 @@ func newSimulatorEvaluationInstallsFromEnv() (*simulatorEvaluationInstalls, erro
 	return loadSimulatorEvaluationInstalls(path, simulatorOrganizationsDirectory())
 }
 
-// run keeps every registered install's endpoints and workloads running, not
-// only the selected organization's, so all installs stay exercised.
-func (registry *simulatorEvaluationInstalls) run(ctx context.Context) {
-	for id, endpoints := range registry.endpoints {
-		go endpoints.run(ctx)
-		go registry.workloads[id].run(ctx)
-	}
-}
-
 func (registry *simulatorEvaluationInstalls) target(organizationID string) (simulatorOperatorTarget, error) {
 	install, ok := registry.installs[organizationID]
 	if !ok {
@@ -175,15 +195,34 @@ func simulatorSelectedOrganizationID() (string, error) {
 // activate selects an organization after confirming its independently started
 // install answers; it never changes the install.
 func (registry *simulatorEvaluationInstalls) activate(ctx context.Context, organizationID, operation string) error {
+	if len(registry.installs[organizationID].LifecycleCommand) != 0 {
+		return errors.New("on-demand activation requires a selection commit")
+	}
+	return registry.activateAndCommit(ctx, organizationID, operation, func() error { return nil })
+}
+
+func (registry *simulatorEvaluationInstalls) activateAndCommit(ctx context.Context, organizationID, operation string, commit func() error) error {
+	registry.lifecycleMu.Lock()
+	defer registry.lifecycleMu.Unlock()
 	if operation == "restore-base" {
 		return errors.New("restore base is not available for evaluation installs; reset or recreate the organization's install independently")
+	}
+	if operation != "reset-organization" && operation != "activate" {
+		return errors.New("organization operation is invalid")
 	}
 	target, err := registry.target(organizationID)
 	if err != nil {
 		return err
 	}
+	return registry.switchInstall(ctx, organizationID, target, commit)
+}
+
+func (registry *simulatorEvaluationInstalls) checkSnapshot(ctx context.Context, target simulatorOperatorTarget) error {
+	if registry.readSnapshot != nil {
+		return registry.readSnapshot(ctx, target)
+	}
 	if _, err := readOperatorSnapshot(ctx, target); err != nil {
-		return fmt.Errorf("organization %q evaluation install is not reachable; start it first", organizationID)
+		return fmt.Errorf("evaluation install is not reachable: %w", err)
 	}
 	return nil
 }

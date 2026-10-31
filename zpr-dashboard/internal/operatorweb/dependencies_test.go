@@ -21,6 +21,7 @@ func TestOperatorWebProductionDependencyBoundary(t *testing.T) {
 		"golang.org/x/oauth2/internal", "golang.org/x/oauth2", "github.com/coreos/go-oidc/v3/oidc",
 		"neboagency.com/zpr-dashborad/internal/operatorauth",
 		"neboagency.com/zpr-dashborad/internal/servicehttp",
+		"neboagency.com/zpr-dashborad/internal/networkmetadata",
 		"neboagency.com/zpr-dashborad/internal/systemconfig",
 		"neboagency.com/zpr-dashborad/internal/operatorweb",
 	}

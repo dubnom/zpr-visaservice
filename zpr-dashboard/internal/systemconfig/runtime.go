@@ -105,6 +105,9 @@ func RenderControlRoomRuntime(config Config) (ControlRoomRuntime, error) {
 				{Source: authority.ServiceClientCAFile, Destination: authority.ServiceClientCAFile, ReadOnly: true},
 			},
 		}
+		if config.NetworkName != "" {
+			authorityRuntime.Environment["ZPR_NETWORK_NAME"] = config.NetworkName
+		}
 		paths = append(paths, authority.ControlRoomSignerFile, authority.ControlRoomSignerKeyFile)
 	}
 	oidcConfig, err := json.MarshalIndent(config.OIDC.Config, "", "  ")

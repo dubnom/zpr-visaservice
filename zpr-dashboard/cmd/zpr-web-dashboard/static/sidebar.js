@@ -4,6 +4,56 @@
   let navigationObserver;
   let observedNavigation;
   let helpReturnFocus;
+  let networkGeneration = 0;
+  let networkOrganization;
+  let networkRequest;
+
+  async function refreshNetworkName() {
+    const widget = document.querySelector(".sidebar [data-network-name]");
+    if (!widget) return;
+    const generation = ++networkGeneration;
+    networkRequest?.abort();
+    networkRequest = new AbortController();
+    widget.textContent = "Loading network name...";
+    const simulator = Boolean(document.querySelector(".brand[data-simulator-nav]")) ||
+      document.querySelector(".sidebar .brand")?.textContent.includes("SIMULATOR");
+    try {
+      const request = window.zprOperatorFetch ?? window.fetch.bind(window);
+      const response = await request(simulator ? "/api/simulator/network" : "/api/network", {
+        cache: "no-store", headers: { Accept: "application/json" }, signal: networkRequest.signal,
+      });
+      if (!response.ok) throw new Error("Network metadata unavailable");
+      const metadata = await response.json();
+      if (typeof metadata?.name !== "string" ||
+          new TextEncoder().encode(metadata.name).length > 256 ||
+          metadata.name.trim() !== metadata.name || /[\p{Cc}\p{Cf}]/u.test(metadata.name)) {
+        throw new Error("Invalid network metadata");
+      }
+      if (generation !== networkGeneration || !widget.isConnected) return;
+      widget.textContent = metadata.name || "Unnamed ZPR network";
+    } catch (error) {
+      if (generation === networkGeneration && widget.isConnected) {
+        widget.textContent = "Network name unavailable";
+      }
+    }
+  }
+
+  function mountNetworkName(sidebar) {
+    if (sidebar.querySelector("[data-network-name]")) return;
+    const section = document.createElement("section");
+    section.className = "sidebar-network";
+    section.setAttribute("aria-label", "ZPR network");
+    section.title = `Display name only; names are not unique. Interface: ${location.origin}`;
+    const label = document.createElement("small");
+    label.textContent = "NETWORK";
+    const name = document.createElement("strong");
+    name.dataset.networkName = "";
+    name.setAttribute("role", "status");
+    name.setAttribute("aria-live", "polite");
+    section.append(label, name);
+    sidebar.querySelector(".sidebar-header").after(section);
+    void refreshNetworkName();
+  }
 
   const controlHelp = {
     map: {
@@ -315,6 +365,7 @@
       if (header && brand.parentElement !== header) header.prepend(brand);
     }
     const navigation = sidebar.querySelector(".primary-nav");
+    mountNetworkName(sidebar);
     if (navigation) ensureHelp();
     if (navigation && observedNavigation !== navigation) {
       navigationObserver?.disconnect();
@@ -354,6 +405,14 @@
   window.addEventListener("hashchange", () => { if (document.querySelector("#zpr-help-dialog")?.open) updateHelp(); });
   window.addEventListener("policy-record-kind-changed", () => { if (document.querySelector("#zpr-help-dialog")?.open) updateHelp(); });
   document.addEventListener("simulator:activate", initialize);
+  document.addEventListener("simulator:activate", refreshNetworkName);
+  window.addEventListener("operator-session-changed", refreshNetworkName);
+  window.addEventListener("operator-session-cleared", refreshNetworkName);
+  window.addEventListener("simulator:organization-context", event => {
+    if (networkOrganization === event.detail?.id) return;
+    networkOrganization = event.detail?.id;
+    void refreshNetworkName();
+  });
   const bodyObserver = new MutationObserver(initialize);
   bodyObserver.observe(document.body, { childList: true });
   initialize();

@@ -182,6 +182,46 @@
       text-underline-offset: 3px;
     }
 
+    .credential {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px;
+      width: 100%;
+    }
+
+    .credential input {
+      flex: 1 1 180px;
+      min-width: 0;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #101923;
+      color: #e7edf4;
+      font: .78rem ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .credential button {
+      padding: 7px 9px;
+      border: 1px solid #3a695f;
+      border-radius: 7px;
+      background: #1c3038;
+      color: #a4eadb;
+      font: inherit;
+      font-size: .75rem;
+      cursor: pointer;
+    }
+
+    .credential button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .credential-status {
+      min-height: 1.2em;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: .76rem;
+      line-height: 1.45;
+    }
+
     .note {
       margin: 13px 0 0;
       color: var(--muted);
@@ -232,7 +272,7 @@
       <article aria-labelledby="stable-title">
         <header class="card-header">
           <h2 id="stable-title">Stable</h2>
-          <p>Tested engineering baseline · scenario-20261029-r3</p>
+          <p>Tested engineering baseline · scenario-20261029-r6</p>
           <span class="badge">Persistent</span>
         </header>
         <section class="section" aria-labelledby="stable-services">
@@ -244,14 +284,17 @@
             <a class="service-link" href="https://10.0.1.160:38788/scenarios.html#simulate" target="_blank" rel="noreferrer">
               <strong>Simulator</strong><span>https://10.0.1.160:38788</span>
             </a>
+            <a class="service-link" href="http://127.0.0.1:38789/" target="_blank" rel="noreferrer">
+              <strong>LDAP Admin · phpLDAPadmin</strong><span>http://127.0.0.1:38789 · SSH tunnel required</span>
+            </a>
             <div class="service-link" aria-disabled="true">
               <strong>Logger</strong><span>Workbench loopback :35080; SSH tunnel required</span>
             </div>
             <div class="service-link" aria-disabled="true">
-              <strong>LDAP</strong><span>Workbench loopback LDAPS :31636; no GUI</span>
+              <strong>LDAP · LDAPS</strong><span>Workbench loopback :31636</span>
             </div>
           </div>
-          <p class="note">Stable owns its independent logging, identity and state.</p>
+          <p class="note">Stable owns its independent logging, identity and state. The directory GUI is local-only.</p>
         </section>
         <section class="section" aria-labelledby="stable-identities">
           <h3 id="stable-identities">Identities</h3>
@@ -259,22 +302,49 @@
             <div class="identity">
               <dt>Operator / Control Room</dt>
               <dd>admin@evaluation.invalid</dd>
-              <a class="password-link" href="README.md#sign-in-and-secrets">Retrieve password</a>
+              <dd class="credential">
+                <input id="stable-operator" type="password" readonly autocomplete="off" data-environment="stable" data-password="operator" aria-label="Stable operator password">
+                <button type="button" data-toggle="stable-operator">Show</button>
+                <button type="button" data-copy="stable-operator" data-status="stable-credential-status">Copy</button>
+              </dd>
             </div>
             <div class="identity">
-              <dt>LDAP / directory</dt>
-              <dd>No LDAP administration GUI</dd>
-              <a class="password-link" href="README.md#sign-in-and-secrets">Credential guidance</a>
+              <dt>Logger / OpenObserve</dt>
+              <dd>admin@evaluation.invalid</dd>
+              <dd class="credential">
+                <input id="stable-logger" type="password" readonly autocomplete="off" data-environment="stable" data-password="logger" aria-label="Stable logger password">
+                <button type="button" data-toggle="stable-logger">Show</button>
+                <button type="button" data-copy="stable-logger" data-status="stable-credential-status">Copy</button>
+              </dd>
+            </div>
+            <div class="identity">
+              <dt>LDAP administrator</dt>
+              <dd>cn=admin,dc=evaluation,dc=zpr</dd>
+              <dd class="credential">
+                <input id="stable-ldap-admin" type="password" readonly autocomplete="off" data-environment="stable" data-password="ldapAdmin" aria-label="Stable LDAP administrator password">
+                <button type="button" data-toggle="stable-ldap-admin">Show</button>
+                <button type="button" data-copy="stable-ldap-admin" data-status="stable-credential-status">Copy</button>
+              </dd>
+            </div>
+            <div class="identity">
+              <dt>LDAP read-only bind</dt>
+              <dd>cn=zpr-reader,dc=evaluation,dc=zpr</dd>
+              <dd class="credential">
+                <input id="stable-ldap-reader" type="password" readonly autocomplete="off" data-environment="stable" data-password="ldapReader" aria-label="Stable LDAP reader password">
+                <button type="button" data-toggle="stable-ldap-reader">Show</button>
+                <button type="button" data-copy="stable-ldap-reader" data-status="stable-credential-status">Copy</button>
+              </dd>
             </div>
           </dl>
-          <p class="note">Do not reuse the operator password for directory or logger access.</p>
+          <p class="credential-status" id="stable-credential-status" role="status" aria-live="polite">Local passwords not loaded. Run <code>python3 update-local-credentials.py</code> from this directory.</p>
+          <p class="note">These credentials are for the isolated local demo only. Never reuse them in production.</p>
         </section>
       </article>
 
       <article aria-labelledby="dev-title">
         <header class="card-header">
           <h2 id="dev-title">Dev</h2>
-          <p>Current-main engineering build · dev-20261029-r1</p>
+          <p>Production r7 · Simulator GUI cleanup dev-20261030-r8</p>
           <span class="badge">Persistent</span>
         </header>
         <section class="section" aria-labelledby="dev-services">
@@ -286,16 +356,32 @@
             <a class="service-link" href="https://10.0.1.160:18788/scenarios.html#simulate" target="_blank" rel="noreferrer">
               <strong>Simulator</strong><span>https://10.0.1.160:18788</span>
             </a>
+            <a class="service-link" href="http://127.0.0.1:18789/" target="_blank" rel="noreferrer">
+              <strong>LDAP Admin · phpLDAPadmin</strong><span>http://127.0.0.1:18789 · SSH tunnel required</span>
+            </a>
             <div class="service-link" aria-disabled="true">
               <strong>Logger · OpenObserve</strong><span>Workbench loopback :15080; SSH tunnel required</span>
             </div>
             <div class="service-link" aria-disabled="true">
-              <strong>LDAP · LDAPS endpoint</strong><span>Workbench loopback :11636; no GUI</span>
+              <strong>LDAP · LDAPS</strong><span>Workbench loopback :11636</span>
             </div>
           </div>
           <p class="note">
-            LDAP is a secure directory protocol endpoint, not a browser UI.
+            phpLDAPadmin is bundled for local directory administration only.
             No separate Audit application endpoint is claimed by this pair.
+            The five original organizations have passed independent operator-service
+            checks. Velocity's five machine-runtime identities are explicitly
+            approved and pass genuine retained-key admission after restart.
+            Velocity is the sole release gate, not a release candidate.
+            Exact workload grants are separately approved and applied.
+            The isolated retained-runtime diagnostic now passes all 20 original
+            Velocity actions, including named logins, workloads, 100 latency
+            samples and a 16 MiB transfer. Two clean repeats and an independent
+            base restart also pass without repairs during the runs.
+            This is not Simulator UI/resource approval or a released package.
+            Canonical UI integration and failure-path qualification remain open;
+            a separate named Simulator client/trust binding awaits review.
+            The other original scenarios are not ready to run.
           </p>
         </section>
         <section class="section" aria-labelledby="dev-identities">
@@ -304,28 +390,89 @@
             <div class="identity">
               <dt>Operator / Control Room</dt>
               <dd>admin@evaluation.invalid</dd>
-              <a class="password-link" href="README.md#sign-in-and-secrets">Retrieve password</a>
+              <dd class="credential">
+                <input id="dev-operator" type="password" readonly autocomplete="off" data-environment="dev" data-password="operator" aria-label="Dev operator password">
+                <button type="button" data-toggle="dev-operator">Show</button>
+                <button type="button" data-copy="dev-operator" data-status="dev-credential-status">Copy</button>
+              </dd>
             </div>
             <div class="identity">
               <dt>Logger / OpenObserve</dt>
               <dd>admin@evaluation.invalid</dd>
-              <a class="password-link" href="README.md#sign-in-and-secrets">Retrieve password</a>
+              <dd class="credential">
+                <input id="dev-logger" type="password" readonly autocomplete="off" data-environment="dev" data-password="logger" aria-label="Dev logger password">
+                <button type="button" data-toggle="dev-logger">Show</button>
+                <button type="button" data-copy="dev-logger" data-status="dev-credential-status">Copy</button>
+              </dd>
             </div>
             <div class="identity">
-              <dt>LDAP</dt>
-              <dd>No named-user accounts provisioned</dd>
-              <a class="password-link" href="README.md#sign-in-and-secrets">Credential guidance</a>
+              <dt>LDAP administrator</dt>
+              <dd>cn=admin,dc=evaluation,dc=zpr</dd>
+              <dd class="credential">
+                <input id="dev-ldap-admin" type="password" readonly autocomplete="off" data-environment="dev" data-password="ldapAdmin" aria-label="Dev LDAP administrator password">
+                <button type="button" data-toggle="dev-ldap-admin">Show</button>
+                <button type="button" data-copy="dev-ldap-admin" data-status="dev-credential-status">Copy</button>
+              </dd>
+            </div>
+            <div class="identity">
+              <dt>LDAP read-only bind</dt>
+              <dd>cn=zpr-reader,dc=evaluation,dc=zpr</dd>
+              <dd class="credential">
+                <input id="dev-ldap-reader" type="password" readonly autocomplete="off" data-environment="dev" data-password="ldapReader" aria-label="Dev LDAP reader password">
+                <button type="button" data-toggle="dev-ldap-reader">Show</button>
+                <button type="button" data-copy="dev-ldap-reader" data-status="dev-credential-status">Copy</button>
+              </dd>
             </div>
           </dl>
-          <p class="note">The logger uses a different password from the operator account.</p>
+          <p class="credential-status" id="dev-credential-status" role="status" aria-live="polite">Local passwords not loaded. Run <code>python3 update-local-credentials.py</code> from this directory.</p>
+          <p class="note">These credentials are for the isolated local demo only. Never reuse them in production.</p>
         </section>
       </article>
     </div>
 
     <footer class="footer">
-      <span>Passwords are never embedded in this page. Retrieval links open local instructions.</span>
+      <span>Passwords load only from the ignored, mode-0600 credentials.local.js file on this local development machine.</span>
       <a href="README.md">Environment inventory and runbook</a>
     </footer>
   </main>
+  <script src="credentials.local.js"></script>
+  <script>
+    for (const input of document.querySelectorAll("[data-password]")) {
+      const password = window.ZPR_ENV_CREDENTIALS?.[input.dataset.environment]?.[input.dataset.password];
+      if (typeof password === "string" && password.length > 0) {
+        input.value = password;
+        input.dataset.loaded = "true";
+      }
+    }
+
+    for (const button of document.querySelectorAll("[data-toggle]")) {
+      button.addEventListener("click", () => {
+        const input = document.getElementById(button.dataset.toggle);
+        if (!input?.dataset.loaded) return;
+        input.type = input.type === "password" ? "text" : "password";
+        button.textContent = input.type === "password" ? "Show" : "Hide";
+      });
+    }
+
+    for (const button of document.querySelectorAll("[data-copy]")) {
+      button.addEventListener("click", async () => {
+        const input = document.getElementById(button.dataset.copy);
+        const status = document.getElementById(button.dataset.status);
+        if (!input?.dataset.loaded || !status) return;
+        try {
+          await navigator.clipboard.writeText(input.value);
+          status.textContent = "Password copied to the clipboard.";
+        } catch {
+          status.textContent = "Clipboard access failed. Reveal the password and copy it manually.";
+        }
+      });
+    }
+
+    if (window.ZPR_ENV_CREDENTIALS) {
+      for (const status of document.querySelectorAll(".credential-status")) {
+        status.textContent = "Private local demo credentials are loaded.";
+      }
+    }
+  </script>
 </body>
 </html>

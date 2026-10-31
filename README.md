@@ -582,6 +582,13 @@ provision an adapter, install policy, or export existing metrics automatically.
 
 ## Multiple trusted sources and policy limitations
 
+Verified BAS authentication claims also expose exact source-qualified aliases
+using the same qualification helper as trusted-service lookups. Each alias
+retains the verified service ID, value and bounded authentication expiry.
+Existing raw BAS claim names remain available for compatibility; new policies
+should select the explicit source-qualified form. This does not join user
+identities or trust caller-supplied source names.
+
 Multiple trusted-service attributes are now exposed as source-qualified policy
 keys (`attribute__source__source-id`); the source-built ZPLC resolves them against
 raw provider mappings, with a real compiler → VS stores → libeval grant/deny test.

@@ -102,6 +102,16 @@ func LoadBASServerConfig(path string) (BASServerConfig, error) {
 }
 
 func newBASServers(config BASServerConfig) ([]*http.Server, *Store, error) {
+	return newBASServersWithStore(config, nil)
+}
+
+func newBASServersWithStore(config BASServerConfig, store *Store) (servers []*http.Server, resultStore *Store, resultErr error) {
+	ownsStore := store == nil
+	defer func() {
+		if ownsStore && resultErr != nil && store != nil {
+			resultErr = errors.Join(resultErr, store.Close())
+		}
+	}()
 	if err := config.Validate(); err != nil {
 		return nil, nil, err
 	}
@@ -126,28 +136,27 @@ func newBASServers(config BASServerConfig) ([]*http.Server, *Store, error) {
 			return nil, nil, err
 		}
 	}
-	store, err := Open(config.DatabaseFile)
-	if err != nil {
-		return nil, nil, err
+	if store == nil {
+		store, err = Open(config.DatabaseFile)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	service, err := NewBASService(store, config.serviceConfig(), key)
 	if err != nil {
-		_ = store.Close()
 		return nil, nil, err
 	}
 	adapterOrigin, _ := url.Parse(config.Adapter.Origin)
 	tokenOrigin, _ := url.Parse(config.Token.Origin)
 	adapterHandler, err := NewBASAdapterHandler(service, adapterOrigin.Host)
 	if err != nil {
-		_ = store.Close()
 		return nil, nil, err
 	}
 	tokenHandler, err := NewBASTokenHandler(service, tokenOrigin.Host, config.VisaServicePeers)
 	if err != nil {
-		_ = store.Close()
 		return nil, nil, err
 	}
-	servers := make([]*http.Server, 2)
+	servers = make([]*http.Server, 2)
 	for index, listener := range []BASListener{config.Adapter, config.Token} {
 		tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificates[index]}}
 		handler := adapterHandler

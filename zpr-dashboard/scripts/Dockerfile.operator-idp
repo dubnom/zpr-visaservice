@@ -1,2 +1,6 @@
 FROM ghcr.io/dexidp/dex:v2.44.0@sha256:5d0656fce7d453c0e3b2706abf40c0d0ce5b371fb0b73b3cf714d05f35fa5f86
 COPY scripts/operator-idp/error.html /srv/dex/web/templates/error.html
+COPY scripts/operator-idp/remember-login.js /srv/dex/web/static/remember-login.js
+USER 0:0
+RUN sed -i '/{{ template "footer.html" . }}/i <script src="{{ url .ReqPath "static/remember-login.js" }}" defer></script>' /srv/dex/web/templates/password.html
+USER 1001:1001

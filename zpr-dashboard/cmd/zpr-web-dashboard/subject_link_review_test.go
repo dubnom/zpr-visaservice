@@ -123,7 +123,13 @@ func (f *subjectReviewHTTPFixture) request(t *testing.T, method, path, key, subj
 	if key != "" {
 		r.Header.Set("Idempotency-Key", key)
 	}
-	token, err := f.signer.SignSubjectLinkReview(r, body, operatorauth.Identity{Issuer: "https://idp.example", Subject: subject},
+	identity := operatorauth.Identity{Issuer: "https://idp.example", Subject: subject}
+	for _, grant := range f.trust.Grants {
+		if grant.Issuer == identity.Issuer && grant.Subject == identity.Subject {
+			identity.Permissions = grant.Permissions
+		}
+	}
+	token, err := f.signer.SignSubjectLinkReview(r, body, identity,
 		"production", time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -575,6 +581,8 @@ func TestSubjectReviewApprovalIsAuditedAndSelfApprovalIsFlagged(t *testing.T) {
 		{"reviewer", "approved"},
 	} {
 		f := subjectReviewHTTP(t)
+		f.trust.Grants[0].Permissions = append(f.trust.Grants[0].Permissions, "approval.self")
+		f.verifyWithLeaf(t, f.leaf)
 		audit := &recordingAuditRepository{}
 		f.api.audit = audit
 		record := subjectReviewRecord(t, subjectReviewResponse(t, f.api,

@@ -55,6 +55,9 @@ func TestEvaluationNetworkRenderAndRestart(t *testing.T) {
 			t.Fatalf("%s unexpectedly exposed", name)
 		}
 	}
+	if compose.Services["ldap-admin"].Ports != nil {
+		t.Fatal("LDAP GUI must not publish a non-loopback container port")
+	}
 	var dex struct {
 		Issuer  string `json:"issuer"`
 		Clients []struct {
@@ -100,7 +103,7 @@ func TestEvaluationNetworkRenderAndRestart(t *testing.T) {
 	if strings.Contains(env, config.BrowserIP) || !strings.Contains(env, "127.0.0.1:18790") {
 		t.Fatal("Control-Service must stay private")
 	}
-	if config.roomListen() != "192.168.194.24:18787" || len(config.listenAddresses()) != 7 {
+	if config.roomListen() != "192.168.194.24:18787" || len(config.listenAddresses()) != 8 {
 		t.Fatal("unexpected listener plan")
 	}
 }

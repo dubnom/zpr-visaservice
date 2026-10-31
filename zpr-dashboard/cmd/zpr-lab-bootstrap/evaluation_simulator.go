@@ -30,6 +30,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 	state := flags.String("state", "", "separate private Simulator state directory")
 	binary := flags.String("binary", "", "absolute prebuilt Simulator executable")
 	image := flags.String("data-plane-image", "", "exact paired data-plane image ID")
+	catalog := flags.String("catalog", "", "optional packaged five-organization Simulator catalog")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -51,6 +52,13 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer lock.Close()
+	if *catalog != "" {
+		env, err = prepareEvaluationSimulatorCatalog(*evaluation, *state, *catalog, env)
+		if err != nil {
+			fmt.Fprintf(stderr, "Simulator catalog: %v\n", err)
+			return 1
+		}
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	command := exec.Command(*binary, "-mode", "simulator", "-listen", listen)

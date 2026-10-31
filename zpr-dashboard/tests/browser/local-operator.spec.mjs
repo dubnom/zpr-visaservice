@@ -81,7 +81,7 @@ test("deployed local operator signs in through real Dex and authorizes monitorin
   await page.locator("#submit-login").click();
   await expect(page.locator("#operator-login-status")).toHaveText(/^User(?:: .+)?$/);
   await expect(page.locator("#operator-login-status")).not.toContainText(config.grants[0].subject);
-  await expect(page.locator("#operator-scope")).toContainText("Configured organizations: *");
+  await expect(page.locator("#operator-scope")).toHaveText("Signed in");
   for (const path of ["/api/snapshot", "/api/policy/context", "/api/policy", "/api/gateways/contracts", "/api/enrollment/v1/catalog"]) {
     expect(await page.evaluate(async (path) => (await fetch(path)).status, path), path).toBe(200);
   }

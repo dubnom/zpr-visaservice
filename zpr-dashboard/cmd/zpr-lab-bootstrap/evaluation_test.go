@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"net"
 	"net/http"
@@ -20,7 +22,13 @@ import (
 )
 
 func testEvaluationConfig() evaluationConfig {
-	return evaluationConfig{LDAPImage: evaluationLDAPImage, LogImage: evaluationLogImage, LogPlatform: "linux/arm64", DexImage: evaluationDexImage, DexPlatform: "linux/arm64", RoomPort: 18787, ServicePort: 18790, LDAPPort: 11636, LogPort: 15080, OIDCPort: 15556}
+	return evaluationConfig{
+		LDAPImage: evaluationLDAPImage, LDAPAdminImage: evaluationLDAPAdminImage,
+		LogImage: evaluationLogImage, LogPlatform: "linux/arm64",
+		DexImage: evaluationDexImage, DexPlatform: "linux/arm64",
+		RoomPort: 18787, ServicePort: 18790, LDAPPort: 11636, LDAPAdminPort: 18789,
+		LogPort: 15080, OIDCPort: 15556,
+	}
 }
 
 func TestEvaluationUniqueProtectedRestart(t *testing.T) {
@@ -113,20 +121,89 @@ func TestEvaluationRenderOnlyNoExternalProgramsOrLeaks(t *testing.T) {
 	if err := json.Unmarshal(compose, &document); err != nil {
 		t.Fatal(err)
 	}
-	if len(document.Services) != 3 || document.Services["ldap"] == nil || document.Services["logging"] == nil || document.Services["oidc"] == nil || strings.Contains(strings.ToLower(string(compose)), "simulator") {
+	if len(document.Services) != 4 || document.Services["ldap"] == nil || document.Services["ldap-admin"] == nil ||
+		document.Services["logging"] == nil || document.Services["oidc"] == nil ||
+		strings.Contains(strings.ToLower(string(compose)), "simulator") {
 		t.Fatal("unexpected companion dependency")
 	}
-	for _, service := range document.Services {
+	for name, service := range document.Services {
 		if service["pull_policy"] != "never" || service["read_only"] != true {
 			t.Fatal("missing container guardrails")
 		}
-		for _, port := range service["ports"].([]any) {
-			if !strings.HasPrefix(port.(string), "127.0.0.1:") {
-				t.Fatal("non-loopback published port")
+		if name == "ldap-admin" {
+			if service["network_mode"] != "host" || service["ports"] != nil {
+				t.Fatal("LDAP GUI must use host networking without publishing a wildcard port")
+			}
+			environment := service["environment"].(map[string]any)
+			if environment["ZPR_LDAP_UI_PORT"] != "18789" {
+				t.Fatal("LDAP GUI port was not configured")
+			}
+		} else {
+			for _, port := range service["ports"].([]any) {
+				if !strings.HasPrefix(port.(string), "127.0.0.1:") {
+					t.Fatal("non-loopback published port")
+				}
 			}
 		}
 		if service["logging"].(map[string]any)["driver"] != "none" {
 			t.Fatal("upstream output could log bootstrap credentials")
+		}
+	}
+	ldapUIConfig, err := os.ReadFile(filepath.Join(state, "ldap-admin-config.php"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"ldaps://127.0.0.1:11636",
+		"LDAP_OPT_X_TLS_CACERTFILE",
+		"LDAP_OPT_X_TLS_REQUIRE_CERT",
+		"LDAP_OPT_X_TLS_DEMAND",
+	} {
+		if !bytes.Contains(ldapUIConfig, []byte(expected)) {
+			t.Fatalf("LDAP GUI configuration is missing %q", expected)
+		}
+	}
+	if bytes.Contains(ldapUIConfig, []byte("ldaps://localhost:")) {
+		t.Fatal("LDAP GUI must connect over verified loopback TLS")
+	}
+	serverPEM, err := os.ReadFile(filepath.Join(state, "server-chain.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverBlock, _ := pem.Decode(serverPEM)
+	if serverBlock == nil {
+		t.Fatal("server certificate is missing")
+	}
+	serverCertificate, err := x509.ParseCertificate(serverBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPEM, err := os.ReadFile(filepath.Join(state, "ca.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	caBlock, _ := pem.Decode(caPEM)
+	if caBlock == nil {
+		t.Fatal("evaluation CA certificate is missing")
+	}
+	caCertificate, err := x509.ParseCertificate(caBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(caCertificate)
+	if _, err := serverCertificate.Verify(x509.VerifyOptions{
+		Roots: roots, DNSName: "127.0.0.1",
+	}); err != nil {
+		t.Fatalf("server certificate does not verify for LDAP loopback: %v", err)
+	}
+	for _, path := range []string{"ldap-admin.secret", "ldap-reader.secret"} {
+		secret, err := os.ReadFile(filepath.Join(state, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(ldapUIConfig, bytes.TrimSpace(secret)) {
+			t.Fatal("LDAP UI configuration contains a directory password")
 		}
 	}
 	env, _ := os.ReadFile(filepath.Join(state, "openobserve.env"))
@@ -147,12 +224,14 @@ func TestEvaluationRejectUnsafeConfigurationAndState(t *testing.T) {
 		change func(*evaluationConfig)
 	}{
 		{"tagged LDAP", func(c *evaluationConfig) { c.LDAPImage = "osixia/openldap:latest" }},
+		{"tagged LDAP GUI", func(c *evaluationConfig) { c.LDAPAdminImage = "php-ldap-admin:latest" }},
 		{"tagged logging", func(c *evaluationConfig) { c.LogImage = "openobserve:latest" }},
 		{"tagged OIDC", func(c *evaluationConfig) { c.DexImage = "dex:latest" }},
 		{"unsupported platform", func(c *evaluationConfig) { c.LogPlatform = "linux/386" }},
 		{"unsupported OIDC platform", func(c *evaluationConfig) { c.DexPlatform = "linux/386" }},
 		{"duplicate ports", func(c *evaluationConfig) { c.RoomPort = c.ServicePort }},
 		{"duplicate OIDC port", func(c *evaluationConfig) { c.OIDCPort = c.LogPort }},
+		{"duplicate LDAP GUI port", func(c *evaluationConfig) { c.LDAPAdminPort = c.LDAPPort }},
 		{"privileged port", func(c *evaluationConfig) { c.LDAPPort = 636 }},
 		{"invalid port", func(c *evaluationConfig) { c.LogPort = 65536 }},
 		{"protected DNS without data plane", func(c *evaluationConfig) { c.ProtectedDNS = true }},

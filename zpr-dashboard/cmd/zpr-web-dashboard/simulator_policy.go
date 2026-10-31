@@ -167,7 +167,7 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 		switch {
 		case method == http.MethodGet && parts[2] == "organization-drafts":
 			return "organization.read", "", true
-		case method == http.MethodGet && strings.Contains("|status|data-plane-endpoints|data-plane-workloads|evaluation-installs|machine-logs|adapter-logs|trusted-source|organizations|activation-log|activity|scenarios|", "|"+parts[2]+"|"):
+		case method == http.MethodGet && strings.Contains("|network|status|data-plane-endpoints|data-plane-workloads|evaluation-installs|machine-logs|adapter-logs|trusted-source|organizations|activation-log|activity|scenarios|", "|"+parts[2]+"|"):
 			permission := "simulator.read"
 			if parts[2] == "organizations" {
 				permission = "organization.read"

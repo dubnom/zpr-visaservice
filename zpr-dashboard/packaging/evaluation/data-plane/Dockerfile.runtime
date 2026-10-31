@@ -1,0 +1,9 @@
+ARG BASE_IMAGE=zpr-evaluation-runtime-base:unconfigured
+FROM ${BASE_IMAGE}
+ARG BASE_IMAGE_ID
+LABEL org.zpr.evaluation.runtime-base="${BASE_IMAGE_ID}"
+COPY data-plane.sh /usr/local/bin/zpr-evaluation-data-plane
+COPY endpoint.sh /usr/local/bin/zpr-evaluation-endpoint
+COPY node.sh /usr/local/bin/zpr-evaluation-node
+COPY probe.sh /usr/local/bin/zpr-evaluation-probe
+RUN chmod 755 /usr/local/bin/zpr-evaluation-*

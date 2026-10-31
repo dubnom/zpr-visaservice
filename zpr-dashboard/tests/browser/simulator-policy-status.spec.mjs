@@ -43,7 +43,7 @@ async function setup(page, handler) {
       path.endsWith(".css") ? "text/css" : "text/html";
     return route.fulfill({ contentType, body: await readFile(new URL(path, assets)) });
   });
-  await page.goto(`${origin}/organizations.html`);
+  await page.goto(`${origin}/simulator-info.html`);
   await expect(page.getByRole("heading", { name: "Policy operation status", exact: true })).toBeVisible();
   await page.getByRole("textbox", { name: "Organization ID", exact: true }).fill("lab-one");
   await page.getByRole("textbox", { name: "Target ID", exact: true }).fill("visa-target");
@@ -159,4 +159,22 @@ test("policy status rejects invalid identifiers without a request", async ({ pag
   await state.button.click();
   expect(state.requests.some(request => request.path.startsWith("/api/simulator/policy-operations/"))).toBe(false);
   await expect(state.result).toBeHidden();
+});
+
+test("organization workspace keeps troubleshooting separate and runtime provisioning out of navigation", async ({ page }) => {
+  const state = await setup(page, route => route.fulfill({ json: evidence() }));
+  await page.getByRole("link", { name: "Organizations", exact: true }).click();
+  await expect(page).toHaveURL(`${origin}/organizations.html`);
+  await expect(page.locator("#organization-workspace")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Policy operation status", exact: true })).toHaveCount(0);
+  const navigation = page.getByRole("navigation", { name: "Simulator navigation", exact: true });
+  await expect(navigation.getByRole("link", { name: "Demo world", exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "Machine provisioning", exact: true })).toHaveCount(0);
+  await expect(navigation.getByRole("link", { name: "Info", exact: true })).toBeVisible();
+  await navigation.getByRole("link", { name: "Info", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Policy operation status", exact: true })).toBeVisible();
+  expect(state.requests.some(request => request.path.startsWith("/api/simulator/policy-operations/"))).toBe(false);
+  expect(state.requests.some(request => request.path.startsWith("/api/simulator/world") ||
+    request.path.includes("/provisioning"))).toBe(false);
+  expect(state.errors).toEqual([]);
 });

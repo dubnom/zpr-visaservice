@@ -54,7 +54,7 @@ struct LookupOutcome {
     last_success_ms: Option<u64>,
 }
 
-fn qualify_source_attributes(
+pub(crate) fn qualify_source_attributes(
     attrs: Vec<Attribute>,
     source: &str,
     allow_unqualified: bool,

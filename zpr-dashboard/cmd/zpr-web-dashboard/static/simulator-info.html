@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZPR Simulator Info</title>
+<link rel="stylesheet" href="/app.css?v=110"><link rel="stylesheet" href="/simulator.css?v=41"><link rel="stylesheet" href="/sidebar.css?v=12">
+<script src="/page-runtime.js?v=1"></script><script src="/sidebar.js?v=47" defer></script>
+</head>
+<body><div class="app-shell">
+<aside class="sidebar"><a class="brand" data-simulator-nav href="/organizations.html" aria-label="ZPR Simulator organizations"><span class="brand-mark"><i></i><i></i><i></i></span><span><strong>ZPR</strong><small>SIMULATOR</small></span></a><nav class="primary-nav" aria-label="Simulator navigation"><a class="nav-link" data-simulator-nav href="/organizations.html">Organizations</a><a class="nav-link" data-simulator-nav href="/activity.html">Activity</a></nav><div class="sidebar-foot"><span class="tiny-dot"></span><span>SIMULATION CONTROL</span></div></aside>
+<main class="main-content"><header class="topbar"><div class="topbar-status"></div></header>
+<section class="section-block" aria-labelledby="simulator-info-title">
+<h1 id="simulator-info-title">Simulator info</h1>
+<p>Technical information and read-only troubleshooting tools. These checks do not approve, apply, or run operations.</p>
+<section class="organization-section" aria-labelledby="policy-operation-status-title">
+<h2 id="policy-operation-status-title">Policy operation status</h2>
+<p class="organization-description">Check an operation submitted through Control Room using its organization, target, and operation ID.</p>
+<form id="policy-operation-status-form">
+<label>Organization ID <input name="organization" required maxlength="128" pattern="[A-Za-z0-9_\-]{1,128}" autocomplete="off"></label>
+<label>Target ID <input name="target" required maxlength="128" pattern="[A-Za-z0-9_\-]{1,128}" autocomplete="off"></label>
+<label>Operation ID <input name="operation" required maxlength="128" pattern="[A-Za-z0-9_\-]{1,128}" autocomplete="off"></label>
+<button class="button" type="submit">Check status</button>
+</form>
+<p id="policy-operation-status-result" class="organization-summary" role="status" aria-live="polite" aria-atomic="true" hidden></p>
+</section>
+</section>
+</main></div>
+<script src="/operator-request.js?v=2"></script><script src="/simulator-nav.js?v=21"></script><script src="/simulator-info.js?v=1"></script>
+</body></html>

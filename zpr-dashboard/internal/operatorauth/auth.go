@@ -32,7 +32,7 @@ type Grant struct {
 
 func ValidPermission(permission string) bool {
 	return slices.Contains([]string{
-		"read", "create", "cancel", "approve", "reject", "budget.approve",
+		"read", "create", "cancel", "approve", "reject", "budget.approve", "approval.self",
 		"monitor.read", "logs.read", "policy.read", "policy.analyze", "policy.edit", "policy.apply",
 		"trusted-source.read", "trusted-source.control",
 		"gateway.read", "gateway.analyze", "gateway.edit",

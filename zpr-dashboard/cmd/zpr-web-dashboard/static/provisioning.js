@@ -57,6 +57,58 @@
     ["package_verified", "Verify a signed, notarized package that installs the adapter/runtime."],
     ["recovery_verified", "Test invitation recovery, cancellation/revocation and audit review."],
   ];
+  const developmentEnabled = () => /^[a-f0-9]{64}$/.test(catalog?.software_development_ca_fingerprint || "");
+  const developmentMode = () => developmentEnabled() && preflightMode.value === "development";
+  const developmentLabels = {
+    dns_verified: " The development host name resolves to the intended private host from the endpoint.",
+    tls_verified: " Direct TLS 1.3 verifies the exact endpoint address and the operator-configured private installation CA; certificate checks are not disabled.",
+    network_verified: " The configured development ports are reachable only by the intended private LAN/VPN clients; public ingress remains closed.",
+    docker_verified: " Each development organization has isolated retained state and exact supervised services; unrelated containers are untouched.",
+    package_verified: " The engineering runtime and enrollment client match their approved checksums. Software-held keys are explicitly development-only.",
+  };
+  const originalCheckLabels = new Map(Object.keys(developmentLabels).map((name) => {
+    const control = preflightForm.elements.namedItem(name);
+    return [name, [...control.closest("label").childNodes].filter((node) => node !== control).map((node) => node.cloneNode(true))];
+  }));
+  const endpointHostname = preflightForm.querySelector('input[readonly][aria-readonly="true"]');
+  const originalEndpointHostname = endpointHostname?.value;
+  const developmentNotice = document.createElement("p");
+  developmentNotice.textContent = "Development uses the operator-configured private installation CA and endpoint-local code delivery. No ACME, notarization, production readiness or runtime admission is claimed.";
+  developmentNotice.hidden = true;
+  preflightForm.querySelector(".provisioning-preflight-checks").before(developmentNotice);
+  let developmentLabelsActive = false;
+
+  function updateDevelopmentLabels() {
+    const development = developmentMode();
+    preflightForm.elements.namedItem("acme_verified").closest("label").hidden = development;
+    developmentNotice.hidden = !development;
+    if (development === developmentLabelsActive) return;
+    developmentLabelsActive = development;
+    for (const [name, label] of Object.entries(developmentLabels)) {
+      const control = preflightForm.elements.namedItem(name);
+      control.closest("label").replaceChildren(control, ...(development
+        ? [document.createTextNode(label)] : originalCheckLabels.get(name).map((node) => node.cloneNode(true))));
+    }
+    if (endpointHostname) endpointHostname.value = development ? "Installation-specific private-CA endpoint" : originalEndpointHostname;
+  }
+
+  function updateDevelopmentChoices() {
+    const delivery = preflightForm.elements.namedItem("delivery_channel");
+    const enabled = developmentEnabled();
+    for (const [select, value, label] of [
+      [preflightMode, "development", "Local development / private installation CA"],
+      [delivery, "development-endpoint-local", "Development: private endpoint-local code file"],
+    ]) {
+      const existing = select.querySelector(`option[value="${value}"]`);
+      if (enabled && !existing) select.add(new Option(label, value));
+      if (!enabled && existing) {
+        const selected = select.value === value;
+        existing.remove();
+        if (selected) select.selectedIndex = 0;
+      }
+    }
+    updateDevelopmentLabels();
+  }
   const canCreate = () => active() && location.protocol === "https:" && session &&
     preflightReady &&
     preflightExpiresAt > Date.now() &&
@@ -116,7 +168,7 @@
   }
 
   function preflightPayload() {
-    return {
+    const payload = {
       organization: preflightOrganization.value,
       deployment_mode: preflightMode.value,
       host_label: preflightForm.elements.namedItem("host_label").value.trim(),
@@ -132,14 +184,21 @@
       recovery_verified: preflightForm.elements.namedItem("recovery_verified").checked,
       backup_verified: preflightForm.elements.namedItem("backup_verified").checked,
     };
+    if (developmentMode()) {
+      payload.acme_verified = false;
+      payload.private_ca_fingerprint = catalog.software_development_ca_fingerprint;
+    }
+    return payload;
   }
 
   function validPreflightRecord(record, organization) {
     const attestation = record?.attestation;
     return attestation && attestation.organization === organization &&
-      ["pilot", "production"].includes(attestation.deployment_mode) &&
+      (["pilot", "production"].includes(attestation.deployment_mode) ||
+        (developmentEnabled() && attestation.deployment_mode === "development" && !attestation.acme_verified &&
+          attestation.private_ca_fingerprint === catalog.software_development_ca_fingerprint)) &&
       text(attestation.host_label) && privateIPv4(attestation.host_address) &&
-      ["pilot-secure-share", "pilot-verified-handoff", "production-portal"].includes(attestation.delivery_channel) &&
+      ["pilot-secure-share", "pilot-verified-handoff", "production-portal", "development-endpoint-local"].includes(attestation.delivery_channel) &&
       [...preflightChecks.map(([name]) => name), "backup_verified"].every((name) => typeof attestation[name] === "boolean") &&
       Number.isSafeInteger(record.revision) && record.revision > 0 &&
       text(record.updated_by) && Number.isFinite(Date.parse(record.updated_at));
@@ -155,6 +214,7 @@
     }
     preflightForm.elements.namedItem("backup_verified").checked = attestation.backup_verified;
     backupCheck.hidden = attestation.deployment_mode !== "production";
+    updateDevelopmentLabels();
   }
 
   async function loadPreflight() {
@@ -221,11 +281,18 @@
     if (!payload.host_label) blockers.push("Enter the Docker host label.");
     if (!privateIPv4(payload.host_address)) blockers.push("Enter a valid private host IPv4 address.");
     for (const [name, message] of preflightChecks) {
-      if (!payload[name]) blockers.push(message);
+      if (payload.deployment_mode === "development" && name === "acme_verified") continue;
+      if (!payload[name]) blockers.push(payload.deployment_mode === "development" && developmentLabels[name]
+        ? developmentLabels[name].trim() : message);
     }
     if (payload.deployment_mode === "production") {
       if (payload.delivery_channel !== "production-portal") blockers.push("Production requires an authenticated SSO/MFA code-delivery portal.");
       if (!payload.backup_verified) blockers.push("Production requires encrypted backups and a tested recovery process.");
+    } else if (payload.deployment_mode === "development") {
+      if (!developmentEnabled() || payload.private_ca_fingerprint !== catalog.software_development_ca_fingerprint || payload.acme_verified) {
+        blockers.push("Development requires this service's explicitly configured private installation CA; do not attest ACME.");
+      }
+      if (payload.delivery_channel !== "development-endpoint-local") blockers.push("Development requires private endpoint-local code delivery.");
     } else if (payload.deployment_mode !== "pilot") {
       blockers.push("Choose a supported deployment mode.");
     } else if (!["pilot-secure-share", "pilot-verified-handoff"].includes(payload.delivery_channel)) {
@@ -239,6 +306,7 @@
     clearPreflightExpiry();
     preflightStatus.dataset.state = "blocked";
     backupCheck.hidden = preflightMode.value !== "production";
+    updateDevelopmentLabels();
     hostAddress.setCustomValidity(hostAddress.value.trim() && !privateIPv4(hostAddress.value.trim())
       ? "Enter a private LAN or ZeroTier IPv4 address." : "");
     const payload = preflightPayload();
@@ -350,6 +418,7 @@
   function clearCatalog() {
     closeDialog();
     catalog = null;
+    updateDevelopmentChoices();
     for (const name of requestedFields) {
       const previous = input(name);
       if (previous.tagName !== "SELECT") continue;
@@ -665,6 +734,7 @@
   window.addEventListener("provisioning-catalog-cleared", () => { clearCatalog(); });
   window.addEventListener("provisioning-catalog-ready", (event) => {
     catalog = event.detail;
+    updateDevelopmentChoices();
     const selected = preflightOrganization.value;
     const organizations = Object.keys(catalog.organizations).sort();
     preflightOrganization.replaceChildren(new Option("Choose authorized organization", ""), ...organizations.map((name) => new Option(name, name)));

@@ -31,6 +31,7 @@ type ServerConfig struct {
 	RuntimeImportSeedFile        string                `json:"runtime_import_seed_file,omitempty"`
 	RuntimeImportLifetimeSeconds int                   `json:"runtime_import_lifetime_seconds,omitempty"`
 	Administration               *AdministrationConfig `json:"administration,omitempty"`
+	BAS                          *BASServerConfig      `json:"bas,omitempty"`
 }
 
 func LoadServerConfig(path string) (ServerConfig, error) {
@@ -57,17 +58,19 @@ func LoadServerConfig(path string) (ServerConfig, error) {
 	if err != nil {
 		return ServerConfig{}, err
 	}
-	for _, field := range []*string{&config.DatabaseFile, &config.CertificateFile, &config.KeyFile, &config.RuntimeImportSeedFile} {
+	files := []*string{&config.DatabaseFile, &config.CertificateFile, &config.KeyFile, &config.RuntimeImportSeedFile}
+	if config.BAS != nil {
+		bas := config.BAS
+		files = append(files, &bas.DatabaseFile, &bas.SigningKeyFile, &bas.VisaServiceCAFile,
+			&bas.Adapter.CertificateFile, &bas.Adapter.KeyFile, &bas.Token.CertificateFile, &bas.Token.KeyFile)
+	}
+	if config.Administration != nil {
+		admin := config.Administration
+		files = append(files, &admin.CertificateFile, &admin.KeyFile, &admin.ClientCAFile, &admin.CatalogFile, &admin.DelegationTrustFile)
+	}
+	for _, field := range files {
 		if *field != "" && !filepath.IsAbs(*field) {
 			*field = filepath.Join(base, *field)
-		}
-		if config.Administration != nil {
-			admin := config.Administration
-			for _, field := range []*string{&admin.CertificateFile, &admin.KeyFile, &admin.ClientCAFile, &admin.CatalogFile, &admin.DelegationTrustFile} {
-				if *field != "" && !filepath.IsAbs(*field) {
-					*field = filepath.Join(base, *field)
-				}
-			}
 		}
 	}
 	if err := config.Validate(); err != nil {
@@ -114,6 +117,20 @@ func (c ServerConfig) Validate() error {
 		if err := c.Administration.Validate(c); err != nil {
 			return err
 		}
+		if c.BAS != nil {
+			if err := c.BAS.Validate(); err != nil {
+				return fmt.Errorf("enrollment-owned BAS: %w", err)
+			}
+			if c.BAS.DatabaseFile != c.DatabaseFile {
+				return errors.New("enrollment-owned BAS must use the owning Enrollment Service's exact database_file")
+			}
+			for _, listener := range []BASListener{c.BAS.Adapter, c.BAS.Token} {
+				if listener.Listen == c.Listen || listener.Origin == c.Audience ||
+					(c.Administration != nil && (listener.Listen == c.Administration.Listen || listener.Origin == c.Administration.Audience)) {
+					return errors.New("enrollment-owned BAS requires adapter and token listeners separate from device and administrative listeners")
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -131,6 +148,9 @@ func newDeviceServerWithRuntimeCredentialIssuer(
 	}
 	certificate, err := loadServiceTLSIdentity(config.CertificateFile, config.KeyFile, config.Audience)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateDevelopmentDeviceCA(config, certificate); err != nil {
 		return nil, nil, err
 	}
 	audience, err := url.Parse(config.Audience)
@@ -241,23 +261,44 @@ func validateServiceTLSIdentity(certificate tls.Certificate, origin string) (tls
 	return certificate, nil
 }
 
+func newEnrollmentServers(config ServerConfig) (servers []*http.Server, store *Store, result error) {
+	server, store, err := newDeviceServer(config)
+	if err != nil {
+		return nil, nil, err
+	}
+	ownedStore := store
+	defer func() {
+		if result != nil {
+			result = errors.Join(result, ownedStore.Close())
+		}
+	}()
+	servers = []*http.Server{server}
+	if config.Administration != nil {
+		admin, err := newAdministrationServer(*config.Administration, store)
+		if err != nil {
+			return nil, nil, err
+		}
+		servers = append(servers, admin)
+	}
+	if config.BAS != nil {
+		bas, _, err := newBASServersWithStore(*config.BAS, store)
+		if err != nil {
+			return nil, nil, err
+		}
+		servers = append(servers, bas...)
+	}
+	return servers, store, nil
+}
+
 func RunDeviceServer(ctx context.Context, config ServerConfig) (result error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	server, store, err := newDeviceServer(config)
+	servers, store, err := newEnrollmentServers(config)
 	if err != nil {
 		return err
 	}
 	defer func() { result = errors.Join(result, store.Close()) }()
-	servers := []*http.Server{server}
-	if config.Administration != nil {
-		admin, err := newAdministrationServer(*config.Administration, store)
-		if err != nil {
-			return err
-		}
-		servers = append(servers, admin)
-	}
 	return runEnrollmentServers(ctx, servers)
 }
 

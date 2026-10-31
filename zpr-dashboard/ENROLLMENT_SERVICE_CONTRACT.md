@@ -7,8 +7,12 @@ Enrollment Service own device and delegated-administration handlers in one
 process, with Control-Service acting only as an mTLS relay and no registry mount.
 See [configuration and trust-hop details](README.md#enrollment-owned-administration-api).
 It retains `/api/operator-enrollment/v1/` routes, not the proposed `/v1` lifecycle
-API below. The standalone BAS command still accesses its configured registry;
-removing that remaining cross-process ownership is open. The device listener
+API below. The standalone BAS command still accesses its configured registry
+and must not share a production registry volume. An optional `bas` object now
+hosts its adapter and token listeners in the owning Enrollment Service process
+using that process's existing Store; no second process or registry mount is
+required in this mode. This is not completion of the lifecycle API below.
+The device listener
 implements the challenge/proof claim and status flow. Do not infer production inventory,
 credential issuance, admission, renewal, revocation, or retirement from this
 document or those prototypes.

@@ -56,6 +56,7 @@ type Proof struct {
 
 type DeviceStatus struct {
 	InvitationID          string           `json:"invitation_id"`
+	AssetID               string           `json:"asset_id,omitempty"`
 	State                 string           `json:"state"`
 	Revision              int              `json:"revision"`
 	KeyFingerprint        string           `json:"key_fingerprint"`
@@ -442,7 +443,7 @@ func (s *DeviceService) verifyProof(
 	if err := tx.Commit(); err != nil {
 		return DeviceStatus{}, nil, err
 	}
-	return DeviceStatus{InvitationID: i.ID, State: i.State, Revision: i.Revision,
+	return DeviceStatus{InvitationID: i.ID, AssetID: i.Asset.AssetID, State: i.State, Revision: i.Revision,
 		KeyFingerprint: i.KeyFingerprint, RuntimeKeyFingerprint: i.RuntimeKeyFingerprint,
 		ApprovalExpiresAt: i.ApprovalExpiresAt, CredentialsIssued: credentialEnvelope != nil,
 		ImportApproval: receipt}, credentialEnvelope, nil

@@ -1,25 +1,55 @@
 # Local evaluation bootstrap (B1–B3)
 
+Newly generated identity-provider configuration sets
+`oauth2.skipApprovalScreen: true`: successful sign-in returns directly to
+Control Room or Simulator without a **Grant Access** consent page. This does
+not bypass credentials or application authorization. Existing installations
+retain their generated configuration on restart; adopting the setting requires
+an explicit identity-provider configuration rollout, preserving installation
+state and its integrity records. Rebuilding the GUI alone does not change it.
+
+## Network display name
+
+Add `-network-name "Research Network"` to `demo.sh start STATE ...` or
+`zpr-lab-bootstrap -evaluation -state STATE ...`. This optional, non-unique
+label is passed only to production Control-Service. Control Room and Simulator
+read it from that service; it is not an organization ID or an authorization
+input. Omission leaves the network unnamed.
+
+The option is runtime-only, not part of the frozen installation configuration:
+changing it does not require a new state directory or reset trust, credentials,
+policy, DNS, or enrollment state. Keep it in the foreground supervisor/launch
+arguments on every start. To rename, change that argument and restart the
+production role using the normal stop/start procedure; do not edit the protected
+installation inventory. Refresh the interfaces afterward.
+
 ## Offline Linux/amd64 engineering package
 
 The evaluation stack can also be built into a source-independent archive.
 The builder creates matching ZPR and Simulator archives. This is **not yet
 the complete sign-in-to-scenario demo**. The ZPR archive includes a prebuilt bootstrap, production-tagged
 Control Room/Control-Service, the privileged data-plane image, and the exact
-LDAP, logging and OIDC images. It does not contain installation secrets:
+LDAP, phpLDAPadmin, logging and OIDC images. phpLDAPadmin is an evaluation-only
+local directory editor, not a production operator UI. It shares the host
+network namespace but binds its HTTP listener only to `127.0.0.1`; access it
+through an SSH tunnel. The UI container receives only the public CA and its
+configuration, never a directory password. It does not contain installation secrets:
 credentials and identities are generated into the private target state.
 The host needs Linux x86-64, Docker Engine with Compose v2, `sha256sum`, and
 enough disk for the images and persistent state. No Go/Rust toolchain,
 source checkout, image pull, or build is needed at installation.
 
-On the build host, with dependencies cached and all four Linux/amd64 images
-already loaded:
+On the build host, with Go dependencies cached and the four existing
+Linux/amd64 service images already loaded, first build the phpLDAPadmin image
+from the pinned Ubuntu package version, then create the offline pair:
 
 ```sh
+sh ../environments/build-ldap-ui.sh
 sh packaging/evaluation/package.sh demo-20261029 /absolute/new-output-directory
 ```
 
 `ZPR_EVALUATION_PACKAGE_DATA_PLANE_IMAGE`, `ZPR_EVALUATION_PACKAGE_LDAP_IMAGE`,
+`ZPR_EVALUATION_PACKAGE_LDAP_ADMIN_UI_IMAGE`,
 `ZPR_EVALUATION_PACKAGE_LOGGING_IMAGE`, and
 `ZPR_EVALUATION_PACKAGE_OIDC_IMAGE` may select different locally loaded images.
 The builder records immutable image IDs, source revision/dirty status, toolchain
@@ -42,8 +72,113 @@ delivered through the existing evaluation workflow. Trust only `ca.pem` on
 the browser computer, never copy CA keys or the whole state directory.
 The default Room URL is `https://localhost:18787`. The `-browser-ip` option
 below permits explicit private-network browser access on a **new** installation.
+phpLDAPadmin uses `-ldap-admin-port` (default `18789`) and accepts the generated
+directory administrator DN, but leaves its password blank for manual entry.
+The host-network container can reach host loopback services; this is one reason
+the entire evaluation package is restricted to isolated local development.
 When testing alongside another installation, supply distinct ports at first
 start using the flags documented below.
+
+An independently configured evaluation may set `-organization-id northstar`
+(or another lowercase alphanumeric/hyphen identifier of at most 64 characters).
+The ID is frozen with the installation and scopes its operator identity,
+service configuration, and subject-link resources. Omitting it preserves the
+existing `evaluation-<install-id>` identity. An existing installation cannot
+be rebound by changing this flag. This flag does not read a Simulator profile,
+provision scenario machines, or supply an on-demand lifecycle.
+
+### Independent operator service bindings
+
+For an already initialized independent installation, optional
+`-operator-services-file /absolute/private/operator-services.json` attaches
+operator-owned Policy-Service and named policy review contracts:
+
+```json
+{
+  "version": 1,
+  "organization": "northstar",
+  "policy_service": {
+    "url": "https://localhost:20989",
+    "client_certificate_file": "/private/northstar/client.pem",
+    "client_key_file": "/private/northstar/client.key",
+    "ca_file": "/private/northstar/ca.pem"
+  },
+  "change_review_config_file": "/private/northstar/change-review.json",
+  "operator_oidc_config_file": "/private/northstar/operator-oidc.json",
+  "visa_service_config_file": "/private/northstar/guarded-vs.toml",
+  "visa_service_read_only_files": []
+}
+```
+
+All inputs must be canonical absolute, regular protected files with owner-only
+permissions; symlinks are rejected. The file is strict versioned JSON with the
+installation's exact organization. Service credentials must form a valid mTLS
+identity. Values are explicit production contracts, never inherited caller
+environment or Simulator configuration.
+
+The optional OIDC configuration preserves the retained issuer, callback,
+client, session lifetime, named subjects and exact organization grants.
+Only existing named policy editors may gain `policy.apply`, `change.read`,
+`change.submit`, `change.review`, `gateway.read` and explicit `approval.self` for the shared review queue;
+existing permissions cannot be removed. This config grants capabilities, not
+approval. Policy staging, human review and authoritative receipt/readback are
+still required. The frozen base OIDC configuration is not edited.
+
+The optional `operator_delegation_trust_file` preserves the retained audience,
+keys, certificate pins, named subjects, organization scopes and existing grants.
+It may add only `approval.self`, only to an existing named approver. This is the
+independent Control-Service half of self-approval; the current signed-in session
+must also have the permission. Neither a backend grant alone nor the legacy
+`allow_self_approval` review setting enables self-approval. No request is approved
+by configuration or by login.
+
+With an independent `enrollment_service` mTLS binding (the same URL/certificate/key/CA
+shape as `policy_service`), existing named editors may also receive explicit
+`read`, `create`, `cancel`, `approve`, and `reject` enrollment permissions.
+The backend owns its registry and verifies end-to-end delegation against the
+retained logical Control-Service audience; its private transport origin and
+certificate remain independently verified. An explicitly configured development
+catalog may pin the actual device listener's private CA for development preflight;
+pilot/production ACME requirements are unchanged.
+
+The Visa override requires data-plane mode and explicit guarded policy trust
+for this organization's exact VS and Policy-Service origins. It can change only
+`guarded_policy` and `trusted_service_http`: all other parsed TOML settings must
+equal the frozen base configuration. Additional explicitly named regular files
+are mounted read-only at identical host/container paths. Overlapping existing
+mounts are rejected. The runtime image must support `ZPR_DP_VS_CONFIG`; absence
+of these optional bindings preserves existing startup and mounts.
+
+`environments/organization-policy-service.sh` supervises Policy-Service as a
+separate process with a private per-organization repository, staging directory,
+operation ledger and exact mTLS listener. It does not launch or read Simulator.
+The current engineering service executable uses the dashboard's existing
+`-mode policy-service` implementation, not a separately pruned build target.
+The retained bounded installation policy is labeled as such when seeded; it
+is not an original scenario policy and is not automatically applied.
+
+### Runtime-script-only image updates
+
+For script fixes that do not change PH, VS, compiler or CLI binaries:
+
+```sh
+sh packaging/evaluation/data-plane/build.sh \
+  -tag zpr-evaluation-data-plane:operator-update \
+  -runtime-base-image sha256:EXACT_LOCALLY_LOADED_IMAGE_ID
+```
+
+The builder verifies the local Linux architecture/image ID, assigns an exact
+content-derived local base tag, and builds with pulling disabled. The child
+copies only the four runtime scripts and records the parent ID in
+`org.zpr.evaluation.runtime-base`. It does not rebuild or qualify the retained
+binaries. Inspect and pin the resulting local image ID before deploying.
+Omitting the flag retains the normal full source build.
+
+The VS namespace routes the `fd5a:5052::/32` ZPR address space through its
+adapter in both single- and multi-node installations. A docking-node route
+alone cannot reach policy-authorized BAS or trusted providers in other ZPR
+subnets. This route supplies reachability only; signed policy and provider
+TLS verification still authorize the connection.
 
 The package enables Visa Service, the data plane, protected DNS and three
 bootstrap-admitted endpoints. Endpoint admission is an evaluation shortcut,
@@ -55,6 +190,30 @@ and clean-host qualification remain separate work. Stopping or omitting
 Simulator must not stop these operator services.
 
 ### Matching Simulator companion
+
+The matching companion includes the Northstar, Great Lakes, Load Lab, Redwood,
+and Velocity profiles, including directory/policy assets and scenario files.
+Add `--full-catalog` after the Simulator state argument to install them:
+
+```sh
+./simulator.sh start /absolute/matching-zpr-package /absolute/evaluation-state /absolute/simulator-state --full-catalog
+```
+
+This opt-in extends only the Simulator's local named-user organization scopes;
+production grants and identity remain unchanged. The existing evaluation
+organization is retained. Installation is repeatable and refuses to overwrite
+changed assets. Catalog availability does not provision independent production
+installs, machine runtimes, or authorize scenario execution. Live activation
+still requires the organization's independently configured install.
+Without the flag, the companion retains its evaluation-only behavior.
+Full-catalog startup points Northstar's pre-generated directory loader at its
+installed private LDIF assets; it does not require the old source runtime's
+`linux-integration/pregen` directory.
+The staged catalog also includes the original compiler configuration templates
+and runtime policy fragments for all five organizations. They are source
+authoring assets, not compiled/applied policy or proof of admission: their
+addresses, trusted providers, credentials and shared runtime definitions must
+be resolved against each independent install before compilation and activation.
 
 #### Bounded scenario opt-in
 
@@ -287,6 +446,84 @@ sh packaging/evaluation/bootstrap.sh \
   Valkey persists with an append-only file under `valkey-state/`.
 - **Not enforcing:** there are no nodes, adapters or endpoints, so no traffic is
   admitted or denied. Policy-Service is still not configured.
+- **Original organization policy binding (source contract):** a nonsynthetic
+  Simulator profile may declare `policy_binding` with `version: 1`,
+  `target_id` and a lowercase 64-hex SHA-256 `digest`. Preflight and execution
+  require authoritative Policy-Service current-state readback for that exact
+  organization, target and digest; configuration alone is not evidence.
+  Bindings are included in the authorization-scope digest. They cannot be
+  combined with the synthetic or evaluation-runtime policy contracts and never
+  remove topology, provisioning or authorization blockers. This does not
+  provision Policy-Service or install an original organization's policy.
+  A multi-install registry supplies `policy_service_url` per organization,
+  using that install's explicit client certificate/key and service CA. It never
+  falls back to another install or a global policy service when the selected
+  install lacks this URL.
+- **Named-reviewed machine enrollment (source components, not configured by
+  the evaluation launcher):** packages include `zpr-enrollment-service`,
+  `zpr-enrollment-bas` and `zpr-enrollment-device`. The device command takes a
+  private `-config /absolute/device.json` followed by `initialize`, `claim`,
+  `status` or `prepare-runtime`. Its version-1 JSON requires `audience`, `organization`,
+  `invitation_id`, `state_directory`, `ca_file` and
+  `allow_software_development: true`. State and CA paths must be canonical
+  absolute paths. Initialize explicitly creates separate retained enrollment
+  and BAS runtime keys; it never replaces or rebinds an existing identity.
+  Claim additionally requires `-code-file /absolute/private-code.secret`;
+  the one-time code is never accepted as a command argument or printed.
+  Status and claim do not initialize missing identities or approve anything.
+  See the [named batch review API](../../README.md#reviewing-a-claimed-device)
+  for exact inventory review and durable approval recovery. Approval is not
+  issuance, admission or traffic acceptance.
+  After named approval, `prepare-runtime` obtains fresh key-bound status and
+  requires both approved fingerprints to match this endpoint's retained keys.
+  The status must supply the authoritative registry `asset_id`; the command
+  never substitutes a workload display name or invitation ID. The handoff sets
+  `authentication.bas_client_id` explicitly, preserving the original machine
+  and workload names. Matching upgraded PH is required; older PH ignores this
+  new field and is not qualified for these handoffs.
+  It additionally requires `bas_ca_file`, an explicit canonical absolute BAS
+  TLS CA path; enrollment TLS trust is not implicitly reused. It creates
+  owner-private `runtime-auth.key`, `runtime-auth-ca.pem` and
+  `runtime-auth.toml` inside the retained endpoint state directory. These files
+  must remain on that endpoint: the private runtime key is never printed,
+  returned through an API, or obtained from the enrollment server. Repetition
+  preserves exactly matching files; changed keys, trust or symlinks are rejected.
+  Pass the returned `authentication_config` path to PH or the controller;
+  provisioning must mount the **same canonical paths** into its process
+  namespace. The JSON reports `admission_verified: false`: preparing files is
+  not successful BAS authentication or Visa Service admission.
+- **Machine-controller BAS path (source only):**
+  `SIMULATION_MACHINE_AUTHENTICATION_CONFIG=/absolute/machine-auth.toml`
+  replaces, and is mutually exclusive with, `-zpr-bootstrap-key`. The protected TOML accepts only
+  empty `[global]` and `[adapter]` tables plus `[authentication]` with `bas_key`
+  and `tls_ca_file`, both canonical absolute paths, and an exact registry
+  `bas_client_id`. Unknown configuration fields and missing IDs are rejected.
+  In this mode each workload requires its own protected
+  `/opt/zpr-workloads/authentication/WORKLOAD.toml` and endpoint-owned retained
+  BAS key. Missing/invalid configuration fails rather than falling back to
+  bootstrap keys. Existing explicitly configured bootstrap controllers retain
+  their prior mode. This wiring does not deploy BAS, supply device credentials,
+  authorize a device, or prove that the packaged PH supports the required
+  AuthCode/TLS flow.
+- **Machine identity requirements:** the canonical scenario plan includes
+  `machine_runtime_identities` for controllers, resolved workload agents and
+  the implicit `simulator-control` callback adapter. Its separate
+  `machine_runtime_trust` identifies the BAS authentication root requirement.
+  Both are included in the reviewed plan digest and authorized plan previews.
+  A response without current resource-authorization evidence retains its minimal
+  contract and does not disclose these runtime details.
+  They are requirements, not enrollment approvals, root trust, a complete
+  organization infrastructure inventory or proof of admission. The original
+  Velocity machine path requires five enrolled identities, not just its four
+  step-referenced controllers/workloads. Machine-free scenarios do not acquire
+  fabricated machine requirements; evaluation endpoint scenarios keep their
+  separate contract. No preflight blocker is waived by declaring identities.
+- **Enrollment-owned BAS (optional source configuration):** the device-service
+  `bas` object hosts adapter HTTPS and VS token mTLS on separate listeners in the
+  enrollment-owning process, with its exact database path. No second BAS process
+  or cross-process registry mount is needed. The standalone BAS command remains
+  available for isolated fixtures; do not run it against the owning service's
+  registry. Policy-authorized BAS root admission is still separately reviewed.
 - **Supervision:** the Valkey and VS logs are `logs/valkey.log` and
   `logs/visa-service.log`. If either process exits, the install stops, like any
   other operator process.
@@ -553,8 +790,8 @@ created before U05b have no client.
 
 To switch Simulator organizations against real installs, the operator starts one
 evaluation install per organization, each with its own state directory, ports
-and (usually) `-node-location`. The Simulator never starts, stops or resets an
-install; it only selects among installs listed in an operator-written registry:
+and (usually) `-node-location`. By default, the Simulator only selects among
+already-running installs listed in an operator-written registry:
 
 ```json
 {"version": 1, "kind": "zpr-simulator-evaluation-installs", "evaluation_only": true,
@@ -590,6 +827,112 @@ With the registry:
 - `GET /api/simulator/evaluation-installs` (`simulator.read`) lists the
   registered organizations, which one is selected and whether each has a data
   plane. It does not expose TLS file paths.
+
+##### Optional on-demand supervision
+
+An install may additionally set `"lifecycle_command"` to an argument array, for
+example `["/abs/operator-supervisor", "--config", "/abs/northstar/operator.json"]`.
+This is an operator-owned executable and independent production configuration,
+not the legacy organization activation script. It must not read Simulator
+profiles, manifests, sessions, or workloads. The package supplies a systemd user
+service adapter; operator units and original-scenario machine provisioning must
+be supplied independently.
+
+- The registry must be a private regular file (for example mode `0600`). The
+  executable must be a regular executable file, not a symlink, and neither file
+  may be group/other writable. Use trusted parent directories. The command has
+  at most 16 nonempty elements, each at most 4096 characters.
+- The Simulator executes the argument array directly, **without a shell**,
+  appending exactly one action: `start` or `stop`. Environment variables prefixed
+  `SIMULATION_`, `SIMULATOR_`, or `ZPR_SIMULATOR_` are removed. The supervisor
+  must write its own private logs; its output is not returned to browser users.
+- `start` must idempotently ensure this install is supervised independently of
+  the short-lived command. `stop` must idempotently await shutdown of only this
+  install, including endpoint containers, without deleting persistent state.
+  Both actions must handle SIGTERM and finish within two minutes. An install
+  without this field is never stopped by the Simulator.
+- Switching starts the requested runtime, then polls its authenticated mTLS
+  operator snapshot for up to two minutes, matching the evaluation bootstrap
+  startup allowance. Only the selected managed install has
+  active endpoint/workload workers. Before stopping the previous managed runtime,
+  the Simulator cancels and joins its workers.
+- Selection is saved only after the previous runtime stops. A stop/save failure
+  restarts the previous runtime and stops the newly started one. A partial-start
+  or readiness failure also stops the new runtime. Same-organization failure
+  does not stop that selected runtime. Cleanup/recovery errors remain explicit;
+  a failed recovery must be repaired by the operator.
+- At Simulator startup, the persisted selected managed runtime is started and
+  checked, and other explicitly managed runtimes are stopped. This reconciles
+  interrupted switches. An unavailable supervisor fails startup rather than
+  pretending the organization is ready. Simulator shutdown joins its workers
+  but leaves the independent selected production install running.
+
+This lifecycle contract does not restore the five original organization
+scenarios by itself. Their admitted machine runtimes, topology, workload assets,
+authoritative policy evidence, and live scenario acceptance are separate gates.
+
+###### Systemd user service adapter
+
+On Linux hosts with an active systemd user manager, use:
+
+```json
+"lifecycle_command": ["/abs/zpr-evaluation-RELEASE/bin/zpr-evaluation-supervisor", "zpr-evaluation-northstar.service"]
+```
+
+The adapter accepts only `zpr-evaluation-NAME.service` (lowercase letters,
+digits, internal hyphens; at most 64 characters in NAME) and `start`/`stop`.
+It invokes `/usr/bin/systemctl --user` directly, waits for completion, and
+requires the final state to be `active`/`inactive`, respectively. Missing units
+cannot start. Repeated stop of an unloaded unit succeeds only after an explicit
+`LoadState=not-found`, `ActiveState=inactive` readback. Failed jobs, incomplete
+shutdown, and cancellation are errors, not successes.
+The adapter does not install units, change user-manager settings, or enable
+services. Its total command deadline is 110 seconds.
+
+The operator must install one independent unit per organization, with:
+
+- A fixed absolute `ExecStart` launching its package and private state with all
+  frozen operator flags (including organization identity and fixed ports).
+  Do not point it at `environments/workbench.sh`, Simulator launchers, or
+  profile-reading legacy activation scripts.
+- Foreground supervision (`Type=exec`), `Restart=on-failure`, `UMask=0077`,
+  SIGTERM shutdown and enough `TimeoutStopSec` for retained-state cleanup.
+  Avoid `RemainAfterExit`: an exited launcher must not appear healthy.
+- Install-scoped endpoint/container cleanup as part of shutdown. A successful
+  systemd stop alone does not prove that all Docker endpoints were removed.
+- Private operator logs and no credentials in unit command lines. The adapter
+  reports exit failures but never returns unit journal output to the browser.
+
+Render the unit from an explicit independent production command, without
+starting anything or reading Simulator input:
+
+```sh
+umask 077
+/abs/zpr-evaluation-RELEASE/bin/zpr-evaluation-supervisor render-unit \
+  /abs/zpr-evaluation-RELEASE/demo.sh start /abs/northstar-state \
+  -organization-id northstar \
+  -room-port 28787 -service-port 28790 -ldap-port 21636 \
+  -ldap-admin-port 28789 -logging-port 25080 -oidc-port 25556 \
+  -vs-admin-port 28182 -snapshot-delivery-port 28793 -dns-transfer-port 25353 \
+  > /abs/operator-units/zpr-evaluation-northstar.service
+```
+
+These are illustrative **new-install** ports, not a change to the fixed dev or
+stable bindings. Supply the organization's reviewed directory, node placement,
+and any other frozen flags before first startup. The renderer accepts a trusted
+regular executable launcher plus at most 127 arguments. It quotes each systemd
+argument, escapes environment/specifier expansion, rejects control characters,
+and emits no environment overrides or shell evaluation. The unit uses
+`KillMode=mixed` so SIGTERM reaches the supervising bootstrap first and lets it
+clean up its children and containers. Review the unit and use
+`systemd-analyze --user verify` before installing it in the user unit directory
+and reloading the manager. Rendering never installs, enables, or starts a unit.
+Do not put passwords, tokens or other secrets in launch arguments.
+
+Use the user journal to diagnose failures. If services must survive logout,
+the operator must separately approve/configure user lingering; the adapter never
+changes it. A user manager is available on workbench, but lingering is not
+enabled there. No organization units have been installed by this source change.
 
 ### Organization directory (D6a)
 
@@ -1001,3 +1344,142 @@ ordinary authenticated public source contracts. Bundled LDAP, logging, operator
 configuration and default source are not replaced or reseeded. Stopping or removing
 the companion leaves the evaluation install running. This is not legacy Simulator
 scenario activation, multi-source policy acceptance or B6 starter retirement.
+
+### Original Velocity retained machine BAS handoff (source only)
+
+The original two-machine runtime has a separate, explicit opt-in:
+`SIMULATION_MACHINE_AUTHENTICATION_DIR=/absolute/private/velocity-machine-auth`.
+The directory must be canonical, owned by the launcher user, and private
+(mode `0700`). It contains endpoint-local state directories named for their
+authoritative registry asset IDs:
+
+```text
+velocity-machine-auth/
+  velocity-machine-03-controller/
+  velocity-machine-03-finance-client/
+  velocity-machine-05-controller/
+  velocity-machine-05-echo-service/
+  velocity-simulator-control/
+```
+
+Each child contains the retained `identity/` directory produced by the enrollment
+helper, with `runtime-auth.toml`, `runtime-auth.key` and
+`runtime-auth-ca.pem`. The TOML's absolute key and CA paths must remain valid both
+on the launcher host and in the machine container. The launcher checks all five
+IDs, config paths, owner-private modes and required files before starting the
+callback or a machine. Only the three exact runtime files per identity are
+mounted read-only, not the endpoint or identity directory;
+the callback receives only its three runtime files. No registry or enrollment
+private key is mounted or read.
+
+Before starting or recreating the Simulator container, export both
+`SIMULATION_ORGANIZATION_ID=velocity` and
+`SIMULATION_MACHINE_AUTHENTICATION_DIR=/absolute/private/velocity-machine-auth`.
+The existing launcher passes only those runtime files at their exact paths and passes
+the opt-in to the Simulator process, which is the lifecycle consumer that
+starts machine containers. A running Simulator created without that exact
+environment and mount is rejected; it is not silently upgraded. Use the same
+environment when starting `machine-03` and `machine-05`. Starting or restarting
+the SimulatorControl service uses the same opt-in for
+`velocity-simulator-control`. The controller identities are
+`velocity-machine-03-controller` and `velocity-machine-05-controller`; the
+workload identities are `velocity-machine-03-finance-client` and
+`velocity-machine-05-echo-service`. They are never substituted with display
+labels. This mode supplies no bootstrap fallback: missing or mismatched
+material fails preflight, and an already-running container in another auth
+mode must be stopped before switching. With the variable unset, existing
+environments retain their legacy bootstrap behavior.
+
+This is launcher/source wiring only. It does not enroll or authorize
+endpoints, change policy or topology, migrate a running scenario, deploy
+services, or prove that the configured PH binaries successfully authenticate
+or are admitted.
+
+The original launcher still expects its demo node layout (`/app/bin` tools,
+profile node addresses and generated configuration). This opt-in does not
+make it compatible with the separate evaluation installation layout. Its
+readiness and package preflight gates must not be bypassed to claim integration.
+`make test` executes the isolated shell handoff fixture as well as Go tests.
+
+The approved next direction is an explicit logical-to-physical binding of the
+original Velocity single-node scenario to its independent retained installation,
+not restoring the legacy demo node or rewriting the original scenario. The
+Simulator install registry now accepts `retained_topology_binding` on the
+Velocity install:
+
+```json
+{
+  "version": 1,
+  "install_id": "0422ecb887a5106caea70975",
+  "logical_node_id": "velocity-node",
+  "node_container": "zpr-evaluation-0422ecb887a5106caea70975-data-plane",
+  "network": "zpr-evaluation-0422ecb887a5106caea70975-data-plane",
+  "image_id": "sha256:c820f183c0fb3e05523e925dcebe9b975d045a6f03487e7b8c1da2d9531f6062",
+  "substrate_address": "172.26.0.2",
+  "zpr_address": "fd5a:5052::2"
+}
+```
+
+These are observed installation values, not defaults. A changed image, address,
+owner or network must fail preflight until the operator explicitly updates the
+binding and requests a new plan. The Simulator checks the running container,
+install ownership label, exact image, network address and node TUN address using
+read-only Docker inspection. The binding is included in the authorization-scope
+digest, cloned approval snapshot and preflight topology display. It does not
+change the source profile, people, workload inventory, benchmark or cleanup.
+The actual verifier passed against the retained node and rejected a deliberately
+incorrect image. Source planner/registry, race and frontend-contract tests pass.
+
+Without an explicit `retained_machine_runtime`, preflight still reports
+`retained-topology-only` and remains blocked. With the maintained consumer
+configured, the source plan reports `retained-machine-bas-v1`; this is not a
+released package or permission to bypass policy/resource approval. Production
+services never read either Simulator configuration.
+
+The version-1 runtime configuration pins `image_id`, `controller_file`,
+`controller_sha256`, `endpoint_root`, `data_plane_ca_file`, `control_tls_dir`
+and `callback_upstream`. Files and the actual node binding are checked before
+start. `scripts/prepare-retained-machine-control.sh` prepares or verifies a
+separate Simulator-only mTLS CA/server/two controller identities; it neither
+enrolls devices nor changes production trust. Each runtime receives only its
+exact files. Protected regular-file copies in private root-owned tmpfs preserve
+the TOML's absolute key/CA references without weakening host ownership checks.
+The callback and machine containers have exact install/configuration/generation
+ownership, and cleanup mutates inspected container IDs only.
+
+The matched PH must support Linux `--tun-route-table`: retained controllers use
+105, callback 106 and workloads their distinct configured tables. This binds
+temporary BAS authentication and granted-address traffic to each identity's own
+TUN; legacy runtime routing remains unchanged. The retained path reads back the
+VS-managed service AAAA record from its owning production DNS namespace instead
+of trying to publish into `zpr-dns-bind9`. Client traffic still performs the
+actual protected DNS query through its workload adapter.
+
+**2026-10-30 isolated diagnostic evidence:** all 13 original Velocity actions
+and seven original cleanup actions pass, with both named machine owners and
+all five retained BAS identities. Two repeats verified exactly 100 latency
+samples and 16,777,216 bytes, with benchmark phases below 0.5 seconds and total
+runs below eight seconds. After a normal independent base restart, the same
+actions and threshold assertions passed in 23.62 seconds overall. No shell
+repair or policy/trust change occurred during these runs. This sequential
+direct-action harness is not Simulator UI/resource approval or parallel
+scheduling acceptance. See the [current release gate](../../../environments/README.md#velocity-release-gate-and-delivery-discipline).
+
+Velocity-only base r20 preserves session-owned signed BAS claims during
+directory refresh, denying expired evidence rather than treating it as known
+absence. Its data-plane shutdown now signals/reaps owned service and log-reader
+PIDs, including bounded forced cleanup; a same-name unrelated process survives
+the required shell fixture. Normal restart restores generated-state ownership.
+The one-time transition off the old image completed its retired cleanup's DNS
+snapshot ownership restoration before qualification; that repair was not part
+of any successful scenario run.
+
+Machine-controller workload adapters now retain their actual child process
+handles. Start/stop never kill by executable name; an active adapter left by
+another controller is reported explicitly and requires a machine restart.
+Ordinary test-service startup/cleanup also runs through the machine's mTLS
+command channel and controller-owned child handles. Stops are bounded and
+reaped before replacement, and stopping a workload also stops its owned test
+service. This source behavior requires a matched Simulator/controller upgrade;
+it has not been deployed to the retained dev/stable pair. Business/gateway and
+stress service paths retain their existing separate lifecycle behavior.

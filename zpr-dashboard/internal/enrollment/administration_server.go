@@ -23,6 +23,7 @@ import (
 type AdministrationConfig struct {
 	Listen              string `json:"listen"`
 	Audience            string `json:"audience"`
+	DelegationAudience  string `json:"delegation_audience,omitempty"`
 	CertificateFile     string `json:"certificate_file"`
 	KeyFile             string `json:"key_file"`
 	ClientCAFile        string `json:"client_ca_file"`
@@ -49,6 +50,13 @@ func (c AdministrationConfig) Validate(device ServerConfig) error {
 	}
 	if audiencePort != port || c.Audience == device.Audience {
 		return errors.New("enrollment administration audience must match its separate fixed listener port")
+	}
+	if c.DelegationAudience != "" {
+		delegation, err := url.Parse(c.DelegationAudience)
+		if err != nil || delegation.Scheme != "https" || delegation.Hostname() == "" || delegation.User != nil ||
+			c.DelegationAudience != "https://"+delegation.Host || c.DelegationAudience == device.Audience {
+			return errors.New("enrollment administration logical delegation audience requires an explicit exact HTTPS operator origin, distinct from device admission")
+		}
 	}
 	if c.CertificateFile == "" || c.KeyFile == "" || c.ClientCAFile == "" || c.CatalogFile == "" || c.DelegationTrustFile == "" {
 		return errors.New("enrollment administration requires TLS identity, client CA, catalog and independent delegation trust files")
@@ -101,7 +109,11 @@ func newAdministrationServer(config AdministrationConfig, store *Store) (*http.S
 	if err := decodeJSON(bytes.NewReader(data), &trust); err != nil {
 		return nil, errors.New("enrollment administration delegation trust must be strict JSON")
 	}
-	if trust.Audience != config.Audience {
+	delegationAudience := config.Audience
+	if config.DelegationAudience != "" {
+		delegationAudience = config.DelegationAudience
+	}
+	if trust.Audience != delegationAudience {
 		return nil, errors.New("enrollment delegation audience must exactly match the administration service audience")
 	}
 	handler, err := NewOperatorAdminHandler(store, catalog, trust)

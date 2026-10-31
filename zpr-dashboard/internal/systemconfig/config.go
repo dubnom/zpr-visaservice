@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"neboagency.com/zpr-dashborad/internal/networkmetadata"
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
 )
 
@@ -20,6 +21,7 @@ const MaxConfigBytes = 64 << 10
 
 // Config is the management bootstrap input, not a complete runtime configuration.
 type Config struct {
+	NetworkName     string           `json:"network_name,omitempty"`
 	SchemaVersion   int              `json:"schema_version"`
 	Organization    Organization     `json:"organization"`
 	ControlRoom     ControlRoom      `json:"control_room"`
@@ -185,6 +187,9 @@ func (config Config) Validate() error {
 	}
 	if !organizationID.MatchString(config.Organization.ID) || !plainText(config.Organization.Name, 256) {
 		return errors.New("organization requires a 1-64 character lowercase alphanumeric/hyphen ID and a nonempty name")
+	}
+	if err := (networkmetadata.Metadata{Name: config.NetworkName}).Validate(); err != nil {
+		return err
 	}
 	if err := ValidateManagementEndpoint(config.ControlRoom.Origin, config.ControlRoom.ManagementIP); err != nil {
 		return err

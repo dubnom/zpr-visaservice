@@ -59,20 +59,21 @@ type Invitation struct {
 }
 
 type PreflightAttestation struct {
-	Organization      string `json:"organization"`
-	Mode              string `json:"deployment_mode"`
-	HostLabel         string `json:"host_label"`
-	HostAddress       string `json:"host_address"`
-	DeliveryChannel   string `json:"delivery_channel"`
-	DNSVerified       bool   `json:"dns_verified"`
-	ACMEVerified      bool   `json:"acme_verified"`
-	TLSVerified       bool   `json:"tls_verified"`
-	NetworkVerified   bool   `json:"network_verified"`
-	DockerVerified    bool   `json:"docker_verified"`
-	ListenersVerified bool   `json:"listeners_verified"`
-	PackageVerified   bool   `json:"package_verified"`
-	RecoveryVerified  bool   `json:"recovery_verified"`
-	BackupVerified    bool   `json:"backup_verified"`
+	Organization         string `json:"organization"`
+	Mode                 string `json:"deployment_mode"`
+	HostLabel            string `json:"host_label"`
+	HostAddress          string `json:"host_address"`
+	DeliveryChannel      string `json:"delivery_channel"`
+	DNSVerified          bool   `json:"dns_verified"`
+	ACMEVerified         bool   `json:"acme_verified"`
+	PrivateCAFingerprint string `json:"private_ca_fingerprint,omitempty"`
+	TLSVerified          bool   `json:"tls_verified"`
+	NetworkVerified      bool   `json:"network_verified"`
+	DockerVerified       bool   `json:"docker_verified"`
+	ListenersVerified    bool   `json:"listeners_verified"`
+	PackageVerified      bool   `json:"package_verified"`
+	RecoveryVerified     bool   `json:"recovery_verified"`
+	BackupVerified       bool   `json:"backup_verified"`
 }
 
 type PreflightRecord struct {
@@ -156,6 +157,12 @@ CREATE TABLE IF NOT EXISTS operator_delegation_replay (
  token_hash TEXT PRIMARY KEY,
  expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS enrollment_batch_reviews (
+ organization TEXT NOT NULL, inventory_digest TEXT NOT NULL,
+ principal TEXT NOT NULL, reason TEXT NOT NULL, decided_at INTEGER NOT NULL,
+ inventory_json BLOB NOT NULL,
+ PRIMARY KEY(organization, inventory_digest)
+);
 CREATE TABLE IF NOT EXISTS enrollment_preflight (
  organization TEXT PRIMARY KEY,
  attestation_json TEXT NOT NULL,
@@ -237,11 +244,11 @@ func (p PreflightAttestation) Validate() error {
 			return ErrInvalid
 		}
 	}
-	if p.Mode != "pilot" && p.Mode != "production" {
+	if p.Mode != "pilot" && p.Mode != "production" && p.Mode != "development" {
 		return ErrInvalid
 	}
 	if p.DeliveryChannel != "pilot-secure-share" && p.DeliveryChannel != "pilot-verified-handoff" &&
-		p.DeliveryChannel != "production-portal" {
+		p.DeliveryChannel != "production-portal" && p.DeliveryChannel != "development-endpoint-local" {
 		return ErrInvalid
 	}
 	ip := net.ParseIP(p.HostAddress)
@@ -250,8 +257,15 @@ func (p PreflightAttestation) Validate() error {
 		ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() {
 		return ErrInvalid
 	}
-	if !p.DNSVerified || !p.ACMEVerified || !p.TLSVerified || !p.NetworkVerified ||
+	if !p.DNSVerified || !p.TLSVerified || !p.NetworkVerified ||
 		!p.DockerVerified || !p.ListenersVerified || !p.PackageVerified || !p.RecoveryVerified {
+		return ErrInvalid
+	}
+	if p.Mode == "development" {
+		if p.ACMEVerified || !validFingerprint(p.PrivateCAFingerprint) || p.DeliveryChannel != "development-endpoint-local" {
+			return ErrInvalid
+		}
+	} else if !p.ACMEVerified || p.PrivateCAFingerprint != "" || p.DeliveryChannel == "development-endpoint-local" {
 		return ErrInvalid
 	}
 	if p.Mode == "production" && (p.DeliveryChannel != "production-portal" || !p.BackupVerified) {
@@ -679,6 +693,17 @@ func (s *Store) DecideWithRuntimeKey(ctx context.Context, organization, id, prin
 	if err != nil {
 		return Invitation{}, err
 	}
+	i, err = decideInvitation(ctx, tx, i, principal, decision, reason, fingerprint, runtimeFingerprint, revision, now)
+	if err != nil {
+		return Invitation{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Invitation{}, err
+	}
+	return i, nil
+}
+
+func decideInvitation(ctx context.Context, tx *sql.Tx, i Invitation, principal, decision, reason, fingerprint, runtimeFingerprint string, revision int, now time.Time) (Invitation, error) {
 	if i.Revision != revision {
 		return Invitation{}, ErrRevision
 	}
@@ -694,17 +719,14 @@ func (s *Store) DecideWithRuntimeKey(ctx context.Context, organization, id, prin
 	i.State, i.DecisionBy, i.DecisionReason = decision, principal, reason
 	decided := now.UTC()
 	i.DecidedAt, i.Revision = &decided, i.Revision+1
-	if _, err := tx.ExecContext(ctx, `UPDATE invitations SET state=? WHERE id=? AND organization=?`, decision, id, organization); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE invitations SET state=? WHERE id=? AND organization=?`, decision, i.ID, i.Asset.Organization); err != nil {
 		return Invitation{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE invitation_reviews SET revision=?,decision_by=?,decision_reason=?,decided_at=? WHERE invitation_id=?`,
-		i.Revision, principal, reason, now.UnixNano(), id); err != nil {
+		i.Revision, principal, reason, now.UnixNano(), i.ID); err != nil {
 		return Invitation{}, err
 	}
 	if err := audit(ctx, tx, i, principal, decision, now); err != nil {
-		return Invitation{}, err
-	}
-	if err := tx.Commit(); err != nil {
 		return Invitation{}, err
 	}
 	return i, nil

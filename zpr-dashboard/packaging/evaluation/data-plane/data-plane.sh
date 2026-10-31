@@ -25,21 +25,38 @@ vs_zpr=fd5a:5052::1
 log() { printf '%s [data-plane] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 prefix() { sed -u "s/^/[$1] /"; }
 pids=""
+log_pids=""
 spawn() {
 	name=$1
 	shift
-	( "$@" 2>&1 | prefix "$name" ) &
+	fifo=$run/log-$name
+	mkfifo "$fifo"
+	sed -u "s/^/[$name] /" <"$fifo" &
+	log_pids="$log_pids $!"
+	"$@" >"$fifo" 2>&1 &
 	pids="$pids $!"
 }
 stop() {
 	trap - EXIT INT TERM
 	for pid in $pids; do kill "$pid" 2>/dev/null || true; done
-	pkill -TERM -x ph 2>/dev/null || true
-	pkill -TERM -x vs 2>/dev/null || true
-	pkill -TERM -x named 2>/dev/null || true
-	pkill -TERM -x valkey-server 2>/dev/null || true
-	pkill -TERM -x socat 2>/dev/null || true
-	sleep 1
+	tries=20
+	while [ "$tries" -gt 0 ]; do
+		running=0
+		for pid in $pids; do
+			if kill -0 "$pid" 2>/dev/null; then running=1; fi
+		done
+		[ "$running" = 1 ] || break
+		tries=$((tries - 1))
+		sleep 0.1
+	done
+	for pid in $pids $log_pids; do
+		if kill -0 "$pid" 2>/dev/null; then
+			if ! kill -KILL "$pid" 2>/dev/null; then
+				log "WARNING: cannot stop owned child $pid" >&2
+			fi
+		fi
+		wait "$pid" 2>/dev/null || true
+	done
 	ip netns delete zpr-vs 2>/dev/null || true
 	ip netns delete zpr-dns 2>/dev/null || true
 	# The parent is synthesized by Docker; only the mounted file has host ownership.
@@ -93,7 +110,7 @@ spawn valkey ip netns exec zpr-vs valkey-server "$state/valkey.conf"
 # Connection check only: an unauthenticated PING still proves Valkey listens.
 wait_for 20 ip netns exec zpr-vs valkey-cli -p 6379 ping || { log "Valkey did not start"; exit 1; }
 
-set -- -c "$state/vs.toml"
+set -- -c "${ZPR_DP_VS_CONFIG:-$state/vs.toml}"
 if [ "${ZPR_DP_INSTALL_POLICY:-}" = 1 ]; then
 	set -- "$@" "$plane/vs-policy.bin2"
 fi
@@ -114,13 +131,12 @@ log "starting node"
 # VS adapter then reaches it through the veth. Command-line options override
 # the file, so the D1 veth advertisement is passed only for a single node.
 dock_addr=$node_substrate
+# BAS and other trusted providers can occupy any policy-authorized ZPR subnet.
+ip -n zpr-vs -6 route add fd5a:5052::/32 dev tun0
 if [ -n "${ZPR_DP_NODE_SUBSTRATE:-}" ]; then
 	dock_addr=$ZPR_DP_NODE_SUBSTRATE
 	ip -n zpr-vs route add "$dock_addr/32" via "$node_substrate" dev veth0 2>/dev/null ||
 		ip -n zpr-vs route add "$dock_addr/32" dev veth0
-	# tun0 is point-to-point to the docking node only; the Visa Service must
-	# also answer the linked nodes' VSAPI sessions and reach their VSS.
-	ip -n zpr-vs route add fd5a:5052::/64 dev tun0
 	set -- --config-file "$state/dp-node.toml"
 else
 	set -- --advertised-substrate-addr "$node_substrate:5000"
@@ -167,7 +183,7 @@ if [ "${ZPR_DP_PROTECTED_DNS:-}" = 1 ]; then
 	ip -n zpr-dns addr add 10.0.0.4 peer 10.0.0.3 dev veth0
 	ip link set veth-dns up
 	ip -n zpr-dns link set veth0 up
-	ip -n zpr-dns route add 10.0.0.1/32 via 10.0.0.3 dev veth0
+	ip -n zpr-dns route add "$dock_addr/32" via 10.0.0.3 dev veth0
 	ip -n zpr-dns tuntap add name tun0 mode tun multi_queue
 	ip -n zpr-dns -6 addr add "$dns_zpr/128" dev tun0
 	ip -n zpr-dns link set tun0 up
@@ -198,7 +214,7 @@ EOF
 		--name zpr-dns \
 		--km-impl noise \
 		--tun-if tun0 \
-		--node-addr "$node_substrate:5000" \
+		--node-addr "$dock_addr:5000" \
 		--zpr-addr "$dns_zpr"
 	cp "$state/dp-dns-publisher.key" "$run/zpr-vs-publisher.key"
 	cp "$state/dp-dns-viewer.key" "$run/zpr-dns-viewer.key"

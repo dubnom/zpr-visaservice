@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -38,22 +39,25 @@ type simulatorScenarioPlanApprovalRequest struct {
 }
 
 type simulatorScenarioPlanResponse struct {
-	Status                   simulatorRuntimePlanStatus     `json:"status"`
-	OrganizationID           string                         `json:"organization_id"`
-	ScenarioID               string                         `json:"scenario_id"`
-	ManifestName             string                         `json:"manifest_name"`
-	MachineIDs               []string                       `json:"machine_ids"`
-	Topology                 *simulatorScenarioTopology     `json:"topology,omitempty"`
-	Workloads                []simulatorRuntimePlanWorkload `json:"workloads"`
-	BudgetInputs             []simulatorRuntimeBudgetInput  `json:"budget_inputs"`
-	BudgetStatus             simulatorRuntimeBudgetStatus   `json:"budget_status"`
-	TopologyStatus           string                         `json:"topology_status"`
-	PolicyStatus             string                         `json:"policy_status"`
-	NorthstarAssetsStatus    string                         `json:"northstar_assets_status"`
-	PackageContractStatus    string                         `json:"package_contract_status"`
-	Blockers                 []string                       `json:"blockers"`
-	PlanDigest               string                         `json:"plan_digest"`
-	AuthorizationScopeDigest string                         `json:"authorization_scope_digest"`
+	Status                   simulatorRuntimePlanStatus         `json:"status"`
+	OrganizationID           string                             `json:"organization_id"`
+	ScenarioID               string                             `json:"scenario_id"`
+	ManifestName             string                             `json:"manifest_name"`
+	MachineIDs               []string                           `json:"machine_ids"`
+	Topology                 *simulatorScenarioTopology         `json:"topology,omitempty"`
+	RetainedTopologyBinding  *simulatorRetainedTopologyBinding  `json:"retained_topology_binding,omitempty"`
+	Workloads                []simulatorRuntimePlanWorkload     `json:"workloads"`
+	MachineRuntimeIdentities []simulatorRuntimeIdentity         `json:"machine_runtime_identities,omitempty"`
+	MachineRuntimeTrust      []simulatorRuntimeTrustRequirement `json:"machine_runtime_trust,omitempty"`
+	BudgetInputs             []simulatorRuntimeBudgetInput      `json:"budget_inputs"`
+	BudgetStatus             simulatorRuntimeBudgetStatus       `json:"budget_status"`
+	TopologyStatus           string                             `json:"topology_status"`
+	PolicyStatus             string                             `json:"policy_status"`
+	NorthstarAssetsStatus    string                             `json:"northstar_assets_status"`
+	PackageContractStatus    string                             `json:"package_contract_status"`
+	Blockers                 []string                           `json:"blockers"`
+	PlanDigest               string                             `json:"plan_digest"`
+	AuthorizationScopeDigest string                             `json:"authorization_scope_digest"`
 }
 
 type simulatorScenarioBudgetEvidenceUnavailableResponse struct {
@@ -286,16 +290,23 @@ func (h *simulatorScenarioPlanHandler) resolvePlanBudgetEvidence(
 }
 
 func (h *simulatorScenarioPlanHandler) resolveNorthstarPolicyReadback(ctx context.Context, plan *simulatorRuntimePlan) {
-	if plan == nil || plan.OrganizationID != "northstar" {
+	if plan == nil {
 		return
 	}
 	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), plan.OrganizationID)
-	if err != nil || !organization.SyntheticLabOnly {
+	if err != nil {
 		return
 	}
 	var resolver simulatorScenarioCurrentPolicyResolver
 	if h != nil {
 		resolver = h.resolveCurrentPolicy
+	}
+	if organization.PolicyBinding != nil {
+		if resolver == nil {
+			resolver = currentSimulatorPolicyEvidence
+		}
+		resolveSimulatorPolicyBinding(ctx, plan, organization, resolver)
+		return
 	}
 	resolveSimulatorNorthstarPolicyReadback(ctx, plan, organization, resolver)
 }
@@ -340,6 +351,9 @@ func simulatorNorthstarPolicyReadbackMatches(
 }
 
 func verifySimulatorNorthstarPolicyReadback(ctx context.Context, organization simulatorOrganization) error {
+	if organization.PolicyBinding != nil {
+		return verifySimulatorPolicyBinding(ctx, organization, currentSimulatorPolicyEvidence)
+	}
 	if !organization.SyntheticLabOnly {
 		return nil
 	}
@@ -471,10 +485,13 @@ func simulatorScenarioPlanResponseFor(plan simulatorRuntimePlan, digest string) 
 	return simulatorScenarioPlanResponse{
 		Status: plan.Status, OrganizationID: plan.OrganizationID, ScenarioID: plan.ScenarioID,
 		ManifestName: plan.ManifestName, MachineIDs: plan.MachineIDs,
-		Topology:     plan.Topology,
-		Workloads:    plan.Workloads,
-		BudgetInputs: plan.BudgetInputs,
-		BudgetStatus: plan.BudgetStatus, TopologyStatus: plan.TopologyStatus,
+		Topology:                 plan.Topology,
+		RetainedTopologyBinding:  plan.RetainedTopologyBinding,
+		Workloads:                plan.Workloads,
+		MachineRuntimeIdentities: plan.MachineRuntimeIdentities,
+		MachineRuntimeTrust:      plan.MachineRuntimeTrust,
+		BudgetInputs:             plan.BudgetInputs,
+		BudgetStatus:             plan.BudgetStatus, TopologyStatus: plan.TopologyStatus,
 		PolicyStatus: plan.PolicyStatus, NorthstarAssetsStatus: plan.NorthstarAssetsStatus,
 		PackageContractStatus: plan.PackageContractStatus,
 		Blockers:              plan.Blockers, PlanDigest: digest,
@@ -489,6 +506,12 @@ func cloneSimulatorRuntimePlan(plan simulatorRuntimePlan) simulatorRuntimePlan {
 		copy(cloned.MachineIDs, plan.MachineIDs)
 	}
 	cloned.Topology = cloneSimulatorScenarioPlanTopology(plan.Topology)
+	if plan.RetainedTopologyBinding != nil {
+		copy := *plan.RetainedTopologyBinding
+		cloned.RetainedTopologyBinding = &copy
+	}
+	cloned.MachineRuntimeIdentities = slices.Clone(plan.MachineRuntimeIdentities)
+	cloned.MachineRuntimeTrust = slices.Clone(plan.MachineRuntimeTrust)
 	if plan.Workloads != nil {
 		cloned.Workloads = make([]simulatorRuntimePlanWorkload, len(plan.Workloads))
 		copy(cloned.Workloads, plan.Workloads)
@@ -753,6 +776,16 @@ func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simul
 	}
 	input.AuthorizationScopeDigest = scopeDigest
 	plan := buildSimulatorRuntimePlan(input)
+	if organization.RetainedTopologyBinding != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		resolveSimulatorRetainedTopology(ctx, &plan, organization)
+		cancel()
+		if organization.RetainedMachineRuntime != nil {
+			if err := verifySimulatorRetainedMachineFiles(organization); err != nil {
+				addSimulatorRuntimePlanBlocker(&plan, "retained machine runtime verification failed: "+err.Error())
+			}
+		}
+	}
 	if evaluationRuntimeErr != nil {
 		addSimulatorRuntimePlanBlocker(&plan, "evaluation runtime verification failed: "+evaluationRuntimeErr.Error())
 	}

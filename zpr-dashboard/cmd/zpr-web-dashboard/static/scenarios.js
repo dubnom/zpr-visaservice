@@ -158,7 +158,15 @@ function scenarioPlanValidateResponse(plan, organizationID, scenarioID) {
         input.fanout_count !== undefined && (!Number.isFinite(input.fanout_count) || input.fanout_count < 0) ||
         input.service_count !== undefined && (!Number.isFinite(input.service_count) || input.service_count < 0)) ||
       !Array.isArray(plan.blockers) || plan.blockers.some(blocker => typeof blocker !== "string") ||
-      plan.topology !== undefined && !scenarioPlanIsObject(plan.topology)) {
+      plan.topology !== undefined && !scenarioPlanIsObject(plan.topology) ||
+      plan.retained_topology_binding !== undefined &&
+        (!scenarioPlanIsObject(plan.retained_topology_binding) ||
+         plan.retained_topology_binding.version !== 1 ||
+         !/^[0-9a-f]{24}$/.test(plan.retained_topology_binding.install_id) ||
+         !/^sha256:[0-9a-f]{64}$/.test(plan.retained_topology_binding.image_id) ||
+         ["logical_node_id", "node_container", "network", "substrate_address", "zpr_address"]
+           .some(field => typeof plan.retained_topology_binding[field] !== "string" ||
+             !plan.retained_topology_binding[field]))) {
     throw new Error("Preflight returned an invalid or mismatched scenario plan.");
   }
   return plan;
@@ -173,7 +181,7 @@ function scenarioPlanValidateUnavailableBudget(response, organizationID, scenari
       !Array.isArray(response.blockers) ||
       response.blockers.length === 0 ||
       response.blockers.some(blocker => typeof blocker !== "string" || !blocker)) {
-    throw new Error("Budget authority returned an invalid or mismatched unavailable-evidence response.");
+    throw new Error("Authorization service returned an invalid or mismatched unavailable-evidence response.");
   }
   return response;
 }
@@ -211,10 +219,10 @@ function scenarioPlanRenderUnavailableBudget(response) {
   const evaluationBudget = response.budget_approval_available === true;
   document.getElementById("scenario-plan-budget-approve").hidden = !evaluationBudget;
   document.getElementById("scenario-plan-budget-approve-status").textContent = evaluationBudget
-    ? "This bounded evaluation is ready. Your authorized identity can approve its exact scope for 15 minutes; no digest entry is needed."
+    ? "This bounded evaluation is ready. Your authorized identity can authorize its exact scope for 15 minutes; no digest entry is needed."
     : "";
   document.getElementById("scenario-plan-budget-handoff-title").textContent = evaluationBudget
-    ? "Evaluation scenario budget approval" : "Manual first-grant handoff";
+    ? "Evaluation scenario authorization" : "Manual first-grant handoff";
   document.getElementById("scenario-plan-handoff-organization").textContent = response.organization_id;
   document.getElementById("scenario-plan-handoff-scenario").textContent = response.scenario_id;
   document.getElementById("scenario-plan-handoff-digest").textContent = response.authorization_scope_digest;
@@ -227,9 +235,9 @@ function scenarioPlanRenderUnavailableBudget(response) {
   }
   document.getElementById("scenario-plan-budget-handoff").hidden = false;
   document.getElementById("scenario-plan-approval-status").textContent =
-    "Approval unavailable: obtain a valid Control Room budget-authority grant, then refresh preflight.";
+    "Authorization unavailable: obtain a valid Control Room authorization grant, then refresh preflight.";
   scenarioPlanSetStatus(
-    "Budget evidence is unavailable or invalid. No local approval or run can be requested.",
+    "Authorization evidence is unavailable or invalid. No local approval or run can be requested.",
   );
 }
 
@@ -237,7 +245,7 @@ function scenarioPlanApprovalBlockers(plan) {
   if (!plan) return ["Run preflight before requesting approval."];
   const blockers = [];
   if (plan.status !== "plan-only") blockers.push("The plan is blocked.");
-  if (plan.budget_status !== "approved") blockers.push(`Budget status is ${plan.budget_status}.`);
+  if (plan.budget_status !== "approved") blockers.push(`Authorization status is ${plan.budget_status}.`);
   if (plan.blockers.length) blockers.push("Preflight reported blockers.");
   if (!plan.machine_ids.length && plan.package_contract_status !== "evaluation-endpoints-v1") {
     blockers.push("Preflight returned no machine IDs; no organization inventory fallback is allowed.");
@@ -317,6 +325,13 @@ function scenarioPlanRenderTable(container, headers, rows, emptyMessage) {
   container.append(table);
 }
 
+function scenarioPlanTopologyText(plan) {
+  const topology = plan.topology === undefined
+    ? "Not included in the preflight response." : JSON.stringify(plan.topology, null, 2);
+  return plan.retained_topology_binding === undefined ? topology
+    : `${topology}\n\nExplicit retained installation binding (not scenario acceptance):\n${JSON.stringify(plan.retained_topology_binding, null, 2)}`;
+}
+
 function scenarioPlanRender(plan) {
   const preview = document.getElementById("scenario-plan-preview");
   const summary = document.getElementById("scenario-plan-summary");
@@ -325,14 +340,8 @@ function scenarioPlanRender(plan) {
     ["Status", plan.status],
     ["Organization", plan.organization_id],
     ["Scenario", plan.scenario_id],
-    ["Manifest", plan.manifest_name],
-    ["Budget status", plan.budget_status],
-    ["Topology status", plan.topology_status],
+    ["Authorization status", plan.budget_status],
     ["Policy status", plan.policy_status],
-    ["Northstar assets status", plan.northstar_assets_status],
-    ["Package contract status", plan.package_contract_status],
-    ["Plan digest", plan.plan_digest],
-    ["Authorization-scope digest", plan.authorization_scope_digest],
   ]) {
     const term = document.createElement("dt");
     term.textContent = label;
@@ -354,7 +363,7 @@ function scenarioPlanRender(plan) {
     machines.append(item);
   }
   document.getElementById("scenario-plan-topology").textContent =
-    plan.topology === undefined ? "Not included in the preflight response." : JSON.stringify(plan.topology, null, 2);
+    scenarioPlanTopologyText(plan);
   scenarioPlanRenderTable(
     document.getElementById("scenario-plan-workloads"),
     ["Machine ID", "Component ID", "Agent"],
@@ -369,7 +378,7 @@ function scenarioPlanRender(plan) {
       input.fanout_count === undefined ? "—" : String(input.fanout_count),
       input.service_count === undefined ? "—" : String(input.service_count),
     ]),
-    "No budget inputs returned.",
+    "No resource inputs returned.",
   );
   const blockers = document.getElementById("scenario-plan-blockers");
   blockers.replaceChildren();
@@ -493,7 +502,7 @@ async function preflightSelectedScenarioPlan() {
     scenarioPlanState.plan = scenarioPlanValidateResponse(result.body, organizationID, scenarioID);
     scenarioPlanRender(scenarioPlanState.plan);
     scenarioPlanSetStatus(
-      `Preflight ${result.body.status}; budget ${result.body.budget_status}; ` +
+      `Preflight ${result.body.status}; authorization ${result.body.budget_status}; ` +
       `${result.body.machine_ids.length} machine references and ${result.body.blockers.length} blockers. Review the plan below.`,
     );
     document.getElementById("scenario-plan-preview-title").focus();
@@ -531,13 +540,13 @@ async function approveEvaluationScenarioBudget() {
     if (requestID !== scenarioPlanState.planRequestID) return;
     if (response.organization_id !== organizationID || response.scenario_id !== scenarioID ||
         response.plan_digest !== unavailable.authorization_scope_digest || response.decision !== "approved") {
-      throw new Error("Budget service returned a mismatched approval; refresh preflight.");
+      throw new Error("Authorization service returned a mismatched response; refresh preflight.");
     }
     scenarioPlanState.busy = false;
     await preflightSelectedScenarioPlan();
   } catch (error) {
     if (requestID !== scenarioPlanState.planRequestID) return;
-    scenarioPlanSetError(`${error.message || "Budget approval was not confirmed."} Refresh preflight before retrying; the request may have reached the service.`);
+    scenarioPlanSetError(`${error.message || "Evaluation authorization was not confirmed."} Refresh preflight before retrying; the request may have reached the service.`);
   } finally {
     if (requestID === scenarioPlanState.planRequestID) {
       scenarioPlanState.busy = false;
@@ -830,7 +839,7 @@ document.getElementById("scenario-plan-copy-handoff").addEventListener("click", 
       scenario_id: handoff.scenario_id,
       authorization_scope_digest: handoff.authorization_scope_digest,
     }, null, 2));
-    status.textContent = "Exact grant scope copied. Manually enter it in the authenticated Control Room budget-authority workflow.";
+    status.textContent = "Exact grant scope copied. Manually enter it in the authenticated Control Room authorization workflow.";
   } catch (error) {
     status.textContent = `Could not copy the grant scope: ${error.message || "clipboard access is unavailable"}.`;
   }

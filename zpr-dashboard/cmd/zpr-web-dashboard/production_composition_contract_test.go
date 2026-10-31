@@ -54,6 +54,7 @@ func TestProductionCompositionRouteRegistrations(t *testing.T) {
 			"/":                         "handlers.Static",
 		}, nil},
 		{"../../internal/controlservice/httpapi/routes.go", "NewMux", map[string]string{
+			"GET /api/network":                                  "network",
 			"/api/enrollment/":                                  "handlers.Enrollment",
 			"/api/operator-enrollment/":                         "handlers.Enrollment",
 			"POST /api/budget-authority/current":                "budgetCurrent",

@@ -96,8 +96,8 @@ func TestOperatorEnrollmentAuditsIndependentUserAndDurableReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id := operatorauth.Identity{Issuer: "https://id.example", Subject: "admin-123"}
-	trust := operatordelegation.Config{Version: 1, Audience: "https://control.example", Keys: []operatordelegation.TrustedKey{{KeyID: "room", PublicKey: base64.RawURLEncoding.EncodeToString(public), CertificateSHA256: digest("room-cert")}}, Grants: []operatorauth.Grant{{Issuer: id.Issuer, Subject: id.Subject, Organizations: []string{"company"}, Permissions: []string{"read", "create", "cancel", "approve", "reject"}}}}
+	id := operatorauth.Identity{Issuer: "https://id.example", Subject: "admin-123", Permissions: []string{"approval.self"}}
+	trust := operatordelegation.Config{Version: 1, Audience: "https://control.example", Keys: []operatordelegation.TrustedKey{{KeyID: "room", PublicKey: base64.RawURLEncoding.EncodeToString(public), CertificateSHA256: digest("room-cert")}}, Grants: []operatorauth.Grant{{Issuer: id.Issuer, Subject: id.Subject, Organizations: []string{"company"}, Permissions: []string{"read", "create", "cancel", "approve", "reject", "approval.self"}}}}
 	config := apiConfig()
 	config.GUIInvitationCreation = true
 	config.ApprovalLifetimeSeconds = 3600

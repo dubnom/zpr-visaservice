@@ -49,6 +49,9 @@ var evaluationAdminSubjectLinkPermissions = []string{
 var evaluationReviewerPermissions = []string{"monitor.read", "subject-link.read", "subject-link.approve"}
 
 func evaluationOrganization(inventory evaluationInventory) string {
+	if inventory.Config.OrganizationID != "" {
+		return inventory.Config.OrganizationID
+	}
 	return "evaluation-" + inventory.InstallID
 }
 

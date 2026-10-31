@@ -27,6 +27,93 @@ Do not infer current runtime health from a historical verification entry.
 
 ## Current status
 
+- **Turn-key onboarding delivery plan (2026-10-30): Planned; acceptance open.**
+  The [ordinary-client delivery sequence](SIMULATOR_AS_ZPR_CLIENT_PLAN.md#active-turn-key-delivery-plan-2026-10-30)
+  owns G0-G6: supported contracts, separate operator access, automatic ordinary
+  endpoint enrollment with identity-authorized self-approval, DNS discovery, canonical Velocity
+  UI acceptance, matched dev rollout, then all five organizations/17 scenarios.
+  Pre-enrolled diagnostic credentials are not the final Simulator experience.
+  Retain identities across restarts; obtain fresh runtime authentication.
+  Updated user decision: all Simulator installations must require no input
+  after authentication beyond organization/scenario selection. Remove separate
+  approval/run acknowledgment prompts while retaining backend permission checks
+  and exact-operation approval evidence. Audit warns on self-approval role risks;
+  warning support is planned, not deployed. Control Room approval UX is unchanged.
+  This plan does not approve broader policy, new trust or destructive resets.
+
+- **Velocity-first delivery reset (2026-10-30): In progress; release blocked.**
+  Velocity is the sole release gate; do not expand organization rollout.
+  Keep stable and main dev unchanged. The coordinator is the sole live-runtime
+  writer; parallel chats take bounded, non-overlapping work and do not deploy.
+  Launcher/controller/workload/callback BAS handoff is source-verified using
+  the retained enrollment directory layout and exact runtime-file mounts.
+  Full dashboard `make test` and focused lifecycle race tests pass. Ordinary
+  test-service and workload cleanup use controller-owned child handles rather
+  than name matching. The user approved explicit binding to the retained
+  single-node install, preserving original scenario intent. The registry/plan
+  binding is source-verified; its actual read-only node verifier passes live
+  and rejects an incorrect image. Preflight exposes the binding, includes it in
+  approval scope. The retained-machine consumer is now implemented and its
+  isolated live diagnostic passes all 20 unchanged original actions, including
+  both named machine-owner logins, workloads, HTTP 200, 100 latency samples and
+  16 MiB. Two clean repeats and a run after independent base restart pass.
+  VS session-claim retention, exact-child data-plane cleanup, protected regular
+  workload configuration files and opt-in PH source routing remove reproduced
+  runtime blockers. The retained path verifies production-owned DNS publication
+  rather than writing to the legacy DNS container. The r20 base is Velocity-only;
+  r21 endpoint/r22 controller artifacts remain isolated diagnostic inputs.
+  Canonical Simulator UI/resource approval and matched package rollout remain
+  open; these results are not UI scenario acceptance.
+  The effective retained issuer has only the Room OIDC client and Room
+  delegation signer. The user has approved an independent Velocity-only
+  Simulator client/signer at 24788 for the existing named administrator;
+  maintained registration/recovery and deployment remain pending. Neither the
+  Room signing key nor an unauthenticated UI may be reused.
+  The interrupted probe was reconciled and cleaned up. A missing VS overlay
+  route was reproduced, regression-tested and packaged Velocity-only; all five
+  approved retained identities pass admission again after clean restart.
+  Exact benchmark/callback workload grants were subsequently explicitly
+  approved and guarded-applied with version-4 readback. A reproduced BAS
+  qualification gap was fixed using the shared helper; qualified claims now
+  pass live admission for all five identities. Canonical Simulator configuration,
+  failure-path lifecycle qualification and UI scenario acceptance remain open.
+  This is not original scenario acceptance. The maintained
+  [release gate](environments/README.md#velocity-release-gate-and-delivery-discipline)
+  and [machine-readable checks](environments/dev.json) define the remaining
+  UI, traffic, cleanup, recovery and production-independence requirements.
+  At each 60-90 minute engineering checkpoint report evidence, exact blocker,
+  packaged change and next bounded action; stop expanding configuration if
+  there is no measurable acceptance progress.
+
+- **Simulator GUI cleanup (2026-10-30): Deployed to dev r8; uncommitted.**
+  Simulator-only restart on port 18788; production r7 and stable r6 remain
+  unchanged. Removed Demo World/manual provisioning navigation and pages;
+  operational detail and policy status moved to Info; debug details hidden.
+  Matched archive/internal checksums and retained identity/configuration hashes
+  verified. Named OIDC login with the real install CA confirms all five original
+  catalogs (5/5/4/2/1 scenarios). Source browser selection: all 78 passed after
+  explicitly authorized stale-expectation updates; exact approval/run payloads,
+  stale-digest rejection, cross-run isolation and production exclusion retained.
+  Live 1440px/834px credential-free Chromium checks passed navigation, Info
+  separation, compatibility redirects, overflow and uncaught-error checks.
+  See [rollout evidence](GUI%20deployments.md#dev-simulator-gui-cleanup-2026-10-30-1523-utc).
+  This does not complete the original runtime restoration below.
+
+- **Five original dev organizations (2026-10-30): In progress; not deployed.**
+  Northstar, Great Lakes, Load Lab, Redwood and Velocity catalogs are installed
+  in dev r7, but their original scenario runtimes are not restored. The selected
+  lifecycle is on-demand with isolated retained state, not five generic endpoint
+  demos. Independent named operator identities and transactional lifecycle
+  switching are implemented locally. Named exact-inventory batch approval,
+  retained endpoint enrollment and endpoint-local BAS runtime key/configuration
+  preparation passed real TLS tests on macOS and Linux, including authorization
+  using the prepared key. These helpers are not a configured organization runtime.
+  Operator-owned supervision, admitted
+  machine/workload provisioning, resolved topology/policy evidence, and all
+  original scenario acceptance remain open. Keep preflight and authorization
+  intact, preserve fixed ports, and leave stable unchanged. See the
+  [opt-in lifecycle contract](zpr-dashboard/packaging/evaluation/README.md#optional-on-demand-supervision).
+
 - **Parallel administrator-methodology migration plan:** prepared in
   [SIMULATOR_ADMIN_MIGRATION_PLAN.md](SIMULATOR_ADMIN_MIGRATION_PLAN.md).
   This chat is the proposed coordinator/user contact; production lifecycle,
@@ -731,3 +818,7 @@ Deployed to Simulator on 2026-10-15 at 16:24 UTC. See
 for coverage and existing regression-suite limitations, and the
 [deployment record](GUI%20deployments.md#scenario-browser-deployment-2026-10-15-1624-utc)
 for live checks and rollback.
+
+
+## TODO
+- [ ] Remove or hide the debugging info on simulator pages/

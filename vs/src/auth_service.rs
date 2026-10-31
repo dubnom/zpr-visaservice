@@ -175,7 +175,11 @@ fn authenticated_adapter(
         uuid::Uuid::new_v4().to_string(),
         expires_at,
     )?;
-    let claims = map_claims(service_id, mappings, &claims.private, expires_at)?;
+    let claims = crate::trusted_services::qualify_source_attributes(
+        map_claims(service_id, mappings, &claims.private, expires_at)?,
+        service_id,
+        true,
+    );
 
     Ok(AuthenticatedAdapter {
         client_id: device_authentication.subject().into(),
@@ -584,6 +588,190 @@ mod tests {
         let claims = verify_token(&token, TEST_KEY, "").unwrap();
         let expiry = UNIX_EPOCH + Duration::from_secs(claims.exp);
         assert!(authenticated_adapter("bas", &[], claims, expiry).is_err());
+    }
+
+    #[test]
+    fn authenticated_bas_claims_include_exact_source_qualified_aliases() {
+        let mappings = [
+            parse_attribute_mapping("color -> user.color").unwrap(),
+            parse_attribute_mapping("groups -> user.group{}").unwrap(),
+            parse_attribute_mapping("active -> #user.active").unwrap(),
+        ];
+        let expiry = SystemTime::now() + Duration::from_secs(300);
+        for source in ["bas-one", "bas-two"] {
+            let authenticated = authenticated_adapter(
+                source,
+                &mappings,
+                verify_token(
+                    &make_token("adapter.one", TEST_KEY),
+                    TEST_KEY,
+                    "adapter.one",
+                )
+                .unwrap(),
+                expiry,
+            )
+            .unwrap();
+            assert_eq!(authenticated.claims.len(), 6);
+            for key in ["user.color", "user.group", "user.zpr.tag.active"] {
+                let raw = authenticated
+                    .claims
+                    .iter()
+                    .find(|attr| attr.get_key() == key)
+                    .unwrap();
+                let qualified_key = format!("{key}__source__{source}");
+                let qualified = authenticated
+                    .claims
+                    .iter()
+                    .find(|attr| attr.get_key() == qualified_key)
+                    .expect("BAS claims must match source-qualified compiled policy conditions");
+                assert_eq!(qualified.get_value(), raw.get_value());
+                assert_eq!(qualified.get_source(), source);
+                assert_eq!(qualified.get_expires(), expiry);
+                assert_eq!(raw.get_expires(), expiry);
+                assert!(
+                    !authenticated
+                        .claims
+                        .iter()
+                        .any(|attr| attr.get_key().ends_with(if source == "bas-one" {
+                            "__source__bas-two"
+                        } else {
+                            "__source__bas-one"
+                        }))
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires ZPR_TEST_VELOCITY_POLICY pointing to the compiled retained-runtime candidate"]
+    fn retained_velocity_policy_evaluates_verified_bas_claims() {
+        use bytes::{Buf, Bytes};
+        use libeval::{
+            actor::Actor, attribute::key, eval::EvalContext, eval_result::PartialEvalResult,
+            policy::Policy,
+        };
+        use zpr::{policy::v1 as policy_capnp, vsapi_types::PacketDesc};
+
+        let encoded =
+            Bytes::from(std::fs::read(std::env::var("ZPR_TEST_VELOCITY_POLICY").unwrap()).unwrap());
+        let message =
+            capnp::serialize::read_message(encoded.reader(), capnp::message::ReaderOptions::new())
+                .unwrap();
+        let container = message
+            .get_root::<policy_capnp::policy_container::Reader>()
+            .unwrap();
+        let evaluator = EvalContext::new(Arc::new(
+            Policy::new_from_policy_bytes(Bytes::copy_from_slice(container.get_policy().unwrap()))
+                .unwrap(),
+        ));
+        let actor = |asset: &str, kind: &str, source: &str, organization: &str, address: &str| {
+            let mut claims = verify_token(&make_token(asset, TEST_KEY), TEST_KEY, asset).unwrap();
+            claims.private = BTreeMap::from([
+                ("z/organization".into(), Value::String(organization.into())),
+                ("z/asset_id".into(), Value::String(asset.into())),
+                ("z/type".into(), Value::String(kind.into())),
+            ]);
+            let authenticated = authenticated_adapter(
+                source,
+                &[
+                    parse_attribute_mapping("organization -> device.enrollment.organization")
+                        .unwrap(),
+                    parse_attribute_mapping("asset_id -> device.enrollment.asset_id").unwrap(),
+                    parse_attribute_mapping("type -> device.enrollment.type").unwrap(),
+                ],
+                claims,
+                SystemTime::now() + Duration::from_secs(300),
+            )
+            .unwrap();
+            let mut actor = Actor::new();
+            actor
+                .add_attribute(Attribute::builder(key::CN).value(asset))
+                .unwrap();
+            actor
+                .add_attribute(
+                    Attribute::builder(key::DEVICE_AUTHORITY).value(format!("zpr-auth/{source}")),
+                )
+                .unwrap();
+            actor
+                .add_attribute(Attribute::builder(key::ZPR_ADDR).value(address))
+                .unwrap();
+            for attr in authenticated.claims {
+                actor.add_attribute(attr).unwrap();
+            }
+            actor
+        };
+        let source = "velocity-enrollment-bas";
+        for (client, client_kind, server, server_kind, service, port) in [
+            (
+                "velocity-machine-03-finance-client",
+                "workload",
+                "velocity-machine-05-echo-service",
+                "workload",
+                "EchoWeb",
+                8080,
+            ),
+            (
+                "velocity-machine-03-controller",
+                "machine-controller",
+                "velocity-simulator-control",
+                "service-adapter",
+                "SimulatorControlService",
+                8792,
+            ),
+            (
+                "velocity-machine-05-controller",
+                "machine-controller",
+                "velocity-simulator-control",
+                "service-adapter",
+                "SimulatorControlService",
+                8792,
+            ),
+        ] {
+            for (claim_source, organization, kind, requested_port, expected) in [
+                (source, "velocity", client_kind, port, true),
+                ("other-bas", "velocity", client_kind, port, false),
+                (source, "northstar", client_kind, port, false),
+                (source, "velocity", "unreviewed-type", port, false),
+                (source, "velocity", client_kind, port + 1, false),
+            ] {
+                let client = actor(
+                    client,
+                    kind,
+                    claim_source,
+                    organization,
+                    "fd5a:5052:adda:1::100",
+                );
+                let mut server = actor(
+                    server,
+                    server_kind,
+                    source,
+                    "velocity",
+                    "fd5a:5052:adda:1::101",
+                );
+                server
+                    .add_attribute(Attribute::builder(key::SERVICES).value(
+                        if service == "EchoWeb" {
+                            "echo-web.svc.zpr"
+                        } else {
+                            "simulator-control.svc.zpr"
+                        },
+                    ))
+                    .unwrap();
+                let packet = PacketDesc::new_tcp(
+                    "fd5a:5052:adda:1::100",
+                    "fd5a:5052:adda:1::101",
+                    12345,
+                    requested_port,
+                )
+                .unwrap();
+                let result = evaluator.eval_request(&client, &server, &packet).unwrap();
+                assert_eq!(
+                    matches!(result, PartialEvalResult::AllowWithoutRoute(_)),
+                    expected,
+                    "{service}: source={claim_source} organization={organization} kind={kind} port={requested_port}: {result:?}",
+                );
+            }
+        }
     }
 
     #[test]

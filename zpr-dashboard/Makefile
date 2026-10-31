@@ -29,6 +29,8 @@ test-operator-stack:
 
 .PHONY: test
 test: test-operator-stack
+	sh scripts/machine-auth-handoff.test.sh
+	sh packaging/evaluation/data-plane/data-plane.test.sh
 	$(GO) test ./...
 
 .PHONY: test-browser

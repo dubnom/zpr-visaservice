@@ -114,6 +114,10 @@ func newControlServiceProxy() (http.Handler, string) {
 }
 
 func runControlService() error {
+	networkMetadata, err := configuredNetworkMetadata()
+	if err != nil {
+		return err
+	}
 	listen := envOr("ZPR_CONTROL_SERVICE_LISTEN", "127.0.0.1:8790")
 	certFile := strings.TrimSpace(os.Getenv("ZPR_CONTROL_SERVICE_CERT_FILE"))
 	keyFile := strings.TrimSpace(os.Getenv("ZPR_CONTROL_SERVICE_KEY_FILE"))
@@ -212,6 +216,7 @@ func runControlService() error {
 		return app.fetchSnapshot(ctx)
 	}
 	mux := httpapi.NewMux(httpapi.Handlers{
+		Network:    networkMetadata,
 		Enrollment: enrollmentAPI, Gateways: gatewayAPI,
 		SubjectLinkReviews:      subjectReviews,
 		Audit:                   httpapi.Audit{Events: auditEvents},

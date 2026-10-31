@@ -219,6 +219,14 @@ Use source-qualified attributes where policy must name a particular authority.
 Unqualified resolution must not silently choose between competing sources.
 Declaration/composition does not authorize a person/device association.
 
+Signed BAS claims and directory-provider observations have different lifetimes.
+An actor's service-owned `DeviceAuthentication` identifies the authentication
+source whose raw and source-qualified claims survive directory refresh/removal.
+A source stamp alone, or authentication by a different BAS, does not exempt
+claims from removed-provider pruning. Expired BAS authentication or claims make
+refresh indeterminate and deny evaluation; refresh never extends their expiry.
+This does not turn BAS credentials into an approved person/device association.
+
 ### Independent VS transport
 
 ```toml

@@ -171,7 +171,10 @@
       status.textContent = "This record is not awaiting a key-bound review. Expired and terminal decisions cannot be changed here.";
       return;
     }
-    const canApprove = location.protocol === "https:" && session?.csrf &&
+    const ownInvitation = item.created_by === `oidc:${JSON.stringify([session?.identity.issuer, session?.identity.subject])}`;
+    const canSelfApprove = session?.identity.permissions?.includes("approval.self") &&
+      catalog?.gui_self_approve_organizations?.includes(organization);
+    const canApprove = (!ownInvitation || canSelfApprove) && location.protocol === "https:" && session?.csrf &&
       session.identity.permissions?.includes("approve") &&
       (session.identity.organizations?.includes("*") || session.identity.organizations?.includes(organization)) &&
       catalog?.gui_approve_organizations?.includes(organization);
@@ -180,7 +183,9 @@
       (session.identity.organizations?.includes("*") || session.identity.organizations?.includes(organization)) &&
       catalog?.gui_reject_organizations?.includes(organization);
     if (!canApprove && !canReject) {
-      status.textContent = "Approval or rejection requires the matching named-user permission and independent backend grant for this organization.";
+      status.textContent = ownInvitation && !canSelfApprove
+        ? "You created this invitation. Another authorized reviewer must approve it because your identity does not have self-approval permission."
+        : "Approval or rejection requires the matching named-user permission and independent backend grant for this organization.";
       return;
     }
     status.textContent = "Review this fresh revision and both key fingerprints. Independently verify each fingerprint through a trusted channel. Approval does not issue credentials or establish connectivity.";
@@ -531,7 +536,7 @@
           !result.gui_cancel_organizations.every((name) => text(name) && Object.hasOwn(result.organizations, name)))) {
         throw new Error("Invalid invitation cancellation capabilities.");
       }
-      for (const key of ["gui_approve_organizations", "gui_reject_organizations"]) {
+      for (const key of ["gui_approve_organizations", "gui_self_approve_organizations", "gui_reject_organizations"]) {
         if (result[key] !== undefined && (!Array.isArray(result[key]) ||
             new Set(result[key]).size !== result[key].length ||
             !result[key].every((name) => text(name) && Object.hasOwn(result.organizations, name)))) {

@@ -134,6 +134,17 @@ explicitly launched after user authorization; no continuous monitoring is claime
 
 ## 4. Decisions Required Before Dependent Implementation
 
+**2026-10-30 Simulator approval update:** the
+[active ordinary-client decision](SIMULATOR_AS_ZPR_CLIENT_PLAN.md#active-turn-key-delivery-plan-2026-10-30)
+supersedes the separate human approval click/run acknowledgment for authorized
+organization/scenario setup in every Simulator installation. Selection triggers
+named self-approval through ordinary contracts, bound to exact scope and current
+permissions; no extra run prompts. D1's earlier manual interaction is historical
+for that path. Production authorization, candidate/readback/recovery guards and
+Control Room approval UX remain unchanged. D4/D5 do not authorize unscoped
+rollback, revocation or destructive identity reset. Audit role-risk warnings
+are required but not implemented.
+
 Discovery can proceed without deciding these. Each decision must record the
 chosen option, rationale, affected workstreams and acceptance changes here.
 
@@ -146,7 +157,7 @@ chosen option, rationale, affected workstreams and acceptance changes here.
 | D5 | Approved 2026-10-16: reset clears scenario state only and retains endpoint identity; revoke/re-enroll is a separate action requiring named human approval. Reset remains scoped to the explicitly configured disposable lab organization and requires named approval under D1. | W2 + W4, C0 | Any identity-changing reset/re-enrollment migration; live acceptance remains gated by D6 |
 | D6 | Approved 2026-10-16 by C0 with user delegation: first acceptance is one isolated disposable Linux lab stack and one separate Apple Silicon Mac running macOS 13+ with a single PH/AuthCode/BAS adapter. Include the required Authentication actor/`validation/2` and one configured trusted attribute provider, each operated independently of Simulator. Prove production operator services remain available with Simulator stopped. No Great Lakes/production target. | W5, C0 | Selection complete; qualification still requires D1/D3 prerequisites and separate execution approval |
 
-Do not assume a new authentication grant type, automatic approval, iframe
+Do not assume a new authentication grant type, unscoped automatic approval, iframe
 embedding, shared-origin sessions or direct browser token access. Prefer existing
 supported mechanisms where they satisfy the approved authority model.
 

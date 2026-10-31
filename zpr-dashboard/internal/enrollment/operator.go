@@ -156,6 +156,10 @@ func operatorMutationEvent(r *http.Request, body []byte, grant operatorauth.Gran
 		action, permission, target = "enrollment.invitation.create", "create", "/api/enrollment/v1/invitations"
 	case path == "preflight":
 		action, permission, target = "enrollment.preflight.record", "create", "/api/enrollment/v1/preflight"
+	case path == "invitation-batches/review":
+		action, permission, target = "enrollment.batch.review", "read", "/api/enrollment/v1/invitation-batches/review"
+	case path == "invitation-batches/approve":
+		action, permission, target = "enrollment.batch.approve", "approve", "/api/enrollment/v1/invitation-batches/approve"
 	case strings.HasPrefix(path, "invitations/"):
 		parts := strings.Split(path, "/")
 		if len(parts) != 3 || parts[1] == "" {
@@ -211,6 +215,8 @@ func operatorReadEvent(r *http.Request, body []byte, grant operatorauth.Grant, o
 		action, target = "enrollment.invitations.read", "/api/enrollment/v1/invitations"
 	case path == "preflight":
 		action, target = "enrollment.preflight.read", "/api/enrollment/v1/preflight"
+	case strings.HasPrefix(path, "invitation-batches/") && !strings.Contains(strings.TrimPrefix(path, "invitation-batches/"), "/"):
+		action, target = "enrollment.batch.read", "/api/enrollment/v1/invitation-batches/{digest}"
 	case strings.HasPrefix(path, "invitations/") && !strings.Contains(strings.TrimPrefix(path, "invitations/"), "/"):
 		action, target = "enrollment.invitation.read", "/api/enrollment/v1/invitations/{id}"
 	default:

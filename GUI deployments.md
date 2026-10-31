@@ -1,5 +1,193 @@
 # GUI deployments
 
+## Source-qualified Velocity workload authorization (2026-10-30)
+
+- Added an opt-in retained-runtime workload fragment without changing the
+  legacy catalog or original scenario. Exact registry CNs and qualified BAS
+  organization/asset/type claims gate finance-to-echo TCP8080 and the two
+  controller-to-callback TCP8792 grants.
+- Actual candidate compilation/evaluation exposed missing qualified aliases in
+  BAS authentication claims. A new regression reproduced the failure. Reused
+  the existing trusted-service qualification helper, preserving legacy raw
+  keys and bounded expiry. Full VS suite: 848 passed, 24 ignored; the
+  opt-in actual compiled-candidate evaluator was explicitly run and passed
+  all 15 cases. No existing test was modified.
+- Built offline and deployed a VS-only update to staged Velocity:
+  `sha256:b45a254b729236d30af26b2c68f5e8e7bf438c5ef096cbfa4f1e2966c6d8c347`.
+  Parent is the r15 routing image; other binaries retained. After restart all
+  five approved identities passed admission with exact qualified claims.
+- User explicitly approved exact complete source/configuration hashes and
+  authorized named guarded application. Real CA-verified named review and
+  separate apply inspected native staged bytes before approval. Independent
+  readback verified `velocity-vs` version 4, digest
+  `f45f1637b9a8de6024f1ae8ee67d114fcd8d5678c9526bd4d8910cf64fac0765`.
+  Evidence: `policy/velocity/workload-access-r16-evidence/`.
+- All five retained identities passed admission again under the new policy;
+  probes cleaned up. This does not prove original machine/workload traffic,
+  launcher integration or scenario acceptance. Main dev/stable unchanged.
+
+## Velocity delivery gate and persistent admission routing (2026-10-30)
+
+- Scope reset: original Velocity is the sole next release gate. Main dev r7/r8,
+  stable r6 and all fixed ports are unchanged; no additional organization rollout.
+  The coordinator owns remote mutations. A separate read-only thread mapped
+  launcher handoff gaps without editing source or accessing runtime.
+- The separately approved r13 root configuration was named-reviewed and
+  guarded-applied, superseding r12 below. Independent readback verified
+  `velocity-vs` version 3, digest
+  `651da92b2ca098c3a9cb4cdf96d6fd3bf37fa62052c1eb07057ec7884260925d`.
+  The fixed compiler is deployed Velocity-only. Both required services are live.
+- PH issuer serialization was corrected with an actual TLS regression; full
+  PH validation passed 326 tests with two ignored. The effective enrollment
+  operator binding now uses the reviewed VS HTTPS configuration and mounts.
+- Reconciled the interrupted admission probe: no success evidence existed.
+  Stopped its exact owned container and preserved private logs. BAS
+  authentication succeeded, but VS could not route to the token listener.
+  A live lookup reproduced `Network is unreachable`.
+- Added the VS ZPR-space route in both launcher topologies. A new regression
+  failed before the fix and passed afterward; full dashboard `make test`
+  passed. Packaged a runtime-script-only image:
+  `sha256:322efc741b7ac10d02d2c63de8260b7aa0bacb282a54074a43d5b9576db99d3e`.
+  Deployed Velocity-only with launcher/checksum rollback copies. Initial startup
+  caught an installer executable-mode error; corrected before readiness checks.
+  No frozen identities, credentials, trust grants or workload policy changed.
+- After clean restart, verified the exact image, persistent route and both
+  services. All five approved retained runtime keys passed authoritative
+  through-ZPR admission again. Temporary probes were removed; a 90-second
+  in-container lifetime now bounds interrupted probes.
+- This is **not original scenario acceptance**. Launcher/controller/workload/
+  callback handoff, original workload policy review, UI execution, traffic
+  thresholds and scenario recovery remain pending. Current checks and evidence:
+  [release gate](environments/README.md#velocity-release-gate-and-delivery-discipline)
+  and [inventory](environments/dev.json). Source changes are uncommitted.
+
+## Retained Velocity endpoint approval and native BAS qualification (2026-10-30)
+
+- The user explicitly approved the exact five-item original machine-runtime
+  inventory as `admin@evaluation.invalid`, including both controllers,
+  finance-client, echo-service and the Simulator callback adapter. Named API
+  approval and durable receipt bind digest
+  `34166a9fefc9e920df371c135eae39532a64f8b8021dfa2c63004de6fbbe0bdd`.
+  This is not a complete organization infrastructure inventory.
+- A clean restart of Velocity's three units preserved the decision and every
+  enrollment/runtime fingerprint. All five key-authenticated statuses are
+  approved revision 3. Immutable PH runtime files retain the approved keys and
+  authoritative registry client IDs; no identities were recreated.
+- Staged enrollment-service/device binaries were upgraded with backups.
+  Velocity's Enrollment Service owns BAS adapter/token listeners at
+  `24996`/`24997` with its existing Store. A separate constrained BAS CA preserves
+  installation CA constraints. Genuine five-key exchanges passed TLS 1.3,
+  signed exact registry claims, pinned VS redemption, replay denial, cross-org
+  denial and administration-route isolation.
+- The PH-upgraded candidate image
+  `sha256:97e4e22925b1351384ded47cb13e23629669472ac519780bfe2907e64818e7c4`
+  is deployed only for the separately reviewed BAS-root adapter. Root proposal
+  `bas-root-r12` was explicitly approved and applied through the named guarded
+  workflow. Independent `velocity-vs` readback verified digest
+  `8e602f66c228f02feccaa42eb5b1a49e2c755efa96762aeb7c23b061c7e74331`,
+  version 2. Existing baseline compiler warnings remain visible.
+- The root is admitted and the VS confirms its `Authentication` service on
+  TCP 24996, but the required `validation/2` companion is missing. Qualification
+  failed that exact check. A compiler regression reproduced pruning of the
+  companion when no returned attribute is referenced; the dependency fix passes
+  all 311 compiler tests and formatting, with no pre-existing test changes.
+  The fix is built but not deployed.
+- Unapproved root proposal `bas-root-r13` keeps the source and all trust material,
+  adding only explicit 300-second trusted-service lifetime. The fixed compiler's
+  actual binary dump verifies the validation metadata, both ports and lifetime.
+  This changed configuration requires fresh explicit review. No original
+  endpoint admission or scenario acceptance is claimed.
+- Current staged state: Velocity's three original units and BAS-root adapter
+  active, the other twelve organization units stopped;
+  none boot-enabled. Main dev r7/r8 and stable r6 are unchanged and returned
+  CA-verified HTTP 200/302 on the same ports. Updated current state and evidence
+  are in [the environment inventory](environments/README.md#approved-velocity-machine-runtime-identities-and-bas-handoff).
+
+## Identity-driven approval gate; staged Velocity only (2026-10-30)
+
+- Added explicit organization-scoped `approval.self` permission, supplementary
+  to domain approval permissions. Policy/gateway, subject-link and enrollment
+  decisions enforce it server-side. Signed session capability and independent
+  backend trust must both permit delegated self-approval. Submission never approves.
+- Updated review controls, confirmations and audit wording. The user authorized
+  updating affected fixtures to grant self-approval explicitly while preserving
+  audit and revision/fingerprint assertions. Full `make test`, affected vet,
+  focused race tests, 24 desktop/tablet policy/subject-link browser checks and
+  six real-TLS enrollment-review browser checks passed.
+- User selected `admin@evaluation.invalid` as the development self-approver.
+  Enabled it in staged Velocity only, retaining the independent reviewer,
+  immutable base identity, trust keys and other organization grants. CA-verified
+  real login confirmed session and independent enrollment capabilities.
+- Four genuine step-referenced Velocity endpoint claims remain pending. A
+  clean paired-sidecar stop/start preserved their keys and exact inventory digest.
+  No approval, runtime admission or original scenario acceptance is claimed.
+  The original control-service adapter dependency is not covered by those four
+  claims; do not request approval as though this were a complete runtime inventory.
+- Main dev r7/r8 and stable r6 remained unchanged. At this earlier milestone the
+  staged units were stopped; the current state is recorded above.
+  Velocity's original scenario is the first end-to-end gate, not another broad
+  base-service rollout. See [the environment inventory](environments/README.md#identity-driven-approval-gate-and-velocity-first-qualification).
+
+## Staged organization operator services (2026-10-30)
+
+- Qualified independent Northstar, Great Lakes, Load Lab, Redwood and Velocity
+  production bases plus separately supervised Policy-Service processes under
+  `/home/dubnom/zpr-dev-organizations-r9`. With the independent enrollment
+  sidecars, all fifteen exact units are stopped.
+- Current-invocation live checks passed original LDAP scope/counts, all
+  1/3/1/2/1 nodes, protected DNS, logging, retained identity hashes and clean stop.
+  Real CA-verified named OIDC login passed independent policy context and
+  guarded review capabilities. Policy-Service readback exactly matched VS
+  organization/target/digest/version; cross-organization access was denied.
+  No organization Simulator was available or needed.
+- Fixed multi-node DNS docking to use the selected substrate rather than the
+  single-node-only address. The runtime-layer image retains PH/VS/compiler
+  binaries. Explicit protected operator bindings attach guarded policy trust
+  without editing frozen installation identity or core VS settings.
+- The main dev r7/r8 pair and stable r6 were not restarted. This is not a full
+  r9 rollout: original policies were not approved/applied, workload admission
+  is unfinished, Simulator selection is not wired, and the 17 original scenarios
+  have not passed. Exact ports and evidence are in
+  [the environment inventory](environments/README.md#staged-original-organization-operator-installations).
+
+## Dev Simulator GUI cleanup (2026-10-30 15:23 UTC)
+
+- Deployed `dev-20261030-r8` Simulator only at the fixed
+  <https://10.0.1.160:18788/scenarios.html#simulate>. Production remains r7;
+  stable remains r6. Their supervisor PIDs were unchanged.
+- Removed obsolete Demo World/manual provisioning pages and navigation.
+  Operational detail and read-only policy status live on Info; debug
+  details are hidden. Old page URLs redirect to Simulate.
+- Both matching archives and their internal inventories were checksum verified.
+  Production companion SHA-256:
+  `9c43d19eefa3dac6472da56ccf03c5ccd9bc95f608bfb5dabf8a51802f512010`.
+  Simulator archive SHA-256:
+  `8a3a6b8784bb60dddb4278ffdf40373d2df8c744386501bdb591ccce0d8f2d0f`.
+  Source `d23511ff5c5db874d50262938179d6b403b0195b`, dirty engineering build.
+- Retained r4 installation/workspace, ports, identity, CA and administrator
+  credential. Frozen inventory, CA, administrator secret and catalog manifest
+  hashes matched before/after. No state was reset or deleted.
+- Real named OIDC login/consent with the installation CA verified the session,
+  all five original catalogs (Northstar 5, Great Lakes 5, Load Lab 4, Redwood 2,
+  Velocity 1), and served cleanup assets. Live credential-free Chromium checks
+  at 1440 and 834 pixels verified navigation/Info separation, redirects, no
+  horizontal overflow and no uncaught errors. Chromium bypassed certificate
+  errors only for those credential-free layout checks; authenticated API checks
+  verified the real CA. The integrated browser cannot trust this private CA.
+- Source browser selection now passes all 78 desktop/tablet checks. The initial
+  run passed 62 and failed 16 stale removed-asset, old wording and hidden-debug
+  expectations. The user explicitly authorized those expectation updates.
+  Coverage still checks exact approval/run payloads, stale digest rejection,
+  cross-run isolation, keyboard navigation and production asset exclusion.
+  It additionally requires removed assets to return 404, compatibility pages
+  to redirect and retained run identifiers to remain hidden. No deployed asset
+  needed changing for this test-only correction.
+  This rollout does not claim restored original scenario runtimes or acceptance.
+- Rollback: stop only `zpr-dev-simulator-r8`, set dev's
+  `simulator_release=dev-20261029-r7` in
+  [workbench.sh](environments/workbench.sh), then relaunch dev Simulator with
+  the retained r4 state. No commit/push performed.
+
 ## Sign-out also opens provider sign-in (2026-10-16 15:10 UTC)
 
 - User clarified that sign-out must not leave the interim operator-access page

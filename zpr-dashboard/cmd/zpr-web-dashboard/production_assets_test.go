@@ -109,7 +109,7 @@ func TestProductionAssetsHTTP(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"scenarios.html", "organizations.html", "activity.html", "agents.html", "machine-logs.html", "trusted-source.html", "world.html", "simulator-provisioning.html", "simulator-nav.js", "simulator.css", "simulator-navigation.json", "api/simulator/scenarios", "api/machines", "%73cenarios.html", "scenarios.html/"} {
+	for _, name := range []string{"scenarios.html", "organizations.html", "activity.html", "agents.html", "machine-logs.html", "trusted-source.html", "world.html", "simulator-provisioning.html", "simulator-info.html", "simulator-info.js", "simulator-nav.js", "simulator.css", "simulator-navigation.json", "api/simulator/scenarios", "api/machines", "%73cenarios.html", "scenarios.html/"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest("GET", "/"+name, nil))
 		if response.Code != http.StatusNotFound {

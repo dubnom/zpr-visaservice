@@ -1299,8 +1299,16 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		arguments := []string{"exec", "-d", machineContainerName(step.Machine), "/usr/local/bin/zpr-machine-controller"}
 		arguments = append(arguments, "-mode", mode, "-listen", address, "-log-workload", step.Component)
 		arguments = append(arguments, gatewayArguments...)
-		if _, err := scenarioCommand(ctx, "docker", arguments...); err != nil {
-			return "", err
+		if mode == "test-service" {
+			if _, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{
+				Action: "start-test-service", Workload: step.Component, ServiceAddress: address,
+			}); err != nil {
+				return "", err
+			}
+		} else {
+			if _, err := scenarioCommand(ctx, "docker", arguments...); err != nil {
+				return "", err
+			}
 		}
 		if mode == "business-service" {
 			if _, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine),
@@ -1329,6 +1337,12 @@ func simulatorScenarioExecutorForManifest(ctx context.Context, manifest simulato
 		mode, _, err := simulatorTestServiceLaunch(manifest, component)
 		if err != nil {
 			return "", err
+		}
+		if mode == "test-service" {
+			result, err := simulatorMachineCommands.enqueueAndWait(ctx, step.Machine, machineControlCommand{
+				Action: "stop-test-service", Workload: step.Component,
+			})
+			return result.Output, err
 		}
 		output, err := scenarioCommand(ctx, "docker", "exec", machineContainerName(step.Machine), "pkill", "-f", "[z]pr-machine-controller -mode "+mode+" .* -log-workload "+step.Component)
 		var exitError *exec.ExitError
@@ -1634,6 +1648,16 @@ func publishScenarioServiceDNSRecord(ctx context.Context, manifest simulatorMani
 	if parsed := net.ParseIP(address); parsed == nil || parsed.To4() != nil {
 		return fmt.Errorf("service %q has invalid ZPR IPv6 address %q", workload, address)
 	}
+	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), activeSimulatorOrganizationID(manifest))
+	if err != nil {
+		return err
+	}
+	if organization.RetainedTopologyBinding != nil {
+		if err := verifySimulatorRetainedTopology(ctx, organization, scenarioCommand); err != nil {
+			return err
+		}
+		return waitForRetainedScenarioDNSRecord(ctx, *organization.RetainedTopologyBinding, manifest.DNSServer, dnsName, address, scenarioCommand)
+	}
 	update := fmt.Sprintf("server %s\nzone svc.zpr.\nupdate delete %s AAAA\nupdate add %s 30 AAAA %s\nsend\n", manifest.DNSServer, dnsName, dnsName, address)
 	output, err := scenarioCommand(ctx, "docker", "exec", "zpr-dns-bind9", "sh", "-c", `printf '%s' "$1" | nsupdate -v -k /run/secrets/zpr-vs-publisher.key`, "zpr-dns-update", update)
 	if err != nil {
@@ -1789,6 +1813,9 @@ func withScenarioMachineStart(ctx context.Context, execute func() (string, error
 }
 
 func startScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID string) (string, error) {
+	if output, handled, err := simulatorRetainedMachineAction(ctx, manifest, machineID, "start"); handled || err != nil {
+		return output, err
+	}
 	container, packaged, err := simulatorScenarioMachineContainerName(manifest, machineID)
 	if err != nil {
 		return "", err
@@ -1921,6 +1948,14 @@ func validateScenarioMachineCapacity(running int, starting bool) error {
 }
 
 func stopScenarioMachine(ctx context.Context, manifest simulatorManifest, machineID string) (string, error) {
+	if output, handled, err := simulatorRetainedMachineAction(ctx, manifest, machineID, "stop"); handled || err != nil {
+		if err == nil {
+			simulatorSessions.clear(machineID)
+			simulatorControllers.clear(machineID)
+			simulatorMachineCommands.clear(machineID)
+		}
+		return output, err
+	}
 	container, packaged, err := simulatorScenarioMachineContainerName(manifest, machineID)
 	if err != nil {
 		return "", err

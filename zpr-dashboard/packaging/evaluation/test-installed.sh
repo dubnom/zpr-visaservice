@@ -28,7 +28,7 @@ EOF
 chmod 700 "$tmp/tools/"* "$tmp/package/bin/zpr-lab-bootstrap"
 export PATH="$tmp/tools:$PATH" CALLS="$tmp/calls" ARGS="$tmp/args"
 digest=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-for role in data-plane ldap logging oidc; do
+for role in data-plane ldap ldap-admin-ui logging oidc; do
     printf '%s %s\n' "$role" "$digest" >> "$tmp/package/images.txt"
     printf 'test image\n' > "$tmp/package/images/$role.tar"
 done
@@ -39,11 +39,12 @@ checksum
 sh "$tmp/package/demo.sh" verify >/dev/null
 test ! -e "$CALLS"
 sh "$tmp/package/demo.sh" load >/dev/null
-test "$(grep -c '^load --input' "$CALLS")" -eq 4
+test "$(grep -c '^load --input' "$CALLS")" -eq 5
 sh "$tmp/package/demo.sh" start "$tmp/state" -room-port 28787 >/dev/null
 grep -Fx -- '-control-room-binary' "$ARGS"
 grep -Fx -- "$tmp/package/bin/zpr-control-room" "$ARGS"
 grep -Fx -- '-protected-dns' "$ARGS"
+grep -Fx -- '-ldap-admin-image' "$ARGS"
 grep -Fx -- '28787' "$ARGS"
 cp "$ARGS" "$tmp/original-args"
 printf 'tampered\n' >> "$tmp/package/images.txt"

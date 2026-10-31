@@ -233,9 +233,15 @@ func (plane *simulatorDataPlaneEndpoints) runArguments(endpoint simulatorDataPla
 // reconcile adopts running endpoint containers and starts missing ones while
 // the install's data plane is up; it never touches the install itself.
 func (plane *simulatorDataPlaneEndpoints) reconcile(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
 	_, networkErr := plane.docker(ctx, "network", "inspect", plane.handoff.Network)
 	status := map[string]simulatorDataPlaneEndpointStatus{}
 	for _, endpoint := range plane.handoff.Endpoints {
+		if ctx.Err() != nil {
+			return
+		}
 		current := simulatorDataPlaneEndpointStatus{Name: endpoint.Name, ZPRAddress: endpoint.ZPRAddress, Container: plane.containerName(endpoint)}
 		if networkErr != nil {
 			current.Error = "install data plane is not running"
@@ -249,6 +255,9 @@ func (plane *simulatorDataPlaneEndpoints) reconcile(ctx context.Context) {
 			continue
 		}
 		_, _ = plane.docker(ctx, "rm", "-f", current.Container)
+		if ctx.Err() != nil {
+			return
+		}
 		if output, err := plane.docker(ctx, plane.runArguments(endpoint)...); err != nil {
 			current.Error = "endpoint container failed to start"
 			log.Printf("data-plane endpoint %s failed to start: %v: %s", endpoint.Name, err, output)

@@ -26,7 +26,7 @@ var reviewIdentifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 type changeReviewConfig struct {
 	Version  int    `json:"version"`
 	Database string `json:"database"`
-	// AllowSelfApproval is ignored: approval by the proposer is always allowed and audited.
+	// Deprecated: self-approval requires the named user's approval.self grant.
 	AllowSelfApproval bool   `json:"allow_self_approval"`
 	PolicyApplyConfig string `json:"policy_apply_config_file,omitempty"`
 }
@@ -275,6 +275,12 @@ func (a *changeReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if parts[2] == "approve" {
+		if identity.Issuer == record.Proposal.Author.Issuer && identity.Subject == record.Proposal.Author.Subject {
+			if _, err := a.auth.Authorize(r, input.Organization, "approval.self"); err != nil {
+				fail(http.StatusForbidden, "Approving your own request requires organization-scoped approval.self permission; otherwise another authorized reviewer must approve.")
+				return
+			}
+		}
 		current, err := a.capture(r.Context(), input.Organization, record.Proposal.Kind, record.Proposal.Target, record.Proposal.Revision)
 		if err != nil || current.Validation != record.Proposal.Validation || current.After != record.Proposal.After || current.Before != record.Proposal.Before ||
 			current.Impact != record.Proposal.Impact || current.BaseRevision != record.Proposal.BaseRevision ||

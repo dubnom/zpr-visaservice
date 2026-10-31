@@ -3,8 +3,8 @@ set -eu
 umask 077
 fail() { printf 'zpr-simulator: %s\n' "$*" >&2; exit 1; }
 root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-[ "${1:-}" = start ] && [ "$#" -eq 4 ] ||
-    fail "usage: ./simulator.sh start MATCHING_ZPR_PACKAGE EVALUATION_STATE NEW_SIMULATOR_STATE"
+[ "${1:-}" = start ] && { [ "$#" -eq 4 ] || { [ "$#" -eq 5 ] && [ "$5" = --full-catalog ]; }; } ||
+    fail "usage: ./simulator.sh start MATCHING_ZPR_PACKAGE EVALUATION_STATE SIMULATOR_STATE [--full-catalog]"
 package=$2
 evaluation=$3
 state=$4
@@ -23,6 +23,11 @@ image=$(sed -n 's/^data-plane //p' "$root/images.txt")
 [ "$(docker image inspect --format '{{.Os}}/{{.Architecture}} {{.Id}}' "$image")" = "linux/amd64 $image" ] ||
     fail "load the matching ZPR package first"
 printf 'EVALUATION ONLY: Docker access is root-equivalent. Use only a trusted isolated host.\n'
+if [ "${5:-}" = --full-catalog ]; then
+    set -- -catalog "$root/catalog"
+else
+    set --
+fi
 exec "$package/bin/zpr-lab-bootstrap" -evaluation-simulator \
     -evaluation-state "$evaluation" -state "$state" \
-    -binary "$root/bin/zpr-simulator" -data-plane-image "$image"
+    -binary "$root/bin/zpr-simulator" -data-plane-image "$image" "$@"

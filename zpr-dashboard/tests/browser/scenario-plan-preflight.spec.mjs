@@ -283,7 +283,8 @@ async function approveSelectedPlan(page) {
   await expect(workflowStatus).toHaveAttribute("role", "status");
   await expect(workflowStatus).toHaveAttribute("aria-live", "polite");
   await expect(workflowStatus).toHaveAttribute("aria-atomic", "true");
-  await expect(workflowStatus).toContainText("Preflight plan-only; budget approved");
+  await expect(workflowStatus).toContainText("Preflight plan-only; authorization approved");
+  await expect(workflowStatus).not.toContainText("budget");
   await confirmApproval(page);
   const approvalStatus = page.locator("#scenario-plan-approval-status");
   await expect(approvalStatus).toHaveAttribute("role", "status");
@@ -293,6 +294,36 @@ async function approveSelectedPlan(page) {
   await expect(page.locator("#scenario-plan-run")).toBeVisible();
   await expect(page.locator("#scenario-plan-run-button")).toBeEnabled();
 }
+
+test("normal simulation hides technical details while preserving explicit approval and run", async ({ page, context }) => {
+  const state = await setup(page, context);
+  await previewPlan(page);
+  await expect(page.locator("#scenario-plan-preview")).toBeVisible();
+  await expect(page.locator("#scenario-plan-summary")).toContainText("Authorization status");
+  await expect(page.locator("#scenario-plan-summary")).not.toContainText("Manifest");
+  await expect(page.locator("#scenario-plan-summary")).not.toContainText(digest);
+  await expect(page.locator("#scenario-plan-topology")).toBeHidden();
+  await expect(page.locator("#scenario-plan-budget-inputs")).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Policy operation status", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Demo world", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Machine provisioning", exact: true })).toHaveCount(0);
+  await expect(page.locator("#scenario-plan-blockers")).toBeVisible();
+  expect(state.runRequests).toEqual([]);
+  await confirmApproval(page);
+  await expect(page.locator("#scenario-plan-approval-status")).toContainText("Approval recorded");
+  await expect(page.locator("#scenario-plan-run-button")).toBeEnabled();
+  expect(state.runRequests).toEqual([]);
+  await page.locator("#scenario-plan-run-button").click();
+  await expect.poll(() => state.runRequests.length).toBe(1);
+  expect(state.runRequests[0]).toEqual({
+    method: "POST",
+    path: "/api/simulator/organizations/alpha/scenarios/sample-flow/run",
+    body: { approval_id: "approval-1", plan_digest: digest },
+  });
+  await expect(page.locator("#scenario-plan-run-state")).toHaveText("running");
+  await expect(page.locator("#scenario-plan-run-id")).toBeHidden();
+  await expect(page.locator("#scenario-plan-run-namespace")).toBeHidden();
+});
 
 test("unavailable budget response previews only a validated scope and keeps approval and run disabled", async ({ page, context }) => {
   const state = await setup(page, context, { firstGrant: true });
@@ -437,9 +468,10 @@ test("first grant handoff requires an external authenticated grant and refreshed
   await page.getByRole("button", { name: "Preview plan", exact: true }).click();
   await expect(page.locator("#scenario-plan-budget-handoff")).toBeHidden();
   await expect(page.locator("#scenario-plan-preview")).toBeVisible();
-  await expect(page.locator("#scenario-plan-summary")).toContainText("Budget status");
+  await expect(page.locator("#scenario-plan-summary")).toContainText("Authorization status");
   await expect(page.locator("#scenario-plan-summary")).toContainText("approved");
-  await expect(page.locator("#scenario-plan-summary")).toContainText(authorizationScopeDigest);
+  await expect(page.locator("#scenario-plan-summary")).not.toContainText("Budget status");
+  await expect(page.locator("#scenario-plan-summary")).not.toContainText(authorizationScopeDigest);
   await expect(page.locator("#scenario-plan-approve")).toBeEnabled();
   expect(state.preflightRequests).toHaveLength(2);
   expect(state.approvalRequests).toEqual([]);
@@ -459,6 +491,7 @@ test("first grant handoff requires an external authenticated grant and refreshed
   }]);
   await page.locator("#scenario-plan-run-button").click();
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
+  await expect(page.locator("#scenario-plan-run-id")).toBeHidden();
   expect(state.runRequests).toEqual([{
     method: "POST",
     path: "/api/simulator/organizations/alpha/scenarios/sample-flow/run",
@@ -602,6 +635,8 @@ test("approved run uses the selected scenario and exact approval payload only af
   }]);
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
   await expect(page.locator("#scenario-plan-run-namespace")).toHaveText("alpha/second-flow/run-1");
+  await expect(page.locator("#scenario-plan-run-id")).toBeHidden();
+  await expect(page.locator("#scenario-plan-run-namespace")).toBeHidden();
   await expect(page.locator("#scenario-plan-run-state")).toHaveText("running");
 });
 
@@ -619,6 +654,7 @@ test("approved scenario run locks duplicate submission while the request is pend
 
   state.releaseRun();
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
+  await expect(page.locator("#scenario-plan-run-id")).toBeHidden();
   expect(state.runRequests).toHaveLength(1);
 });
 
@@ -659,6 +695,8 @@ test("approved run status refreshes from the scenario catalog and selection chan
 
   await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
   await expect(page.locator("#scenario-plan-run-namespace")).toHaveText("alpha/sample-flow/run-1");
+  await expect(page.locator("#scenario-plan-run-id")).toBeHidden();
+  await expect(page.locator("#scenario-plan-run-namespace")).toBeHidden();
   await expect(page.locator("#scenario-plan-run-state")).toHaveText("completed");
   await expect.poll(() => state.catalogReads).toBeGreaterThan(catalogReadsBeforeRun);
 
@@ -706,6 +744,8 @@ for (const terminalState of ["completed", "failed"]) {
     await expect.poll(() => state.catalogRunIDs).toContain("other-run");
     await expect(page.locator("#scenario-plan-run-id")).toHaveText("run-1");
     await expect(page.locator("#scenario-plan-run-namespace")).toHaveText("alpha/sample-flow/run-1");
+    await expect(page.locator("#scenario-plan-run-id")).toBeHidden();
+    await expect(page.locator("#scenario-plan-run-namespace")).toBeHidden();
     await expect(page.locator("#scenario-plan-run-state")).toHaveText(terminalState);
   });
 }

@@ -6,11 +6,16 @@
     "engine": "docker",
     "host": "workbench.local",
     "browser_ip": "10.0.1.160",
-    "release": "scenario-20261029-r3",
-    "source_revision": "f5341d34b1b3cefe5dafa23adf41570213209ddc",
-    "install_id": "37829cf59eeca963149c4302",
-    "state_path": "/home/dubnom/zpr-demo-refresh-20261029-r1/state-scenario-r1",
-    "simulator_state_path": "/home/dubnom/zpr-demo-refresh-20261029-r1/simulator-state-scenario-r3",
+    "release": "scenario-20261029-r6",
+    "source_revision": "78fb89536ed69335b9bda28dfd9fa3ef18b9b396",
+    "install_id": "bfa61c55624ed779affb4014",
+    "source_dirty": true,
+    "archive_sha256": {
+      "zpr": "d9c79cf39d7b867e77d6c40a2faac13b0b0a00559e1ba5a27d041a2a07f8a851",
+      "simulator": "fad80ea51b5282f302b8896cc6c3b30d1e3f1db05b6c2e473a0f24870e9b9ffe"
+    },
+    "state_path": "/home/dubnom/zpr-demo-refresh-20261029-r1/state-scenario-r6",
+    "simulator_state_path": "/home/dubnom/zpr-demo-refresh-20261029-r1/simulator-state-scenario-r6",
     "launcher": "sh workbench.sh stable production|simulator"
   },
   "port_bindings": [
@@ -19,6 +24,7 @@
     { "service": "control-service", "host_ip": "127.0.0.1", "host_port": 38790 },
     { "service": "snapshot-delivery", "bind": ["loopback", "install-docker-network-gateway"], "host_port": 38793 },
     { "service": "ldap", "host_ip": "127.0.0.1", "host_port": 31636, "container_port": 1636 },
+    { "service": "ldap-admin-ui", "host_ip": "127.0.0.1", "host_port": 38789, "container_port": 38789 },
     { "service": "logging", "host_ip": "127.0.0.1", "host_port": 35080, "container_port": 5080 },
     { "service": "operator-oidc", "host_port": 35556, "bind": ["loopback", "10.0.1.160"], "container_port": 5556 },
     { "service": "visa-service-admin", "host_ip": "127.0.0.1", "host_port": 38182, "container_port": 8182 },

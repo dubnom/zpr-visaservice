@@ -24,7 +24,7 @@ type evaluationRegistration struct {
 }
 
 func evaluationSourceRegistration(state string, inventory evaluationInventory) evaluationRegistration {
-	org, source := "evaluation-"+inventory.InstallID, "directory_"+inventory.InstallID
+	org, source := evaluationOrganization(inventory), "directory_"+inventory.InstallID
 	return evaluationRegistration{OrganizationID: org, SourceID: source, Config: map[string]any{
 		"name": source, "display_name": "Starter directory (EVALUATION ONLY)", "kind": "ldap",
 		"url": fmt.Sprintf("ldaps://localhost:%d", inventory.Config.LDAPPort), "ca_file": filepath.Join(state, "ca.pem"),
@@ -132,7 +132,7 @@ func collectEvaluationLog(ctx context.Context, state string, inventory evaluatio
 	if err != nil {
 		return err
 	}
-	data, _ := json.Marshal([]map[string]any{{"_timestamp": time.Now().UnixMicro(), "event": event, "install_id": inventory.InstallID, "source_id": "logs_" + inventory.InstallID, "organization_id": "evaluation-" + inventory.InstallID, "label": "EVALUATION ONLY"}})
+	data, _ := json.Marshal([]map[string]any{{"_timestamp": time.Now().UnixMicro(), "event": event, "install_id": inventory.InstallID, "source_id": "logs_" + inventory.InstallID, "organization_id": evaluationOrganization(inventory), "label": "EVALUATION ONLY"}})
 	if err := adapterlogs.Append(ctx, selected, data); err != nil {
 		return errors.New("evaluation lifecycle log ingestion failed")
 	}

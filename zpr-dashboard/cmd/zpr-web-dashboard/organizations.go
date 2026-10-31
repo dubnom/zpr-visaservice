@@ -24,29 +24,32 @@ import (
 const defaultSimulatorOrganizationID = "northstar"
 
 type simulatorOrganization struct {
-	ID                   string                         `json:"id"`
-	Name                 string                         `json:"name"`
-	Description          string                         `json:"description"`
-	Runtime              simulatorOrganizationRuntime   `json:"runtime"`
-	Directory            simulatorOrganizationDirectory `json:"directory"`
-	MachineOwners        map[string][]string            `json:"machine_owners,omitempty"`
-	PolicyConfig         string                         `json:"policy_config"`
-	PolicyCatalog        string                         `json:"policy_catalog"`
-	RuntimePolicy        string                         `json:"runtime_policy,omitempty"`
-	AssertionsSource     string                         `json:"assertions_source,omitempty"`
-	Policies             []simulatorOrganizationPolicy  `json:"policies"`
-	Services             []simulatorOrganizationService `json:"services"`
-	PolicyTestServices   []simulatorPolicyTestService   `json:"policy_test_services,omitempty"`
-	WorkloadServices     map[string][]string            `json:"workload_services,omitempty"`
-	WebGateway           *simulatorWebGatewayProfile    `json:"web_gateway,omitempty"`
-	LoadTest             *simulatorLoadTestProfile      `json:"load_test,omitempty"`
-	BusinessSimulation   bool                           `json:"business_simulation,omitempty"`
-	SyntheticLabOnly     bool                           `json:"synthetic_lab_only,omitempty"`
-	SyntheticWorkload    *simulatorSyntheticWorkload    `json:"synthetic_workload,omitempty"`
-	ActivePolicyTargetID string                         `json:"active_policy_target_id,omitempty"`
-	ActivePolicyDigest   string                         `json:"active_policy_digest,omitempty"`
-	PackagedProvisioning *simulatorPackagedProvisioning `json:"packaged_provisioning,omitempty"`
-	EvaluationRuntime    *evaluationruntime.Contract    `json:"evaluation_runtime,omitempty"`
+	ID                      string                            `json:"id"`
+	Name                    string                            `json:"name"`
+	Description             string                            `json:"description"`
+	Runtime                 simulatorOrganizationRuntime      `json:"runtime"`
+	Directory               simulatorOrganizationDirectory    `json:"directory"`
+	MachineOwners           map[string][]string               `json:"machine_owners,omitempty"`
+	PolicyConfig            string                            `json:"policy_config"`
+	PolicyCatalog           string                            `json:"policy_catalog"`
+	RuntimePolicy           string                            `json:"runtime_policy,omitempty"`
+	AssertionsSource        string                            `json:"assertions_source,omitempty"`
+	Policies                []simulatorOrganizationPolicy     `json:"policies"`
+	Services                []simulatorOrganizationService    `json:"services"`
+	PolicyTestServices      []simulatorPolicyTestService      `json:"policy_test_services,omitempty"`
+	WorkloadServices        map[string][]string               `json:"workload_services,omitempty"`
+	WebGateway              *simulatorWebGatewayProfile       `json:"web_gateway,omitempty"`
+	LoadTest                *simulatorLoadTestProfile         `json:"load_test,omitempty"`
+	BusinessSimulation      bool                              `json:"business_simulation,omitempty"`
+	SyntheticLabOnly        bool                              `json:"synthetic_lab_only,omitempty"`
+	SyntheticWorkload       *simulatorSyntheticWorkload       `json:"synthetic_workload,omitempty"`
+	ActivePolicyTargetID    string                            `json:"active_policy_target_id,omitempty"`
+	ActivePolicyDigest      string                            `json:"active_policy_digest,omitempty"`
+	PolicyBinding           *simulatorPolicyBinding           `json:"policy_binding,omitempty"`
+	PackagedProvisioning    *simulatorPackagedProvisioning    `json:"packaged_provisioning,omitempty"`
+	EvaluationRuntime       *evaluationruntime.Contract       `json:"evaluation_runtime,omitempty"`
+	RetainedTopologyBinding *simulatorRetainedTopologyBinding `json:"retained_topology_binding,omitempty"`
+	RetainedMachineRuntime  *simulatorRetainedMachineRuntime  `json:"retained_machine_runtime,omitempty"`
 }
 
 type simulatorSyntheticWorkload struct {
@@ -312,6 +315,18 @@ func validateSimulatorOrganization(organization simulatorOrganization) error {
 }
 
 func validateOrganizationDefinition(organization simulatorOrganization, incomplete bool) error {
+	if err := validateSimulatorRetainedTopology(organization); err != nil {
+		return err
+	}
+	if err := validateSimulatorRetainedMachineRuntime(organization); err != nil {
+		return err
+	}
+	if binding := organization.PolicyBinding; binding != nil {
+		if binding.Version != 1 || !validScenarioID(binding.TargetID) || !validOrganizationPolicyDigest(binding.Digest) ||
+			organization.SyntheticLabOnly || organization.EvaluationRuntime != nil {
+			return errors.New("policy binding requires version 1, an explicit target and SHA-256 digest, and no conflicting runtime policy contract")
+		}
+	}
 	if organization.EvaluationRuntime != nil {
 		contract := organization.EvaluationRuntime
 		if contract.Version != 1 || organization.ID != "evaluation-"+contract.InstallID ||
@@ -635,6 +650,22 @@ func loadSimulatorOrganization(directory, id string) (simulatorOrganization, err
 	}
 	for _, organization := range organizations {
 		if organization.ID == id {
+			if registry := simulatorEvaluationInstallRegistry; registry != nil {
+				if binding := registry.installs[id].RetainedTopologyBinding; binding != nil {
+					copy := *binding
+					organization.RetainedTopologyBinding = &copy
+					if runtime := registry.installs[id].RetainedMachineRuntime; runtime != nil {
+						copy := *runtime
+						organization.RetainedMachineRuntime = &copy
+					}
+					if err := validateSimulatorRetainedTopology(organization); err != nil {
+						return simulatorOrganization{}, err
+					}
+					if err := validateSimulatorRetainedMachineRuntime(organization); err != nil {
+						return simulatorOrganization{}, err
+					}
+				}
+			}
 			return organization, nil
 		}
 	}

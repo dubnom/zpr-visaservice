@@ -50,6 +50,11 @@
     main.querySelector("header > a[href='/']")?.remove();
     shell.append(aside, main);
     document.body.append(shell);
+    if (!window.__zprSidebar) {
+      const script = document.createElement("script");
+      script.src = "/sidebar.js?v=47";
+      document.body.append(script);
+    }
   }
 
   // Wait for DOMContentLoaded so every deferred page script has already run.

@@ -317,10 +317,12 @@ python3 multinode-demo/packaging/runtime/prepare-northstar-finance-workspace-ide
 For protected HTTPS, the container listener uses the same fixed port as the
 configured origin while the host publishes that port only on loopback.
 
-Choose **Machine provisioning**, select one of the two profile-enabled members,
-refresh, select the explicit demo-key approval checkbox, and provision.
-Policy verification has a separate access-withdrawal authorization checkbox.
-Both confirmations reset after their operation. The profile's optional
+Machine provisioning is an internal runtime concern, not a Simulator GUI step.
+The GUI no longer includes Demo World or a Machine provisioning page; old page
+URLs redirect to Simulate. The existing provisioning APIs below remain available
+for explicitly authorized runtime tooling; removing the pages does not approve
+keys, provision machines, or withdraw access.
+The profile's optional
 `packaged_provisioning` entry must list unique machine IDs present in the matching
 organization manifest, put its primary machine first, and select the fixed
 `shared-approved-bootstrap` driver and `OciWeb` service. Each endpoint generates

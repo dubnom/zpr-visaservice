@@ -11,7 +11,7 @@
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
-use libeval::actor::Actor;
+use libeval::actor::{Actor, DeviceAuthority};
 use libeval::attribute::Attribute;
 
 use tracing::{debug, warn};
@@ -187,6 +187,27 @@ async fn refresh_expired_attributes(
     let Some(zpr_addr) = actor.get_zpr_addr().copied() else {
         return outcome;
     };
+    // Signed BAS claims belong to the authenticated session, not a directory
+    // provider snapshot. Retain their source only while that session is valid.
+    let authentication_source = actor.device_authentication().and_then(|identity| {
+        if let DeviceAuthority::AuthenticationService { service_id, .. } = identity.authority() {
+            Some((service_id.clone(), identity.expires_at()))
+        } else {
+            None
+        }
+    });
+    if let Some((source, expiration)) = &authentication_source {
+        if *expiration <= std::time::SystemTime::now()
+            || actor
+                .attrs_iter()
+                .any(|attr| attr.get_source() == source && attr.is_expired())
+        {
+            outcome
+                .indeterminate
+                .push(format!("authentication service '{source}' claims expired"));
+            return outcome;
+        }
+    }
 
     // Qualified keys identify persisted source ownership even after restart.
     // Restrict alias removal to those keys: a source id can also be a built-in
@@ -201,6 +222,9 @@ async fn refresh_expired_attributes(
     }
     outcome.removed_sources =
         ts_mgr.removed_sources_for_actor(&zpr_addr, owned_keys.keys().map(String::as_str));
+    if let Some((source, _)) = &authentication_source {
+        outcome.removed_sources.remove(source);
+    }
     for source in &outcome.removed_sources {
         if let Some(keys) = owned_keys.get(source) {
             outcome.changed |=
@@ -231,11 +255,15 @@ async fn refresh_expired_attributes(
 
     // Sources whose snapshot revision the actor has not caught up with, and the
     // revision to record once a refresh from them succeeds.
-    let stale: HashMap<String, u64> = ts_mgr
+    let mut stale: HashMap<String, u64> = ts_mgr
         .stale_sources_for_actor(&zpr_addr)
         .into_iter()
         .collect();
     sources.extend(stale.keys().cloned());
+    if let Some((source, _)) = &authentication_source {
+        sources.remove(source);
+        stale.remove(source);
+    }
 
     for source in &sources {
         let stale_rev = stale.get(source);

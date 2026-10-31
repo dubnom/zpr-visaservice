@@ -38,6 +38,7 @@ type runtimeOutputConfig struct {
 	BindIP                   string
 	OrganizationID           string
 	OrganizationName         string
+	NetworkName              string
 	OperatorIssuer           string
 	OperatorSubject          string
 	OperatorIdentityVerified bool
@@ -573,6 +574,7 @@ func renderRuntimeOutputs(
 	system := systemconfig.Config{
 		SchemaVersion: 2,
 		Organization:  systemconfig.Organization{ID: input.OrganizationID, Name: input.OrganizationName},
+		NetworkName:   input.NetworkName,
 		ControlRoom: systemconfig.ControlRoom{
 			Origin: providers.RoomOrigin, ManagementIP: input.BindIP,
 			CertificateFile: runtimePath(output, "room-chain.pem"),

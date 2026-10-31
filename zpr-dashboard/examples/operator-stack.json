@@ -6,6 +6,7 @@
       "image": "company/control-operator:REPLACE_WITH_APPROVED_VERSION",
       "container": "company-control-service",
       "env": {
+        "ZPR_NETWORK_NAME": "Company network",
         "ZPR_CONTROL_SERVICE_LISTEN": "0.0.0.0:8790",
         "ZPR_GATEWAY_ORGANIZATION_ID": "company",
         "ZPR_CONTROL_SERVICE_CERT_FILE": "/etc/zpr/operator/control-service-cert",

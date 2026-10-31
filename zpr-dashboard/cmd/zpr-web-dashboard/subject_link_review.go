@@ -12,6 +12,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -263,6 +264,12 @@ func (api *subjectReviewAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "subject-link.approve":
 		record, err = api.store.GetSubjectLink(r.Context(), request.organization, request.id)
 		if err == nil {
+			if principal.Issuer == record.Proposal.Author.Issuer && principal.Subject == record.Proposal.Author.Subject &&
+				!slices.Contains(grant.Permissions, "approval.self") {
+				log.Print("Subject-link self-approval denied: explicit named-user permission is required")
+				writePolicyError(w, http.StatusForbidden, "Approving your own request requires approval.self permission in both the signed-in session and backend grants.")
+				return
+			}
 			input := request.approval
 			record, err = api.store.ApproveSubjectLinkWithRegistryOnce(r.Context(), input.Organization, request.id,
 				input.Digest, input.Version, input.RegistryRevision, input.Reason, principal,

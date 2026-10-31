@@ -38,7 +38,7 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 	file := func(name string) string { return filepath.Join(state, name) }
 	if mode == "control-service" {
 		env = append(env,
-			"ZPR_TRUSTED_SOURCE_ORGANIZATION_ID=evaluation-"+inventory.InstallID,
+			"ZPR_TRUSTED_SOURCE_ORGANIZATION_ID="+evaluationOrganization(inventory),
 			"ZPR_ASSERTION_SOURCES_FILE="+file("assertion-sources.json"),
 			"ZPR_ADAPTER_LOG_CONFIG_FILE="+file("adapter-logs.json"),
 			"ZPR_AUDIT_DB_PATH="+file(filepath.Join("audit", "audit.db")),
@@ -76,7 +76,7 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 		"ZPR_OPERATOR_OIDC_CONFIG_FILE="+file("operator-oidc.json"),
 		"ZPR_OPERATOR_OIDC_SECRET_FILE="+file("oidc-room-client.secret"),
 		"ZPR_OPERATOR_OIDC_CA_FILE="+file("ca.pem"),
-		"ZPR_CONTROL_ROOM_ORGANIZATION_ID=evaluation-"+inventory.InstallID,
+		"ZPR_CONTROL_ROOM_ORGANIZATION_ID="+evaluationOrganization(inventory),
 		"ZPR_CONTROL_ROOM_CERT_FILE="+file("server-chain.pem"),
 		"ZPR_CONTROL_ROOM_KEY_FILE="+file("server-key.pem"),
 		"ZPR_CONTROL_ROOM_ORIGIN="+config.browserOrigin(config.RoomPort),
@@ -87,6 +87,14 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 }
 
 var errEvaluationProcessExited = errors.New("operator process exited")
+
+func evaluationRuntimeEnvironment(state string, inventory evaluationInventory, mode string, runtime evaluationRuntimeOptions) []string {
+	environment := evaluationEnvironment(state, inventory, mode)
+	if mode == "control-service" {
+		environment = append(environment, "ZPR_NETWORK_NAME="+runtime.NetworkName)
+	}
+	return environment
+}
 
 type evaluationProcess struct {
 	command *exec.Cmd
@@ -122,6 +130,10 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 	if err != nil {
 		return err
 	}
+	services, err := loadEvaluationOperatorServices(runtime.OperatorServicesFile, state, inventory)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	compose := func(commandContext context.Context, args ...string) error {
@@ -141,7 +153,8 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		return errors.New("Docker with Compose v2 is required; render-only does not require Docker")
 	}
 	for _, image := range []struct{ reference, platform string }{
-		{inventory.Config.LDAPImage, "linux/amd64"}, {inventory.Config.LogImage, inventory.Config.LogPlatform}, {inventory.Config.DexImage, inventory.Config.DexPlatform},
+		{inventory.Config.LDAPImage, "linux/amd64"}, {inventory.Config.LDAPAdminImage, "linux/amd64"},
+		{inventory.Config.LogImage, inventory.Config.LogPlatform}, {inventory.Config.DexImage, inventory.Config.DexPlatform},
 	} {
 		command := exec.CommandContext(preflight, "docker", "image", "inspect", image.reference, "--format", "{{.Architecture}}")
 		command.Env = evaluationDockerEnvironment()
@@ -211,6 +224,11 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 	if err := waitEvaluation(startup, "starter LDAP", out, func() error { return checkEvaluationLDAP(inventory.Config, state, tlsConfig) }); err != nil {
 		return err
 	}
+	if err := waitEvaluation(startup, "phpLDAPadmin (loopback only)", out, func() error {
+		return checkEvaluationLDAPAdminUI(inventory.Config.LDAPAdminPort)
+	}); err != nil {
+		return err
+	}
 	if err := waitEvaluation(startup, "OpenObserve (TLS, admin authentication)", out, func() error { return checkEvaluationLogging(inventory.Config.LogPort, state, tlsConfig) }); err != nil {
 		return err
 	}
@@ -253,7 +271,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 			inventory.Config.DeliveryHost = gateway
 		}
 		_, markerErr := os.Stat(filepath.Join(state, evaluationVisaPolicyMarker))
-		plane, err := launch("data-plane", "docker", evaluationDataPlaneArguments(state, inventory, runtime.DataPlaneImage, errors.Is(markerErr, os.ErrNotExist)), evaluationDockerEnvironment())
+		plane, err := launch("data-plane", "docker", evaluationOperatorDataPlaneArguments(state, inventory, runtime.DataPlaneImage, errors.Is(markerErr, os.ErrNotExist), services), evaluationDockerEnvironment())
 		if err != nil {
 			return err
 		}
@@ -345,7 +363,9 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		if mode == "control-room" {
 			args = append(args, "-listen", inventory.Config.roomListen())
 		}
-		process, err := launch(mode, binary, args, evaluationEnvironment(state, inventory, mode))
+		environment := evaluationRuntimeEnvironment(state, inventory, mode, runtime)
+		environment = append(environment, services.environment(mode)...)
+		process, err := launch(mode, binary, args, environment)
 		if err != nil {
 			return err
 		}
@@ -416,8 +436,12 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		fmt.Fprintf(out, "Local entrypoint https://localhost:%d redirects to the canonical network origin. Restrict browser/OIDC ports to intended clients; other services remain loopback-only.\n", inventory.Config.RoomPort)
 	}
 	upstream := "Upstream Visa/Policy services are NOT configured. Control Room reports unavailable dependencies explicitly."
+	policyStatus := "Policy-Service is NOT configured."
+	if services != nil && services.PolicyService != nil {
+		policyStatus = "Policy-Service is explicitly configured at " + services.PolicyService.URL + "; policy application still requires named review."
+	}
 	if inventory.Config.VisaService {
-		upstream = fmt.Sprintf("Loopback Visa Service admin at https://localhost:%d (bundled evaluation policy; no nodes or enforcement). Policy-Service is NOT configured.", inventory.Config.VSAdminPort)
+		upstream = fmt.Sprintf("Loopback Visa Service admin at https://localhost:%d (bundled evaluation policy; no nodes or enforcement). %s", inventory.Config.VSAdminPort, policyStatus)
 		if inventory.Config.DataPlane {
 			endpoints := "no endpoints"
 			if inventory.Config.DataPlaneEndpoints > 0 {
@@ -427,7 +451,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 			if count := len(evaluationDataPlaneTopology(inventory)); count > 1 {
 				nodes = fmt.Sprintf("%d fully linked nodes", count)
 			}
-			upstream = fmt.Sprintf("Data-plane Visa Service admin at https://localhost:%d (container %s: %s and vs.zpr admitted; %s). Policy-Service is NOT configured.", inventory.Config.VSAdminPort, evaluationDataPlaneName(inventory), nodes, endpoints)
+			upstream = fmt.Sprintf("Data-plane Visa Service admin at https://localhost:%d (container %s: %s and vs.zpr admitted; %s). %s", inventory.Config.VSAdminPort, evaluationDataPlaneName(inventory), nodes, endpoints, policyStatus)
 			if inventory.Config.ProtectedDNS {
 				upstream += " Protected DNS passed a direct TCP query over the ZPR tunnel at fd5a:5052::53."
 			}
@@ -439,7 +463,7 @@ func startEvaluation(state string, inventory evaluationInventory, runtime evalua
 		if inventory.Config.DataPlane {
 			initCommand = evaluationDataPlaneInitCommand(inventory, state)
 		}
-		fmt.Fprintf(out, "Subject links: the administrator can propose and approve (a self-approval is flagged in the audit); optional second login %s (password: private operator-reviewer.secret); see %s for the publication cycle.\nAfter the first signed snapshot, initialize the VS checkpoint once: %s\n",
+		fmt.Fprintf(out, "Subject links: proposing and approving are separate actions. Approving your own request requires explicit approval.self permission in both the current session and backend grants; self-approval is audited. Optional independent reviewer login %s (password: private operator-reviewer.secret); see %s for the publication cycle.\nAfter the first signed snapshot, initialize the VS checkpoint once: %s\n",
 			evaluationReviewerEmail, filepath.Join(state, "SUBJECT-LINKS.txt"), initCommand)
 	}
 	fmt.Fprintln(out, "Foreground supervision active. Ctrl-C stops this install's services/containers; rerun the SAME command to preserve identity and directory/log data.")

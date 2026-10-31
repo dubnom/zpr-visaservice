@@ -53,6 +53,7 @@ func readOnlyGet(next http.Handler) http.Handler {
 }
 
 type Handlers struct {
+	Network                                                           http.Handler
 	Enrollment, Gateways, Snapshot, Diagnostics, ActorVisas           http.Handler
 	AdapterLogs, DNSRecords, DNSStats, DNSStylesheet                  http.Handler
 	PolicyAssistant, GatewayAssistantStatus, GatewayAssistant, Policy http.Handler
@@ -68,6 +69,14 @@ type Handlers struct {
 // Authentication, security headers and server lifetime remain caller-owned.
 func NewMux(handlers Handlers) *http.ServeMux {
 	mux := http.NewServeMux()
+	network := handlers.Network
+	if network == nil {
+		network = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "network metadata is unavailable", http.StatusServiceUnavailable)
+		})
+	}
+	mux.Handle("GET /api/network", network)
 	budgetCurrent := handlers.BudgetAuthorityCurrent
 	if budgetCurrent == nil {
 		budgetCurrent = http.HandlerFunc(unavailableBudgetAuthority)

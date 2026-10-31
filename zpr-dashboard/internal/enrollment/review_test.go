@@ -252,7 +252,7 @@ func TestUnclaimedAndCancelledRequestsCannotBeReviewed(t *testing.T) {
 func reviewConfig() Config {
 	config := apiConfig()
 	config.ApprovalLifetimeSeconds = 3600
-	config.Principals[0].Permissions = append(config.Principals[0].Permissions, "approve", "reject")
+	config.Principals[0].Permissions = append(config.Principals[0].Permissions, "approve", "reject", "approval.self")
 	return config
 }
 

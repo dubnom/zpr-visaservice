@@ -103,6 +103,153 @@ struct PersistenceFixture {
 }
 
 #[tokio::test]
+async fn signed_bas_claims_survive_directory_refresh_without_extending_authentication() {
+    use libeval::actor::{DeviceAuthentication, DeviceAuthority};
+
+    let mut f = PersistenceFixture::new().await;
+    let expiration = deadline(300);
+    let identity = DeviceAuthentication::new(
+        DeviceAuthority::AuthenticationService {
+            service_id: "velocity-enrollment-bas".into(),
+            issuer: "zpr/bas".into(),
+        },
+        "device.example".into(),
+        uuid::Uuid::new_v4().to_string(),
+        expiration,
+    )
+    .unwrap();
+    f.actor.set_device_authentication(identity.clone()).unwrap();
+    let claims = crate::trusted_services::qualify_source_attributes(
+        vec![claim(
+            "velocity-enrollment-bas",
+            "device.enrollment.asset_id",
+            "device.example",
+            expiration,
+        )],
+        "velocity-enrollment-bas",
+        true,
+    );
+    for attribute in &claims {
+        f.actor.add_attribute(attribute.clone()).unwrap();
+    }
+    crate::db::ActorRepo::new(f.db.clone())
+        .update_authenticated_actor(&f.actor)
+        .await
+        .unwrap();
+
+    for remove_directory in [false, true] {
+        if remove_directory {
+            f.asm.ts_mgr.update_services(vec![]);
+        }
+        let mut reloaded = f.stored().await;
+        refresh_and_persist_actor(&f.asm, &mut reloaded)
+            .await
+            .unwrap();
+        for attribute in &claims {
+            let retained = reloaded
+                .get_attribute(attribute.get_key())
+                .unwrap_or_else(|| {
+                    panic!("authentication claim was pruned: {}", attribute.get_key())
+                });
+            assert_eq!(retained.get_value(), attribute.get_value());
+            assert_eq!(retained.get_source(), "velocity-enrollment-bas");
+            assert_eq!(retained.get_expires(), expiration);
+        }
+        assert_eq!(reloaded.device_authentication(), Some(&identity));
+        if remove_directory {
+            assert!(reloaded.get_attribute("user.old").is_none());
+        }
+    }
+}
+
+#[tokio::test]
+async fn bas_source_stamp_without_matching_authentication_is_still_pruned() {
+    use libeval::actor::{DeviceAuthentication, DeviceAuthority};
+
+    for authenticated_source in [None, Some("another-bas")] {
+        let mut actor = actor();
+        if let Some(source) = authenticated_source {
+            actor
+                .set_device_authentication(
+                    DeviceAuthentication::new(
+                        DeviceAuthority::AuthenticationService {
+                            service_id: source.into(),
+                            issuer: "zpr/bas".into(),
+                        },
+                        "device.example".into(),
+                        uuid::Uuid::new_v4().to_string(),
+                        deadline(300),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+
+        for attribute in crate::trusted_services::qualify_source_attributes(
+            vec![claim("bas", "device.asset", "unmatched", deadline(300))],
+            "bas",
+            true,
+        ) {
+            actor.add_attribute(attribute).unwrap();
+        }
+        let manager = TrustedServicesMgr::new();
+        let outcome = refresh(&manager, &mut actor).await;
+        assert!(outcome.changed);
+        assert!(actor.get_attribute("device.asset").is_none());
+        assert!(
+            actor
+                .get_attribute(&key_for("device.asset", "bas"))
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn expired_bas_authentication_or_claims_are_indeterminate_not_known_absence() {
+    use libeval::actor::{DeviceAuthentication, DeviceAuthority};
+
+    for session_expired in [false, true] {
+        let mut actor = actor();
+        let past = SystemTime::now() - Duration::from_secs(1);
+        actor
+            .set_device_authentication(
+                DeviceAuthentication::new(
+                    DeviceAuthority::AuthenticationService {
+                        service_id: "bas".into(),
+                        issuer: "zpr/bas".into(),
+                    },
+                    "device.example".into(),
+                    uuid::Uuid::new_v4().to_string(),
+                    if session_expired { past } else { deadline(300) },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        for attribute in crate::trusted_services::qualify_source_attributes(
+            vec![claim(
+                "bas",
+                "device.asset",
+                "verified",
+                if session_expired { deadline(300) } else { past },
+            )],
+            "bas",
+            true,
+        ) {
+            actor.add_attribute(attribute).unwrap();
+        }
+        let outcome = refresh(&TrustedServicesMgr::new(), &mut actor).await;
+        assert!(!outcome.indeterminate.is_empty());
+        assert!(!outcome.changed);
+        assert!(actor.get_attribute("device.asset").is_some());
+        assert!(
+            actor
+                .get_attribute(&key_for("device.asset", "bas"))
+                .is_some()
+        );
+    }
+}
+
+#[tokio::test]
 async fn session_guard_refresh_conflict_does_not_certify_stale_observations() {
     use libeval::actor::{DeviceAuthentication, DeviceAuthority};
 

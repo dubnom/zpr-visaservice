@@ -20,7 +20,7 @@ async function setup(page, { subject = "reviewer", self = false, mutate } = {}) 
     const url = new URL(route.request().url());
     if (url.pathname === "/auth/operator/session") return route.fulfill({ json: {
       identity: { issuer: "https://idp.example", subject, display_name: subject, organizations: ["great-lakes"],
-        permissions: ["change.read", "change.submit", "change.review", "gateway.read", "gateway.edit", "policy.read"] }, csrf: "proof" } });
+        permissions: ["change.read", "change.submit", "change.review", "gateway.read", "gateway.edit", "policy.read", ...(self ? ["approval.self"] : [])] }, csrf: "proof" } });
     if (url.pathname === "/api/change-review/capabilities") return route.fulfill({ json: { allow_self_approval: self, application_enabled: false } });
     if (url.pathname.startsWith("/api/change-review/")) {
       if (route.request().method() === "GET") {
@@ -64,10 +64,18 @@ test("review queue shows immutable saved diff, records exact CSRF-bound approval
   await expect(page.getByRole("button", { name: "Approve revision", exact: true })).toBeDisabled();
 });
 
-test("author may approve their own request and the page flags it", async ({ page }) => {
-  await setup(page, { subject: "author" });
+test("permitted author may explicitly approve their own request", async ({ page }) => {
+  const { mutations } = await setup(page, { subject: "author", self: true });
   await expect(page.getByRole("button", { name: "Approve revision", exact: true })).toBeEnabled();
-  await expect(page.locator("#capabilities")).toContainText("one operator may do both");
+  await expect(page.locator("#decision-note")).toContainText("Self-approval is recorded in the audit");
+  expect(mutations).toHaveLength(0);
+});
+
+test("author without self-approval permission needs another reviewer", async ({ page }) => {
+  const { mutations } = await setup(page, { subject: "author" });
+  await expect(page.getByRole("button", { name: "Approve revision", exact: true })).toBeDisabled();
+  await expect(page.locator("#decision-note")).toContainText("Another authorized reviewer must approve");
+  expect(mutations).toHaveLength(0);
 });
 
 test("failed mutation is not retried and reconciliation restores available controls", async ({ page }) => {

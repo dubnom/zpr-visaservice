@@ -8,6 +8,8 @@
   const allowed = (permission) => !!identity?.permissions.includes(permission) &&
     (identity.organizations.includes(value("organization")) || identity.organizations.includes("*"));
   const samePrincipal = (a, b) => a?.issuer === b?.issuer && a?.subject === b?.subject;
+  const canApproveReview = () => !!review && allowed("subject-link.approve") &&
+    (!samePrincipal(identity, review.proposal.author) || allowed("approval.self"));
   const status = (message, error = false) => {
     document.getElementById("status").textContent = message;
     document.getElementById("status").classList.toggle("error", error);
@@ -17,8 +19,7 @@
     for (const id of ["registry-read", "registry-history", "context-load", "review-read"]) el(id).disabled = !allowed("subject-link.read");
     el("registry-save").disabled = registryUncertain || !allowed("subject-link.registry.manage");
     el("propose").disabled = !capture || !!pending || pendingInvalid || !allowed("subject-link.propose");
-    el("approve").disabled = !review || !!pending || pendingInvalid || !allowed("subject-link.approve") ||
-      review.state !== "submitted" || samePrincipal(identity, review.proposal.author);
+    el("approve").disabled = !canApproveReview() || !!pending || pendingInvalid || review.state !== "submitted";
     el("pending").hidden = (!pending && !pendingInvalid) || !identity;
     const owned = pending && samePrincipal(identity, pending.principal) && pending.organization === value("organization");
     el("pending-note").textContent = pendingInvalid ? "Saved retry data is invalid. Check the original outcome before discarding it or creating another review." : owned
@@ -126,7 +127,10 @@
     review = result;
     el("review-id").value = result.id;
     el("review-evidence").textContent = JSON.stringify(result, null, 2);
-    status(`${result.state === "review-approved" ? "Independent review recorded" : "Candidate submitted"}: ${result.id}. Review evidence only; no active binding.`);
+    const outcome = result.state === "review-approved"
+      ? samePrincipal(result.proposal.author, request.principal) ? "Self-approval recorded" : "Independent review recorded"
+      : "Candidate submitted";
+    status(`${outcome}: ${result.id}. Review evidence only; no active binding.`);
   }
   window.addEventListener("operator-session-cleared", () => {
     identity = null;
@@ -211,11 +215,12 @@
   });
   el("approval-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    if (!review || !allowed("subject-link.approve") || samePrincipal(identity, review.proposal.author)) return;
+    if (!canApproveReview() || review.state !== "submitted" || pending || pendingInvalid) return;
     void run(async (current) => {
       const body = { organization_id: value("organization"), digest: review.digest, version: review.version,
         registry_revision: review.proposal.registry_revision, reason: value("approval-reason") };
-      if (!window.confirm(`Approve review evidence ${review.id}?\nDigest: ${review.digest}\nDevice: ${review.proposal.root.subject_id}\nLDAP UUID: ${review.proposal.target.subject_id}\nNo binding will be activated.`)) return;
+      const approvalKind = samePrincipal(identity, review.proposal.author) ? "Explicitly self-approve" : "Approve";
+      if (!window.confirm(`${approvalKind} review evidence ${review.id}?\nDigest: ${review.digest}\nDevice: ${review.proposal.root.subject_id}\nLDAP UUID: ${review.proposal.target.subject_id}\nNo binding will be activated.`)) return;
       savePending(`/api/subject-link-reviews/${review.id}/approve`, body, "subject-link.approve");
       review = null;
       await deliver(current);

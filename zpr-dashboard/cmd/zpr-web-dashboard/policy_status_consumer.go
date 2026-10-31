@@ -48,10 +48,15 @@ type simulatorPolicyStatusClient struct {
 }
 
 func newSimulatorPolicyStatusClientFromEnv() (*simulatorPolicyStatusClient, error) {
-	originValue := os.Getenv("SIMULATION_POLICY_STATUS_URL")
-	certPath := os.Getenv("SIMULATION_POLICY_STATUS_CLIENT_CERT_FILE")
-	keyPath := os.Getenv("SIMULATION_POLICY_STATUS_CLIENT_KEY_FILE")
-	caPath := os.Getenv("SIMULATION_POLICY_STATUS_SERVER_CA_FILE")
+	return newSimulatorPolicyStatusClient(
+		os.Getenv("SIMULATION_POLICY_STATUS_URL"),
+		os.Getenv("SIMULATION_POLICY_STATUS_CLIENT_CERT_FILE"),
+		os.Getenv("SIMULATION_POLICY_STATUS_CLIENT_KEY_FILE"),
+		os.Getenv("SIMULATION_POLICY_STATUS_SERVER_CA_FILE"),
+	)
+}
+
+func newSimulatorPolicyStatusClient(originValue, certPath, keyPath, caPath string) (*simulatorPolicyStatusClient, error) {
 	if originValue != strings.TrimSpace(originValue) || certPath != strings.TrimSpace(certPath) ||
 		keyPath != strings.TrimSpace(keyPath) || caPath != strings.TrimSpace(caPath) {
 		return nil, errors.New("Simulator policy status configuration must not contain surrounding whitespace")

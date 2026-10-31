@@ -38,6 +38,28 @@ through Control-Service, never through browser-held backend credentials.
 Neither operator component may depend on Simulator, its availability or its
 manifests/profiles/sessions/workloads. Simulator may supply test traffic.
 
+### Self-approval role-risk warnings
+
+Approved requirement (2026-10-30); implementation and live acceptance pending.
+All Simulator installations use the authenticated operator's scoped permissions
+to self-approve selection-triggered setup without further approval prompts.
+See the [ordinary-client decision and delivery gates](SIMULATOR_AS_ZPR_CLIENT_PLAN.md#active-turn-key-delivery-plan-2026-10-30).
+
+Audit should detect and warn about risky self-approval role combinations through
+assertions or other explicit analysis rules. Use independently configured
+production identity/grant and approval-event contracts, never Simulator files
+or availability. Identify the affected issuer/subject, organization, role/grant,
+rule or assertion, exact operation/revision when available, and supporting
+evidence. Distinguish an observed self-approved operation from potential risk
+in a role assignment; incomplete evidence means unknown, not safe.
+
+Warnings are advisory, do not add a mandatory Simulator confirmation, and
+cannot confer permissions or excuse a failed backend authorization check.
+Existing Control Room approval workflows remain unchanged. Qualify with a
+known risky-role fixture and a nonmatching fixture, scoped access controls and
+Simulator unavailable; do not claim a complete audit ledger or deployed warning
+engine from these requirements.
+
 ## Audit workspaces
 
 ### History: what was observed?

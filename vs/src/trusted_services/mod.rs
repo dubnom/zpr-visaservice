@@ -25,6 +25,7 @@ pub use factory::{
 pub(crate) use manager::ServiceConfiguration;
 pub use manager::TrustedServiceStatus;
 pub use manager::TrustedServicesMgr;
+pub(crate) use manager::qualify_source_attributes;
 
 /// A revision no snapshot will ever carry (the counter starts at 1). Recording it for
 /// an actor keeps a source relevant-and-stale, forcing a retry on the next request.

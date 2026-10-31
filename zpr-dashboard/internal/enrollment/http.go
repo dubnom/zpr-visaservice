@@ -31,12 +31,13 @@ type Organization struct {
 }
 
 type Config struct {
-	Version                   int                     `json:"version"`
-	GUIInvitationCreation     bool                    `json:"gui_invitation_creation_enabled,omitempty"`
-	InvitationLifetimeSeconds int                     `json:"invitation_lifetime_seconds"`
-	ApprovalLifetimeSeconds   int                     `json:"approval_lifetime_seconds,omitempty"`
-	Principals                []Principal             `json:"principals"`
-	Organizations             map[string]Organization `json:"organizations"`
+	Version                          int                     `json:"version"`
+	GUIInvitationCreation            bool                    `json:"gui_invitation_creation_enabled,omitempty"`
+	InvitationLifetimeSeconds        int                     `json:"invitation_lifetime_seconds"`
+	ApprovalLifetimeSeconds          int                     `json:"approval_lifetime_seconds,omitempty"`
+	SoftwareDevelopmentCAFingerprint string                  `json:"software_development_ca_fingerprint,omitempty"`
+	Principals                       []Principal             `json:"principals"`
+	Organizations                    map[string]Organization `json:"organizations"`
 }
 
 func DecodeConfig(reader io.Reader) (Config, error) {
@@ -62,6 +63,9 @@ func (c Config) validate(requirePrincipals bool) error {
 	if c.ApprovalLifetimeSeconds < 0 || c.ApprovalLifetimeSeconds > 30*24*60*60 {
 		return errors.New("enrollment approval lifetime must be between 1 second and 30 days when configured")
 	}
+	if c.SoftwareDevelopmentCAFingerprint != "" && !validFingerprint(c.SoftwareDevelopmentCAFingerprint) {
+		return errors.New("development enrollment requires an explicit canonical SHA-256 private CA fingerprint")
+	}
 	for name, organization := range c.Organizations {
 		if name == "*" || !validText(name) || !validNames(organization.Profiles) || !validNames(organization.Types) {
 			return errors.New("enrollment organizations require valid names, approved profiles, and device types")
@@ -83,7 +87,7 @@ func (c Config) validate(requirePrincipals bool) error {
 			}
 		}
 		for _, permission := range principal.Permissions {
-			if !slices.Contains([]string{"read", "create", "cancel", "approve", "reject"}, permission) {
+			if !slices.Contains([]string{"read", "create", "cancel", "approve", "reject", "approval.self"}, permission) {
 				return errors.New("unknown enrollment permission")
 			}
 			if (permission == "approve" || permission == "reject") && c.ApprovalLifetimeSeconds == 0 {
@@ -146,6 +150,9 @@ func newAdminHandler(store *Store, config Config, operator bool) (http.Handler, 
 	mux.HandleFunc("POST "+APIPrefix+"invitations/{id}/cancel", api.cancel)
 	mux.HandleFunc("POST "+APIPrefix+"invitations/{id}/approve", api.decide)
 	mux.HandleFunc("POST "+APIPrefix+"invitations/{id}/reject", api.decide)
+	mux.HandleFunc("POST "+APIPrefix+"invitation-batches/review", api.reviewBatch)
+	mux.HandleFunc("POST "+APIPrefix+"invitation-batches/approve", api.approveBatch)
+	mux.HandleFunc("GET "+APIPrefix+"invitation-batches/{digest}", api.getBatchApproval)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
@@ -173,6 +180,10 @@ func (api *adminAPI) getPreflight(w http.ResponseWriter, r *http.Request) {
 		storeError(w, err)
 		return
 	}
+	if ready && !api.preflightAllowed(record.Attestation) {
+		apiError(w, http.StatusConflict, "Saved development preflight does not match the currently configured private CA or service mode.")
+		return
+	}
 	apiJSON(w, http.StatusOK, struct {
 		Ready     bool             `json:"ready"`
 		Preflight *PreflightRecord `json:"preflight,omitempty"`
@@ -186,6 +197,11 @@ func optionalPreflight(record PreflightRecord, ready bool) *PreflightRecord {
 	return &record
 }
 
+func (api *adminAPI) preflightAllowed(attestation PreflightAttestation) bool {
+	return attestation.Mode != "development" ||
+		(api.config.SoftwareDevelopmentCAFingerprint != "" && attestation.PrivateCAFingerprint == api.config.SoftwareDevelopmentCAFingerprint)
+}
+
 func (api *adminAPI) savePreflight(w http.ResponseWriter, r *http.Request) {
 	var attestation PreflightAttestation
 	if !readBody(w, r, &attestation) {
@@ -197,6 +213,10 @@ func (api *adminAPI) savePreflight(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := attestation.Validate(); err != nil {
 		storeError(w, err)
+		return
+	}
+	if !api.preflightAllowed(attestation) {
+		apiError(w, http.StatusForbidden, "Development enrollment is not enabled for this exact private installation CA.")
 		return
 	}
 	record, err := api.store.SavePreflight(r.Context(), attestation, principal.Name, api.now())
@@ -258,6 +278,7 @@ func (api *adminAPI) catalog(w http.ResponseWriter, r *http.Request) {
 	createOrganizations := []string{}
 	cancelOrganizations := []string{}
 	approveOrganizations := []string{}
+	selfApproveOrganizations := []string{}
 	rejectOrganizations := []string{}
 	for _, name := range principal.Organizations {
 		organizations[name] = api.config.Organizations[name]
@@ -270,6 +291,9 @@ func (api *adminAPI) catalog(w http.ResponseWriter, r *http.Request) {
 		if api.operator && api.config.ApprovalLifetimeSeconds > 0 {
 			if slices.Contains(principal.Permissions, "approve") {
 				approveOrganizations = append(approveOrganizations, name)
+				if slices.Contains(principal.Permissions, "approval.self") {
+					selfApproveOrganizations = append(selfApproveOrganizations, name)
+				}
 			}
 			if slices.Contains(principal.Permissions, "reject") {
 				rejectOrganizations = append(rejectOrganizations, name)
@@ -279,18 +303,21 @@ func (api *adminAPI) catalog(w http.ResponseWriter, r *http.Request) {
 	slices.Sort(createOrganizations)
 	slices.Sort(cancelOrganizations)
 	slices.Sort(approveOrganizations)
+	slices.Sort(selfApproveOrganizations)
 	slices.Sort(rejectOrganizations)
 	apiJSON(w, http.StatusOK, struct {
-		Organizations        map[string]Organization `json:"organizations"`
-		Lifetime             int                     `json:"invitation_lifetime_seconds"`
-		ApprovalLifetime     int                     `json:"approval_lifetime_seconds"`
-		GUIMutations         bool                    `json:"gui_mutations_enabled"`
-		CreateOrganizations  []string                `json:"gui_create_organizations"`
-		CancelOrganizations  []string                `json:"gui_cancel_organizations"`
-		ApproveOrganizations []string                `json:"gui_approve_organizations"`
-		RejectOrganizations  []string                `json:"gui_reject_organizations"`
+		Organizations                    map[string]Organization `json:"organizations"`
+		Lifetime                         int                     `json:"invitation_lifetime_seconds"`
+		ApprovalLifetime                 int                     `json:"approval_lifetime_seconds"`
+		GUIMutations                     bool                    `json:"gui_mutations_enabled"`
+		CreateOrganizations              []string                `json:"gui_create_organizations"`
+		CancelOrganizations              []string                `json:"gui_cancel_organizations"`
+		ApproveOrganizations             []string                `json:"gui_approve_organizations"`
+		SelfApproveOrganizations         []string                `json:"gui_self_approve_organizations"`
+		RejectOrganizations              []string                `json:"gui_reject_organizations"`
+		SoftwareDevelopmentCAFingerprint string                  `json:"software_development_ca_fingerprint,omitempty"`
 	}{organizations, api.config.InvitationLifetimeSeconds, api.config.ApprovalLifetimeSeconds, false,
-		createOrganizations, cancelOrganizations, approveOrganizations, rejectOrganizations})
+		createOrganizations, cancelOrganizations, approveOrganizations, selfApproveOrganizations, rejectOrganizations, api.config.SoftwareDevelopmentCAFingerprint})
 }
 
 func (api *adminAPI) create(w http.ResponseWriter, r *http.Request) {
@@ -313,6 +340,19 @@ func (api *adminAPI) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := api.now().UTC()
+	preflight, ready, err := api.store.GetPreflight(r.Context(), asset.Organization, now)
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	if !ready {
+		storeError(w, ErrPreflight)
+		return
+	}
+	if !api.preflightAllowed(preflight.Attestation) {
+		apiError(w, http.StatusForbidden, "Saved development preflight is not permitted by this service configuration; invitation creation remains blocked.")
+		return
+	}
 	item, code, err := api.store.Create(r.Context(), asset, principal.Name, now,
 		now.Add(time.Duration(api.config.InvitationLifetimeSeconds)*time.Second))
 	if err != nil {
@@ -434,6 +474,11 @@ func (api *adminAPI) decide(w http.ResponseWriter, r *http.Request) {
 		item, err := api.store.Get(r.Context(), input.Organization, r.PathValue("id"), api.now())
 		if err != nil {
 			storeError(w, err)
+			return
+		}
+		if item.CreatedBy == principal.Name && !slices.Contains(principal.Permissions, "approval.self") {
+			log.Print("Enrollment self-approval denied: explicit named-user permission is required")
+			apiError(w, http.StatusForbidden, "Approving your own invitation requires approval.self permission; otherwise another authorized reviewer must approve.")
 			return
 		}
 		organization := api.config.Organizations[input.Organization]

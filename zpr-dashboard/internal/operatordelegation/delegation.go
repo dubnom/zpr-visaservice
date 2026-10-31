@@ -62,6 +62,7 @@ type assertion struct {
 	Organization string `json:"organization,omitempty"`
 	Permission   string `json:"permission,omitempty"`
 	RetryKey     string `json:"retry_key,omitempty"`
+	SelfApproval bool   `json:"self_approval,omitempty"`
 }
 
 type ReplayStore interface {
@@ -192,7 +193,8 @@ func (s *Signer) sign(r *http.Request, body []byte, id operatorauth.Identity, no
 	token := assertion{Version: 1, KeyID: s.config.KeyID, Audience: s.config.Audience,
 		Issuer: id.Issuer, Subject: id.Subject, Method: r.Method, Target: r.URL.RequestURI(),
 		BodyHash: hex.EncodeToString(hash[:]), Issued: now.UnixNano(), Expires: now.Add(30 * time.Second).UnixNano(), Nonce: rand.Text(),
-		Purpose: scope.purpose, Organization: scope.organization, Permission: scope.permission, RetryKey: scope.retryKey}
+		Purpose: scope.purpose, Organization: scope.organization, Permission: scope.permission, RetryKey: scope.retryKey,
+		SelfApproval: slices.Contains(id.Permissions, "approval.self")}
 	payload, err := json.Marshal(token)
 	if err != nil {
 		return "", err
@@ -753,6 +755,11 @@ func (v *Verifier) verify(r *http.Request, body []byte, now time.Time, scope rev
 			}
 			grant.Organizations = slices.Clone(grant.Organizations)
 			grant.Permissions = slices.Clone(grant.Permissions)
+			if !token.SelfApproval {
+				grant.Permissions = slices.DeleteFunc(grant.Permissions, func(permission string) bool {
+					return permission == "approval.self"
+				})
+			}
 			return grant, nil
 		}
 	}

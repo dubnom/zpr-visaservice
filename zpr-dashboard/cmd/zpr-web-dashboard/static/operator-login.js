@@ -184,16 +184,11 @@
         }
         csrf = session.csrf;
         logout.hidden = false;
-        const humanLabel = identity.display_name || identity.email || (simulator ? identity.subject : "");
+        const humanLabel = identity.display_name || identity.email || "";
         status.textContent = humanLabel ? `User: ${humanLabel}` : "User";
         setGate(false);
         scope.hidden = false;
-        const suffix = widget.dataset.operatorApplication === "simulator"
-          ? " Simulator access is limited to the listed scopes."
-          : " Enrollment actions also require backend delegation.";
-        const label = humanLabel || "Display name unavailable";
-        const email = identity.email && identity.email !== humanLabel ? ` (${identity.email})` : "";
-        scope.textContent = `${label}${email} · Issuer: ${identity.issuer}. Configured organizations: ${identity.organizations.join(", ")}. Permissions: ${identity.permissions.join(", ")}.${suffix}`;
+        scope.textContent = "Signed in";
         window.dispatchEvent(new CustomEvent("operator-session-ready", { detail: { identity, csrf } }));
       } catch (error) {
         if (current !== generation) return;

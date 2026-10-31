@@ -14,15 +14,17 @@ start_control_service() {
     python3 "$SCRIPT_DIR/control-stack.py" start-control-service
 }
 
-case "${1:-start}" in
-    start-control-room) start_control_room; exit $? ;;
-    start-control-service) start_control_service; exit $? ;;
-    start|restart|stop|status|check|restart-control-room|restart-control-service|stop-control-room|stop-control-service)
-        exec python3 "$SCRIPT_DIR/control-stack.py" "${1:-start}" ;;
-    start-policy-service|stop-policy-service|restart-policy-service)
-        echo "Policy-Service requires its independent operator deployment; this launcher never provisions production policy." >&2
-        exit 2 ;;
-esac
+if [ "${ZPR_DASHBOARD_STACK_LIBRARY:-0}" != 1 ]; then
+    case "${1:-start}" in
+        start-control-room) start_control_room; exit $? ;;
+        start-control-service) start_control_service; exit $? ;;
+        start|restart|stop|status|check|restart-control-room|restart-control-service|stop-control-room|stop-control-service)
+            exec python3 "$SCRIPT_DIR/control-stack.py" "${1:-start}" ;;
+        start-policy-service|stop-policy-service|restart-policy-service)
+            echo "Policy-Service requires its independent operator deployment; this launcher never provisions production policy." >&2
+            exit 2 ;;
+    esac
+fi
 
 . "$SCRIPT_DIR/simulator-control-adapter.sh"
 . "$SCRIPT_DIR/multinode-admin.sh"
@@ -287,7 +289,35 @@ start_service() {
 }
 
 start_simulator() {
+    organization_id=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
+    if machine_retained_authentication_enabled; then
+        machine_organization=$organization_id
+        machine_authentication_preflight
+        case "$SIMULATION_MACHINE_AUTHENTICATION_DIR" in
+            *:*) echo "retained machine BAS directory paths cannot contain ':' for Docker bind mounts" >&2; return 1 ;;
+        esac
+    fi
     if [ "$(docker inspect -f '{{.State.Running}}' "$SIMULATOR_DOCKER_CONTAINER" 2>/dev/null || true)" = true ]; then
+        if machine_retained_authentication_enabled; then
+            simulator_auth_config=$(docker inspect -f '{{json .Config.Env}}' "$SIMULATOR_DOCKER_CONTAINER" |
+                jq -r '[.[] | select(startswith("SIMULATION_MACHINE_AUTHENTICATION_DIR="))] |
+                    if length == 1 then .[0] | sub("^[^=]*="; "") elif length == 0 then "" else error("duplicate retained BAS directory") end') || return 1
+            simulator_auth_mount=$(docker inspect -f '{{json .Mounts}}' "$SIMULATOR_DOCKER_CONTAINER" |
+                jq -r --arg root "$SIMULATION_MACHINE_AUTHENTICATION_DIR" '
+                    . as $mounts |
+                    ["velocity-machine-03-controller", "velocity-machine-03-finance-client",
+                     "velocity-machine-05-controller", "velocity-machine-05-echo-service",
+                     "velocity-simulator-control"] |
+                    all(.[]; . as $asset |
+                        ["runtime-auth.toml", "runtime-auth.key", "runtime-auth-ca.pem"] |
+                        all(.[]; ($root + "/" + $asset + "/identity/" + .) as $path |
+                            any($mounts[]; .Source == $path and .Destination == $path and .RW == false)))') || return 1
+            if [ "$simulator_auth_config" != "$SIMULATION_MACHINE_AUTHENTICATION_DIR" ] ||
+                [ "$simulator_auth_mount" != true ]; then
+                echo "running Simulator lacks the retained BAS endpoint mount; restart it with SIMULATION_MACHINE_AUTHENTICATION_DIR set" >&2
+                return 1
+            fi
+        fi
         return 0
     fi
     if docker inspect "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1; then
@@ -298,7 +328,6 @@ start_simulator() {
     ensure_simulator_image "$SIMULATOR_IMAGE" "$SCRIPT_DIR/Dockerfile.simulator" "$DASHBOARD_DIR"
     docker rm -f "$SIMULATOR_DOCKER_CONTAINER" >/dev/null 2>&1 || true
     simulator_socket=$(docker_socket_path)
-    organization_id=${SIMULATION_ORGANIZATION_ID:-$(jq -r '.organization_id // "northstar"' "$SIMULATION_MANIFEST")}
     simulator_proxy_ip=$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}')
     simulator_operator_origin=${ZPR_SIMULATOR_OPERATOR_ORIGIN:-}
     simulator_operator_trusted_peer=${ZPR_SIMULATOR_OPERATOR_TRUSTED_PEER_IP:-}
@@ -331,7 +360,7 @@ start_simulator() {
             fi
         done
     fi
-    docker run -d --name "$SIMULATOR_DOCKER_CONTAINER" \
+    set -- docker run -d --name "$SIMULATOR_DOCKER_CONTAINER" \
         --label zpr.simulator=true \
         -v "$simulator_socket:/var/run/docker.sock" \
         -v "$DASHBOARD_DIR:$DASHBOARD_DIR:ro" \
@@ -339,7 +368,18 @@ start_simulator() {
         -v "$DNS_PROFILE_DIR:$DNS_PROFILE_DIR:ro" \
         -v "$DASHBOARD_DIR/../../zpr-demo/multinode-demo:$DASHBOARD_DIR/../../zpr-demo/multinode-demo:ro" \
         -v "$DASHBOARD_DIR/../../zpr-core:$DASHBOARD_DIR/../../zpr-core:ro" \
-        -v "$RUNTIME_DIR:$RUNTIME_DIR" \
+        -v "$RUNTIME_DIR:$RUNTIME_DIR"
+    if machine_retained_authentication_enabled; then
+        for asset_id in velocity-machine-03-controller velocity-machine-03-finance-client \
+            velocity-machine-05-controller velocity-machine-05-echo-service velocity-simulator-control; do
+            endpoint_dir=$(machine_authentication_endpoint_dir "$asset_id")
+            for auth_file in runtime-auth.toml runtime-auth.key runtime-auth-ca.pem; do
+                set -- "$@" -v "$endpoint_dir/$auth_file:$endpoint_dir/$auth_file:ro"
+            done
+        done
+        set -- "$@" -e "SIMULATION_MACHINE_AUTHENTICATION_DIR=$SIMULATION_MACHINE_AUTHENTICATION_DIR"
+    fi
+    set -- "$@" \
         -p 127.0.0.1:8055:8055 \
         -p 127.0.0.1:8184:8184 \
         -p 127.0.0.1:8788:8788 \
@@ -393,7 +433,8 @@ start_simulator() {
         -e ZPR_CONTROL_ROOM_PROXY_IP="$simulator_proxy_ip" \
         -e ZPR_ANTHROPIC_API_KEY_FILE="${ZPR_ANTHROPIC_API_KEY_FILE:-$STATE_DIR/assistant/api-key}" \
         -e ANTHROPIC_API_KEY \
-        "$SIMULATOR_IMAGE" >/dev/null
+        "$SIMULATOR_IMAGE"
+    "$@" >/dev/null
     if [ -n "$simulator_operator_origin" ]; then
         wait_for_url "$simulator_operator_origin/auth/operator/config" simulator --cacert "$ZPR_SIMULATOR_OPERATOR_TLS_CA_FILE"
     else
@@ -1070,6 +1111,118 @@ refresh_multinode_services_if_idle() {
     stop_multinode_control_processes "$organization_id-node0" adapter
 }
 
+machine_retained_authentication_enabled() {
+    [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]
+}
+
+machine_authentication_endpoint_dir() {
+    printf '%s/%s/identity\n' "$SIMULATION_MACHINE_AUTHENTICATION_DIR" "$1"
+}
+
+machine_authentication_preflight() {
+    machine_retained_authentication_enabled || return 0
+    [ "$machine_organization" = velocity ] || {
+        echo "retained machine BAS authentication is restricted to the Velocity runtime" >&2
+        return 1
+    }
+    python3 - "$SIMULATION_MACHINE_AUTHENTICATION_DIR" <<'PY'
+import os
+import stat
+import sys
+
+root = sys.argv[1]
+check_owner = os.environ.get("ZPR_DASHBOARD_CONTAINER_RUNTIME") != "1"
+assets = (
+    "velocity-machine-03-controller",
+    "velocity-machine-03-finance-client",
+    "velocity-machine-05-controller",
+    "velocity-machine-05-echo-service",
+    "velocity-simulator-control",
+)
+
+def fail(message):
+    raise SystemExit(message)
+
+if not os.path.isabs(root) or os.path.normpath(root) != root or os.path.realpath(root) != root or ":" in root:
+    fail("SIMULATION_MACHINE_AUTHENTICATION_DIR must be a canonical absolute path")
+try:
+    info = os.lstat(root)
+except OSError as error:
+    fail(f"retained machine BAS endpoint directory is unavailable: {error}")
+if (not stat.S_ISDIR(info.st_mode) or (check_owner and
+        (info.st_uid != os.geteuid() or info.st_mode & 0o077 or info.st_mode & 0o500 != 0o500))):
+    fail("retained machine BAS endpoint root must be owner-private and owned by the launcher user")
+
+for asset_id in assets:
+    directory = os.path.join(root, asset_id, "identity")
+    try:
+        directory_info = os.lstat(directory)
+    except OSError as error:
+        fail(f"retained machine BAS material missing for {asset_id}: {error}")
+    if (os.path.realpath(directory) != directory or not stat.S_ISDIR(directory_info.st_mode) or (check_owner and
+            (directory_info.st_uid != os.geteuid() or directory_info.st_mode & 0o077 or directory_info.st_mode & 0o500 != 0o500))):
+        fail(f"retained machine BAS endpoint directory must be owner-private: {asset_id}")
+    paths = {name: os.path.join(directory, name) for name in (
+        "runtime-auth.toml", "runtime-auth.key", "runtime-auth-ca.pem"
+    )}
+    for name, path in paths.items():
+        try:
+            file_info = os.lstat(path)
+        except OSError as error:
+            fail(f"retained machine BAS material missing for {asset_id}/{name}: {error}")
+        if (not stat.S_ISREG(file_info.st_mode) or (check_owner and file_info.st_uid != os.geteuid()) or
+                file_info.st_mode & 0o077 or file_info.st_mode & 0o400 != 0o400):
+            fail(f"retained machine BAS file must be owner-private and regular: {asset_id}/{name}")
+    try:
+        import json
+        config = {}
+        section = None
+        with open(paths["runtime-auth.toml"], encoding="utf-8") as source:
+            for raw_line in source:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    section = line[1:-1]
+                    if section not in ("global", "adapter", "authentication") or section in config:
+                        fail(f"invalid retained machine BAS TOML section for {asset_id}")
+                    config[section] = {}
+                    continue
+                if section != "authentication" or "=" not in line:
+                    fail(f"invalid retained machine BAS TOML field for {asset_id}")
+                name, value = (part.strip() for part in line.split("=", 1))
+                if name in config[section] or name not in ("bas_key", "tls_ca_file", "bas_client_id"):
+                    fail(f"unknown or duplicate retained machine BAS field for {asset_id}")
+                parsed = json.loads(value)
+                if not isinstance(parsed, str):
+                    fail(f"retained machine BAS values must be quoted strings for {asset_id}")
+                config[section][name] = parsed
+    except (OSError, ValueError, UnicodeError) as error:
+        fail(f"invalid retained machine BAS TOML for {asset_id}: {error}")
+    authentication = config.get("authentication", {})
+    if (set(config) != {"global", "adapter", "authentication"} or
+            config["global"] != {} or config["adapter"] != {} or
+            set(authentication) != {"bas_key", "tls_ca_file", "bas_client_id"} or
+            authentication["bas_key"] != paths["runtime-auth.key"] or
+            authentication["tls_ca_file"] != paths["runtime-auth-ca.pem"] or
+            authentication["bas_client_id"] != asset_id):
+        fail(f"retained machine BAS configuration does not bind the exact endpoint identity: {asset_id}")
+PY
+}
+
+stage_machine_authentication_endpoint_in_container() {
+    container=$1
+    asset_id=$2
+    endpoint_dir=$(machine_authentication_endpoint_dir "$asset_id")
+    docker exec "$container" mkdir -p "$endpoint_dir"
+    for auth_file in runtime-auth.toml runtime-auth.key runtime-auth-ca.pem; do
+        docker cp "$endpoint_dir/$auth_file" "$container:$endpoint_dir/$auth_file"
+    done
+    docker exec "$container" chmod 700 "$endpoint_dir"
+    docker exec "$container" chmod 600 \
+        "$endpoint_dir/runtime-auth.toml" "$endpoint_dir/runtime-auth.key" "$endpoint_dir/runtime-auth-ca.pem"
+}
+
 start_machine_container() {
     machine=$1
     case "$machine" in
@@ -1078,7 +1231,30 @@ start_machine_container() {
     esac
     container="zpr-$machine"
     resolve_machine_runtime
+    if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then machine_authentication_preflight; fi
     resolve_machine_placement
+    machine_controller_auth_asset=
+    machine_controller_auth_dir=
+    machine_workload_auth_asset=
+    machine_workload_auth_dir=
+    if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+        case "$machine" in
+            machine-03)
+                machine_controller_auth_asset=velocity-machine-03-controller
+                machine_workload_auth_asset=velocity-machine-03-finance-client
+                ;;
+            machine-05)
+                machine_controller_auth_asset=velocity-machine-05-controller
+                machine_workload_auth_asset=velocity-machine-05-echo-service
+                ;;
+            *)
+                echo "retained machine BAS authentication only supports Velocity machine-03 and machine-05" >&2
+                return 1
+                ;;
+        esac
+        machine_controller_auth_dir=$(machine_authentication_endpoint_dir "$machine_controller_auth_asset")
+        machine_workload_auth_dir=$(machine_authentication_endpoint_dir "$machine_workload_auth_asset")
+    fi
     case "$machine_runtime_driver" in
         linux-one-node) machine_arch=arm64 ;;
         docker-multinode)
@@ -1096,6 +1272,17 @@ start_machine_container() {
         existing_scope=$(docker inspect -f '{{index .Config.Labels "zpr.organization.id"}}:{{index .Config.Labels "zpr.runtime.generation"}}' "$container")
         if [ "$existing_scope" != "$machine_organization:$machine_generation" ]; then
             echo "$container belongs to another organization or generation; stop it before starting this runtime" >&2
+            return 1
+        fi
+        existing_auth_config=$(docker inspect -f '{{json .Config.Env}}' "$container" |
+            jq -r '[.[] | select(startswith("SIMULATION_MACHINE_AUTHENTICATION_CONFIG="))] |
+                if length == 1 then .[0] | sub("^[^=]*="; "") elif length == 0 then "" else error("duplicate machine authentication configuration") end') || return 1
+        expected_auth_config=
+        if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+            expected_auth_config="$machine_controller_auth_dir/runtime-auth.toml"
+        fi
+        if [ "$existing_auth_config" != "$expected_auth_config" ]; then
+            echo "$container has a different machine authentication mode; stop it before changing retained BAS mode" >&2
             return 1
         fi
         return 0
@@ -1144,6 +1331,13 @@ start_machine_container() {
         set -- "$@" -v "$business_state_dir:/var/lib/zpr-business"
     fi
     if [ -n "$machine_network" ]; then set -- "$@" --network "$machine_network"; fi
+    if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+        for endpoint_dir in "$machine_controller_auth_dir" "$machine_workload_auth_dir"; do
+            for auth_file in runtime-auth.toml runtime-auth.key runtime-auth-ca.pem; do
+                set -- "$@" -v "$endpoint_dir/$auth_file:$endpoint_dir/$auth_file:ro"
+            done
+        done
+    fi
     set -- "$@" \
         --privileged --device /dev/net/tun \
         --label zpr.simulator=true \
@@ -1159,7 +1353,11 @@ start_machine_container() {
         -e "SIMULATION_RUNTIME_GENERATION=$machine_generation" \
         -v "$MACHINE_WORKLOAD_DIR/controller:/usr/local/bin/zpr-machine-controller:ro" \
         -v "$MACHINE_CERT_DIR/$machine:/run/zpr-machine:ro" \
-        -v "$MACHINE_WORKLOAD_DIR:/opt/zpr-workloads:ro" \
+        -v "$MACHINE_WORKLOAD_DIR:/opt/zpr-workloads:ro"
+    if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+        set -- "$@" -e "SIMULATION_MACHINE_AUTHENTICATION_CONFIG=$machine_controller_auth_dir/runtime-auth.toml"
+    fi
+    set -- "$@" \
         "$MACHINE_IMAGE" \
         /bin/sh -c 'mkdir -p /run/zpr-workloads && exec /usr/local/bin/zpr-machine-controller "$@"' zpr-machine \
         -mode machine-controller -machine-id "$machine" \
@@ -1168,8 +1366,10 @@ start_machine_container() {
         -client-cert /run/zpr-machine/client.crt \
         -client-key /run/zpr-machine/client.key \
         -zpr-ph /opt/zpr-workloads/ph \
-        -zpr-bootstrap-key "/opt/zpr-workloads/machine-controller-$machine.key" \
         -zpr-node-addr "$machine_node_address"
+    if [ -z "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+        set -- "$@" -zpr-bootstrap-key "/opt/zpr-workloads/machine-controller-$machine.key"
+    fi
     "$@" >/dev/null
     if [ "$machine_runtime_driver" = linux-one-node ]; then
         docker exec "$container" ip route replace 10.0.0.0/8 via "$RIG_IP"
@@ -1220,6 +1420,14 @@ start_zpr_machine_control_service() {
     proxy_log="$service_dir/proxy.log"
     key_dir=/work/.local-runtime/linux-integration/pregen/machine-control
     resolve_machine_runtime
+    if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then machine_authentication_preflight; fi
+    callback_auth_option=--bootstrap-key
+    callback_auth_path="$service_dir/simulator-control.key"
+    if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+        callback_auth_dir=$(machine_authentication_endpoint_dir velocity-simulator-control)
+        callback_auth_option=--config-file
+        callback_auth_path="$callback_auth_dir/runtime-auth.toml"
+    fi
     if [ "$machine_runtime_driver" = docker-multinode ]; then
         node_container="$machine_organization-node0"
         if [ "$machine_organization" = northstar ] &&
@@ -1274,13 +1482,29 @@ PY
         service_socket="$service_dir/control.sock"
         key_dir="$RUNTIME_DIR/linux-integration/pregen/machine-control"
         docker exec "$node_container" mkdir -p "$service_dir"
-        if ! docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
+        callback_auth_matches=no
+        if docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
+            callback_processes=$(docker exec "$node_container" ps -eo args)
+            if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+                case " $callback_processes " in
+                    *" --config-file $callback_auth_path "*) callback_auth_matches=yes ;;
+                esac
+            else
+                callback_auth_matches=yes
+            fi
+        fi
+        if [ "$callback_auth_matches" != yes ]; then
             stop_multinode_control_processes "$node_container" adapter
             stop_multinode_control_processes "$node_container" proxy
-            docker cp "$key_dir/simulator-control.key" "$node_container:$service_dir/simulator-control.key"
+            if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+                stage_machine_authentication_endpoint_in_container "$node_container" velocity-simulator-control
+            else
+                docker cp "$key_dir/simulator-control.key" "$node_container:$service_dir/simulator-control.key"
+            fi
             docker exec -d "$node_container" sh -c \
-                'exec env ZPR_ADAPTER_SERVICES=SimulatorControlService /app/bin/ph adapter --logging all=INFO --control-path "$1" --capture-path "$2" --self-addr 0.0.0.0:0 --ca-file /conf/include/auth-ca.crt --bootstrap-key "$3/simulator-control.key" --name simulator-control --km-impl noise --tun-if tun5 --node-addr "$4:5000" --zpr-addr fd5a:5052:adda:1:ffff:ffff:ffff:fffe >>"$5" 2>&1' \
-                machine-control-service "$service_socket" "$service_dir/control-cap.sock" "$service_dir" "$node_ip" "$service_dir/adapter.log"
+                'exec env ZPR_ADAPTER_SERVICES=SimulatorControlService /app/bin/ph adapter --logging all=INFO --control-path "$1" --capture-path "$2" --self-addr 0.0.0.0:0 --ca-file /conf/include/auth-ca.crt "$6" "$7" --name simulator-control --km-impl noise --tun-if tun5 --node-addr "$4:5000" --zpr-addr fd5a:5052:adda:1:ffff:ffff:ffff:fffe >>"$5" 2>&1' \
+                machine-control-service "$service_socket" "$service_dir/control-cap.sock" "$service_dir" "$node_ip" "$service_dir/adapter.log" \
+                "$callback_auth_option" "$callback_auth_path"
             attempts=0
             while [ "$attempts" -lt 90 ]; do
                 if docker exec "$node_container" /app/bin/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
@@ -1325,9 +1549,13 @@ PY
     docker cp "$MACHINE_CONTROL_PROXY_BIN" "$SIMULATION_CONTAINER:$proxy_in_rig"
     docker exec "$SIMULATION_CONTAINER" pkill -TERM -f '[p]h adapter.*--name simulator-control' 2>/dev/null || true
     docker exec "$SIMULATION_CONTAINER" pkill -TERM -f '[z]pr-machine-control-proxy-linux-arm64' 2>/dev/null || true
+    if [ -n "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+        stage_machine_authentication_endpoint_in_container "$SIMULATION_CONTAINER" velocity-simulator-control
+    fi
     docker exec -d "$SIMULATION_CONTAINER" sh -c \
-        'mkdir -p "$1"; exec ip netns exec zpr-vs env ZPR_ADAPTER_SERVICES=SimulatorControlService /tmp/zpr-core-target/debug/ph adapter --logging all=INFO --control-path "$2" --capture-path "$3" --self-addr 0.0.0.0:0 --ca-file "$4/ca.crt" --bootstrap-key "$5/simulator-control.key" --name simulator-control --km-impl noise --tun-if tun5 --node-addr 10.0.0.1:5000 --zpr-addr fd5a:5052:adda:1:ffff:ffff:ffff:fffe >>"$6" 2>&1' \
-        machine-control-service "$service_dir" "$service_socket" "$service_dir/control-cap.sock" "$rig_dir" "$key_dir" "$service_log"
+        'mkdir -p "$1"; exec ip netns exec zpr-vs env ZPR_ADAPTER_SERVICES=SimulatorControlService /tmp/zpr-core-target/debug/ph adapter --logging all=INFO --control-path "$2" --capture-path "$3" --self-addr 0.0.0.0:0 --ca-file "$4/ca.crt" "$7" "$8" --name simulator-control --km-impl noise --tun-if tun5 --node-addr 10.0.0.1:5000 --zpr-addr fd5a:5052:adda:1:ffff:ffff:ffff:fffe >>"$6" 2>&1' \
+        machine-control-service "$service_dir" "$service_socket" "$service_dir/control-cap.sock" "$rig_dir" "$service_log" \
+        "$key_dir" "$callback_auth_option" "$callback_auth_path"
     attempts=0
     while [ "$attempts" -lt 45 ]; do
         if docker exec "$SIMULATION_CONTAINER" /tmp/zpr-core-target/debug/ph-cli -p "$service_socket" link show 2>/dev/null | grep -q '(Active)'; then
@@ -1413,11 +1641,24 @@ build_arm64_machine_workload_tools() {
     cp "$PROJECT_ROOT/zpr-core/target/linux-arm64-machine-tools/release/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
 }
 
+prepare_machine_authentication_workload_configs() {
+    machine_retained_authentication_enabled || return 0
+    authentication_dir="$MACHINE_WORKLOAD_DIR/authentication"
+    mkdir -p "$authentication_dir"
+    chmod 700 "$authentication_dir"
+    cp "$(machine_authentication_endpoint_dir velocity-machine-03-finance-client)/runtime-auth.toml" \
+        "$authentication_dir/finance-client.toml"
+    cp "$(machine_authentication_endpoint_dir velocity-machine-05-echo-service)/runtime-auth.toml" \
+        "$authentication_dir/echo-service.toml"
+    chmod 600 "$authentication_dir/finance-client.toml" "$authentication_dir/echo-service.toml"
+}
+
 prepare_machine_workloads() {
     workload_arch=$1
     resolve_machine_runtime
     mkdir -p "$MACHINE_WORKLOAD_DIR"
     chmod 700 "$MACHINE_WORKLOAD_DIR"
+    machine_authentication_preflight
     if [ "$machine_runtime_driver" = docker-multinode ] &&
         [ "$(jq -r '.business_simulation // false' "$machine_profile")" = true ]; then
         . "$SCRIPT_DIR/business-workloads.sh"
@@ -1426,9 +1667,16 @@ prepare_machine_workloads() {
             chmod 600 "$MACHINE_WORKLOAD_DIR/$business_name.key"
         done
     fi
-    workload_runtime_marker="$machine_runtime_driver:$machine_organization:$workload_arch"
+    workload_auth_mode=bootstrap
+    if machine_retained_authentication_enabled; then
+        workload_auth_mode="retained-bas:$SIMULATION_MACHINE_AUTHENTICATION_DIR"
+    fi
+    workload_runtime_marker="$machine_runtime_driver:$machine_organization:$workload_arch:$workload_auth_mode"
     if [ "$(cat "$MACHINE_WORKLOAD_DIR/.runtime" 2>/dev/null || true)" = "$workload_runtime_marker" ] &&
-        [ -x "$MACHINE_WORKLOAD_DIR/ph" ] && [ -x "$MACHINE_WORKLOAD_DIR/ph-cli" ]; then
+        [ -x "$MACHINE_WORKLOAD_DIR/ph" ] && [ -x "$MACHINE_WORKLOAD_DIR/ph-cli" ] &&
+        { ! machine_retained_authentication_enabled ||
+            { [ -f "$MACHINE_WORKLOAD_DIR/authentication/finance-client.toml" ] &&
+              [ -f "$MACHINE_WORKLOAD_DIR/authentication/echo-service.toml" ]; }; }; then
         stale_source=$(find "$PROJECT_ROOT/zpr-core" \
             -type d \( -name .git -o -name target \) -prune -o \
             -type f \( -name '*.rs' -o -name Cargo.toml -o -name Cargo.lock -o -name build.rs -o -name '*.capnp' \) \
@@ -1439,6 +1687,7 @@ prepare_machine_workloads() {
         scope_running=$(docker ps --filter "label=zpr.organization.id=$machine_organization" --filter "label=zpr.runtime.generation=$machine_generation" --filter label=zpr.machine.id -q)
         [ -z "$scope_running" ] || { echo "machine tools changed while this runtime is in use; activate a new generation" >&2; return 1; }
     fi
+    rm -rf "$MACHINE_WORKLOAD_DIR/authentication"
     rm -f "$MACHINE_WORKLOAD_DIR"/*
     rm -f "$MACHINE_WORKLOAD_DIR/.runtime"
     if [ "$machine_runtime_driver" = docker-multinode ]; then
@@ -1457,14 +1706,17 @@ prepare_machine_workloads() {
                 cp "$runtime_root/business-keys/$business_name.key" "$MACHINE_WORKLOAD_DIR/$business_name.key"
             done
         fi
-        for file in client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key internet-gateway-rsa.key; do
-            cp "$pregen/$file" "$MACHINE_WORKLOAD_DIR/$file"
-        done
-        for number in $(seq -w 1 20); do
-            cp "$pregen/machine-control/machine-$number.key" "$MACHINE_WORKLOAD_DIR/machine-controller-machine-$number.key"
-        done
+        if [ -z "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+            for file in client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key internet-gateway-rsa.key; do
+                cp "$pregen/$file" "$MACHINE_WORKLOAD_DIR/$file"
+            done
+            for number in $(seq -w 1 20); do
+                cp "$pregen/machine-control/machine-$number.key" "$MACHINE_WORKLOAD_DIR/machine-controller-machine-$number.key"
+            done
+            chmod 600 "$MACHINE_WORKLOAD_DIR"/*.key
+        fi
+        prepare_machine_authentication_workload_configs
         chmod 700 "$MACHINE_WORKLOAD_DIR/ph" "$MACHINE_WORKLOAD_DIR/ph-cli"
-        chmod 600 "$MACHINE_WORKLOAD_DIR"/*.key
         printf '%s\n' "$workload_runtime_marker" > "$MACHINE_WORKLOAD_DIR/.runtime"
         return 0
     fi
@@ -1482,15 +1734,22 @@ prepare_machine_workloads() {
         docker cp "$SIMULATION_CONTAINER:/tmp/zpr-core-target/debug/ph" "$MACHINE_WORKLOAD_DIR/ph"
         docker cp "$SIMULATION_CONTAINER:/tmp/zpr-core-target/debug/ph-cli" "$MACHINE_WORKLOAD_DIR/ph-cli"
     fi
-    for file in ca.crt client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key internet-gateway-rsa.key; do
+    files=ca.crt
+    if [ -z "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+        files="$files client-finance-rsa.key client-operations-rsa.key client-telemetry-rsa.key service-echo-rsa.key service-metrics-rsa.key internet-gateway-rsa.key"
+    fi
+    for file in $files; do
         docker cp "$SIMULATION_CONTAINER:$rig_dir/$file" "$MACHINE_WORKLOAD_DIR/$file"
     done
-    for number in $(seq -w 1 20); do
-        machine="machine-$number"
-        docker cp "$SIMULATION_CONTAINER:/work/.local-runtime/linux-integration/pregen/machine-control/$machine.key" "$MACHINE_WORKLOAD_DIR/machine-controller-$machine.key"
-    done
+    if [ -z "${SIMULATION_MACHINE_AUTHENTICATION_DIR:-}" ]; then
+        for number in $(seq -w 1 20); do
+            machine="machine-$number"
+            docker cp "$SIMULATION_CONTAINER:/work/.local-runtime/linux-integration/pregen/machine-control/$machine.key" "$MACHINE_WORKLOAD_DIR/machine-controller-$machine.key"
+        done
+        chmod 600 "$MACHINE_WORKLOAD_DIR"/*.key
+    fi
+    prepare_machine_authentication_workload_configs
     chmod 700 "$MACHINE_WORKLOAD_DIR/ph" "$MACHINE_WORKLOAD_DIR/ph-cli"
-    chmod 600 "$MACHINE_WORKLOAD_DIR"/*.key
     docker exec "$SIMULATION_CONTAINER" sh -lc "set -eu
         if ! command -v iptables >/dev/null 2>&1; then
             echo 'iptables is required for the machine underlay bridge' >&2
@@ -1790,6 +2049,10 @@ status_stack() {
         echo "machine-$number: container $state"
     done
 }
+
+if [ "${ZPR_DASHBOARD_STACK_LIBRARY:-0}" = 1 ]; then
+    return 0
+fi
 
 case "${1:-start}" in
     simulator-start) start_stack ;;

@@ -23,27 +23,32 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"neboagency.com/zpr-dashborad/internal/controlservice/adapterlogs"
+	"neboagency.com/zpr-dashborad/internal/networkmetadata"
 )
 
 const evaluationBanner = "EVALUATION ONLY — NOT PRODUCTION SUPPORTED. Local administrators only; no Simulator dependency."
 const evaluationLDAPImage = "osixia/openldap@sha256:0de3850635911109f0daf8f5957808ec4f4eb827fbaaa339100b5f1bab925745"
+const evaluationLDAPAdminImage = "sha256:85801624264f5b5a7771c5f12fbbc032edb9dedd6bc4449ef01381950bb7dedc"
 const evaluationDexImage = "ghcr.io/dexidp/dex@sha256:5d0656fce7d453c0e3b2706abf40c0d0ce5b371fb0b73b3cf714d05f35fa5f86"
 const evaluationLogImage = "public.ecr.aws/zinclabs/openobserve@sha256:d4a878fac1f6c56003764f7f2a1625668917388f167e222c8c810de3f54c56ba"
 
 type evaluationConfig struct {
-	BrowserIP     string `json:"browser_ip,omitempty"`
-	DexImage      string `json:"oidc_image"`
-	DexPlatform   string `json:"oidc_platform"`
-	OIDCPort      int    `json:"oidc_port"`
-	SimulatorPort int    `json:"simulator_port,omitempty"`
-	ScenarioDemo  bool   `json:"scenario_demo,omitempty"`
-	LDAPImage     string `json:"ldap_image"`
-	LogImage      string `json:"logging_image"`
-	LogPlatform   string `json:"logging_platform"`
-	RoomPort      int    `json:"room_port"`
-	ServicePort   int    `json:"service_port"`
-	LDAPPort      int    `json:"ldap_port"`
-	LogPort       int    `json:"logging_port"`
+	OrganizationID string `json:"organization_id,omitempty"`
+	BrowserIP      string `json:"browser_ip,omitempty"`
+	DexImage       string `json:"oidc_image"`
+	DexPlatform    string `json:"oidc_platform"`
+	OIDCPort       int    `json:"oidc_port"`
+	LDAPAdminImage string `json:"ldap_admin_image"`
+	LDAPAdminPort  int    `json:"ldap_admin_port"`
+	SimulatorPort  int    `json:"simulator_port,omitempty"`
+	ScenarioDemo   bool   `json:"scenario_demo,omitempty"`
+	LDAPImage      string `json:"ldap_image"`
+	LogImage       string `json:"logging_image"`
+	LogPlatform    string `json:"logging_platform"`
+	RoomPort       int    `json:"room_port"`
+	ServicePort    int    `json:"service_port"`
+	LDAPPort       int    `json:"ldap_port"`
+	LogPort        int    `json:"logging_port"`
 	// Optional loopback Visa Service; zero/false values keep earlier inventories valid.
 	VisaService bool `json:"visa_service,omitempty"`
 	VSAdminPort int  `json:"vs_admin_port,omitempty"`
@@ -103,10 +108,12 @@ func parseEvaluationNodeLocation(value string) (*evaluationNodeLocation, error) 
 
 // Runtime-only executables are not frozen: upgrading them keeps install identity.
 type evaluationRuntimeOptions struct {
-	ControlRoomBinary string
-	VisaServiceBinary string
-	ValkeyServer      string
-	DataPlaneImage    string
+	NetworkName          string
+	ControlRoomBinary    string
+	VisaServiceBinary    string
+	ValkeyServer         string
+	DataPlaneImage       string
+	OperatorServicesFile string
 }
 
 type evaluationInventory struct {
@@ -127,14 +134,17 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 	config := evaluationConfig{}
 	flags.StringVar(&config.BrowserIP, "browser-ip", "", "optional explicit private IPv4 address for browser HTTPS and OIDC; localhost redirects to this address")
 	flags.StringVar(&config.LDAPImage, "ldap-image", evaluationLDAPImage, "current packaged OpenLDAP immutable image")
+	flags.StringVar(&config.LDAPAdminImage, "ldap-admin-image", evaluationLDAPAdminImage, "packaged phpLDAPadmin immutable image ID")
 	flags.StringVar(&config.LogImage, "logging-image", evaluationLogImage, "current packaged OpenObserve immutable image")
 	flags.StringVar(&config.LogPlatform, "logging-platform", "linux/arm64", "platform of the current packaged OpenObserve image (linux/amd64 requires a matching image override)")
 	flags.StringVar(&config.DexImage, "oidc-image", evaluationDexImage, "current packaged Dex immutable image")
 	flags.StringVar(&config.DexPlatform, "oidc-platform", "linux/arm64", "platform of the current packaged Dex image")
 	flags.IntVar(&config.OIDCPort, "oidc-port", 15556, "named-operator OIDC HTTPS port")
+	flags.IntVar(&config.LDAPAdminPort, "ldap-admin-port", 18789, "loopback-only phpLDAPadmin HTTP port")
 	flags.IntVar(&config.SimulatorPort, "simulator-port", 0, "optional separate Simulator HTTPS callback port; registers a client only, never starts or requires Simulator")
 	flags.BoolVar(&config.ScenarioDemo, "scenario-demo", false, "enable independent budget authority and the bounded paired endpoint scenario (requires Simulator callback, data plane, endpoints and delegation)")
 	flags.IntVar(&config.RoomPort, "room-port", 18787, "Control Room HTTPS port")
+	flags.StringVar(&config.OrganizationID, "organization-id", "", "explicit operator organization ID; empty retains the install-derived evaluation ID")
 	flags.IntVar(&config.ServicePort, "service-port", 18790, "loopback Control-Service mTLS port")
 	flags.IntVar(&config.LDAPPort, "ldap-port", 11636, "loopback starter LDAPS port")
 	flags.IntVar(&config.LogPort, "logging-port", 15080, "loopback OpenObserve HTTPS port")
@@ -166,7 +176,9 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		return nil
 	})
 	runtime := evaluationRuntimeOptions{}
+	flags.StringVar(&runtime.NetworkName, "network-name", "", "optional non-unique network display name; runtime-only, does not change frozen installation identity")
 	flags.StringVar(&runtime.ControlRoomBinary, "control-room-binary", "", "absolute path of a prebuilt production Control Room/Control-Service executable; skips the source build")
+	flags.StringVar(&runtime.OperatorServicesFile, "operator-services-file", "", "optional protected independent operator service bindings JSON; never a Simulator profile")
 	flags.StringVar(&runtime.DataPlaneImage, "data-plane-image", evaluationDataPlaneImage, "with -data-plane: local data-plane image")
 	flags.StringVar(&runtime.VisaServiceBinary, "vs-binary", "", "with -visa-service: absolute path of a built vs executable (cargo build -p vs)")
 	flags.StringVar(&runtime.ValkeyServer, "valkey-server", "valkey-server", "with -visa-service: valkey-server executable name or absolute path")
@@ -174,6 +186,10 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		return 2
+	}
+	if err := (networkmetadata.Metadata{Name: runtime.NetworkName}).Validate(); err != nil {
+		fmt.Fprintln(stderr, err)
 		return 2
 	}
 	visaOnly, nativeOnly, planeOnly := false, false, false
@@ -263,13 +279,20 @@ func runEvaluation(args []string, stdout, stderr io.Writer) int {
 }
 
 func (config evaluationConfig) validate() error {
+	if config.OrganizationID != "" {
+		if len(config.OrganizationID) > 64 || strings.Trim(config.OrganizationID, "abcdefghijklmnopqrstuvwxyz0123456789-") != "" ||
+			strings.HasPrefix(config.OrganizationID, "-") || strings.HasSuffix(config.OrganizationID, "-") {
+			return errors.New("organization-id must be a lowercase alphanumeric identifier with internal hyphens, at most 64 characters")
+		}
+	}
 	if config.BrowserIP != "" {
 		ip := net.ParseIP(config.BrowserIP)
 		if ip == nil || ip.To4() == nil || !ip.IsPrivate() || ip.String() != config.BrowserIP {
 			return errors.New("browser-ip must be an explicit canonical private IPv4 address, not a wildcard, loopback address or hostname")
 		}
 	}
-	if !immutableImage.MatchString(config.DexImage) || !immutableImage.MatchString(config.LDAPImage) || !immutableImage.MatchString(config.LogImage) {
+	if !immutableImage.MatchString(config.DexImage) || !immutableImage.MatchString(config.LDAPImage) ||
+		!immutableImage.MatchString(config.LDAPAdminImage) || !immutableImage.MatchString(config.LogImage) {
 		return errors.New("evaluation images must be immutable image IDs or repository@sha256 digests")
 	}
 	if config.DexPlatform != "linux/amd64" && config.DexPlatform != "linux/arm64" {
@@ -322,7 +345,7 @@ func (config evaluationConfig) validate() error {
 }
 
 func (config evaluationConfig) ports() []int {
-	ports := []int{config.OIDCPort, config.RoomPort, config.ServicePort, config.LDAPPort, config.LogPort}
+	ports := []int{config.OIDCPort, config.RoomPort, config.ServicePort, config.LDAPPort, config.LDAPAdminPort, config.LogPort}
 	if config.VisaService {
 		ports = append(ports, config.VSAdminPort)
 		if !config.DataPlane {
@@ -488,7 +511,7 @@ func readEvaluation(output string, config evaluationConfig) (evaluationInventory
 			return inventory, errors.New("operator registry missing or unprotected; refuse reseed")
 		}
 	}
-	required := []string{"ca.pem", "ca-key.pem", "server-chain.pem", "server-key.pem", "client-chain.pem", "client-key.pem", "ldap-admin.secret", "ldap-reader.secret", "logging-admin.secret", "openobserve.env", "slapd.conf", "directory.ldif", "serve-directory.sh", "compose.json", "dex.json", "operator-admin.secret", "oidc-room-client.secret", "EVALUATION.txt", "source-registration.json"}
+	required := []string{"ca.pem", "ca-key.pem", "server-chain.pem", "server-key.pem", "client-chain.pem", "client-key.pem", "ldap-admin.secret", "ldap-reader.secret", "ldap-admin-config.php", "logging-admin.secret", "openobserve.env", "slapd.conf", "directory.ldif", "serve-directory.sh", "compose.json", "dex.json", "operator-admin.secret", "oidc-room-client.secret", "EVALUATION.txt", "source-registration.json"}
 	if config.SimulatorPort != 0 {
 		required = append(required, "oidc-simulator-client.secret")
 	}
@@ -530,9 +553,9 @@ func generateEvaluation(state string, config evaluationConfig, now time.Time) (m
 		return nil, inventory, err
 	}
 	inventory.InstallID = hex.EncodeToString(random)
-	var addresses []net.IP
+	addresses := []net.IP{net.ParseIP("127.0.0.1")}
 	if config.BrowserIP != "" {
-		addresses = []net.IP{net.ParseIP(config.BrowserIP)}
+		addresses = append(addresses, net.ParseIP(config.BrowserIP))
 	}
 	ca, key, caPEM, caKey, err := certificateWithOrganization("ZPR evaluation-only CA", "localhost", "ZPR EVALUATION ONLY", now, nil, nil, x509.ExtKeyUsageServerAuth, addresses...)
 	if err != nil {
@@ -651,6 +674,25 @@ fi
 test -s /var/lib/ldap/data.mdb
 exec slapd -f /etc/zpr/evaluation/slapd.conf -h ldaps://0.0.0.0:1636 -d 0
 `)
+	ldapUISecret := make([]byte, 24)
+	if _, err := rand.Read(ldapUISecret); err != nil {
+		return nil, inventory, err
+	}
+	files["ldap-admin-config.php"] = fmt.Appendf(nil, `<?php
+$config->custom->session['blowfish'] = '%s';
+if (!ldap_set_option(null, LDAP_OPT_X_TLS_CACERTFILE, '/etc/zpr/evaluation/ca.pem')
+    || !ldap_set_option(null, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_DEMAND)) {
+    throw new RuntimeException('Unable to configure evaluation LDAP TLS trust');
+}
+$servers = new Datastore();
+$servers->newServer('ldap_pla');
+$servers->setValue('server','name','ZPR evaluation directory');
+$servers->setValue('server','host','ldaps://127.0.0.1:%d');
+$servers->setValue('server','tls_cacert','/etc/zpr/evaluation/ca.pem');
+$servers->setValue('login','auth_type','session');
+$servers->setValue('login','bind_id','cn=admin,%s');
+$servers->setValue('login','bind_pass','');
+`, hex.EncodeToString(ldapUISecret), config.LDAPPort, baseDN)
 	files["openobserve.env"] = fmt.Appendf(nil, `ZO_ROOT_USER_EMAIL=admin@evaluation.invalid
 ZO_ROOT_USER_PASSWORD=%s
 ZO_DATA_DIR=/data
@@ -682,6 +724,20 @@ ZO_LOG_LEVEL=warn
 	}
 	ldap := service(config.LDAPImage, "ldap-state", "/var/lib/ldap", config.LDAPPort, 1636, ldapFiles...)
 	ldap["entrypoint"] = []string{"/bin/sh", "/etc/zpr/evaluation/serve-directory.sh"}
+	ldapAdmin := map[string]any{
+		"image": config.LDAPAdminImage, "platform": "linux/amd64", "pull_policy": "never",
+		"network_mode": "host", "user": fmt.Sprintf("%d:%d", os.Geteuid(), os.Getegid()), "read_only": true,
+		"cap_drop": []string{"ALL"}, "security_opt": []string{"no-new-privileges:true"},
+		"volumes": []map[string]any{
+			mount("ca.pem", "/etc/zpr/evaluation/ca.pem", true),
+			mount("ldap-admin-config.php", "/etc/phpldapadmin/config.php", true),
+		},
+		"tmpfs":       []string{fmt.Sprintf("/tmp:rw,noexec,nosuid,size=32m,uid=%d,gid=%d", os.Geteuid(), os.Getegid())},
+		"environment": map[string]string{"ZPR_LDAP_UI_PORT": strconv.Itoa(config.LDAPAdminPort)},
+		"depends_on":  map[string]any{"ldap": map[string]string{"condition": "service_started"}},
+		"pids_limit":  128, "mem_limit": "256m", "cpus": 1,
+		"logging": map[string]string{"driver": "none"},
+	}
 	logging := service(config.LogImage, "logging-state", "/data", config.LogPort, 5080, "server-chain.pem", "server-key.pem")
 	logging["platform"] = config.LogPlatform
 	logging["env_file"] = []string{"./openobserve.env"}
@@ -702,7 +758,7 @@ ZO_LOG_LEVEL=warn
 		"issuer":           config.browserOrigin(config.OIDCPort),
 		"storage":          map[string]any{"type": "sqlite3", "config": map[string]string{"file": "/var/lib/dex/dex.db"}},
 		"web":              map[string]string{"https": "0.0.0.0:5556", "tlsCert": "/etc/zpr/evaluation/server-chain.pem", "tlsKey": "/etc/zpr/evaluation/server-key.pem"},
-		"oauth2":           map[string]any{"responseTypes": []string{"code"}, "passwordConnector": "local"},
+		"oauth2":           map[string]any{"responseTypes": []string{"code"}, "passwordConnector": "local", "skipApprovalScreen": true},
 		"enablePasswordDB": true,
 		"staticClients":    []map[string]any{{"id": "zpr-control-room", "name": "ZPR Evaluation Control Room", "secret": string(files["oidc-room-client.secret"]), "redirectURIs": []string{config.browserOrigin(config.RoomPort) + "/auth/operator/callback"}}},
 		"staticPasswords":  staticPasswords,
@@ -731,13 +787,13 @@ ZO_LOG_LEVEL=warn
 	}
 	dex["platform"] = config.DexPlatform
 	dex["entrypoint"] = []string{"dex", "serve", "/etc/zpr/evaluation/dex.json"}
-	compose := map[string]any{"name": "zpr-evaluation-" + inventory.InstallID, "services": map[string]any{"ldap": ldap, "logging": logging, "oidc": dex}}
+	compose := map[string]any{"name": "zpr-evaluation-" + inventory.InstallID, "services": map[string]any{"ldap": ldap, "ldap-admin": ldapAdmin, "logging": logging, "oidc": dex}}
 	data, err = json.MarshalIndent(compose, "", "  ")
 	if err != nil {
 		return nil, inventory, err
 	}
 	files["compose.json"] = append(data, '\n')
-	files["EVALUATION.txt"] = []byte(evaluationBanner + "\nOpenObserve AGPL-3.0 accepted for evaluation; 7-day retention; admin-only loopback access.\nRegistration and lifecycle logging use ordinary production contracts. No policy enforcement or production install is claimed.\n")
+	files["EVALUATION.txt"] = []byte(evaluationBanner + "\nOpenObserve AGPL-3.0 accepted for evaluation; 7-day retention; admin-only loopback access. phpLDAPadmin is local-only and must be reached through an SSH tunnel.\nRegistration and lifecycle logging use ordinary production contracts. No policy enforcement or production install is claimed.\n")
 	if config.BrowserIP != "" {
 		files["EVALUATION.txt"] = append(files["EVALUATION.txt"], []byte("Browser HTTPS/OIDC explicitly enabled at "+config.BrowserIP+"; restrict access to intended clients. Localhost Room redirects to the canonical network origin.\n")...)
 	}

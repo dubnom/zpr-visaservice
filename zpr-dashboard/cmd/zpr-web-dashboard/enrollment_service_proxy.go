@@ -21,13 +21,39 @@ func configuredEnrollmentServiceProxy() (http.Handler, func() error, bool, error
 	key := os.Getenv("ZPR_ENROLLMENT_CLIENT_KEY_FILE")
 	ca := os.Getenv("ZPR_ENROLLMENT_SERVICE_CA_FILE")
 	serverName := os.Getenv("ZPR_ENROLLMENT_SERVICE_TLS_SERVER_NAME")
-	if endpoint == "" && cert == "" && key == "" && ca == "" && serverName == "" {
+	delegationAudience := os.Getenv("ZPR_ENROLLMENT_DELEGATION_AUDIENCE")
+	if endpoint == "" && cert == "" && key == "" && ca == "" && serverName == "" && delegationAudience == "" {
 		return nil, nil, false, nil
 	}
 	fail := func(err error) (http.Handler, func() error, bool, error) { return nil, nil, true, err }
-	for _, name := range []string{"ZPR_ENROLLMENT_CONFIG_FILE", "ZPR_ENROLLMENT_DATABASE_FILE", "ZPR_OPERATOR_DELEGATION_TRUST_FILE"} {
+	for _, name := range []string{"ZPR_ENROLLMENT_CONFIG_FILE", "ZPR_ENROLLMENT_DATABASE_FILE"} {
 		if os.Getenv(name) != "" {
 			return fail(errors.New("remote enrollment cannot be combined with a local registry, catalog or delegation trust"))
+		}
+		trustPath := os.Getenv("ZPR_OPERATOR_DELEGATION_TRUST_FILE")
+		if trustPath != "" && delegationAudience == "" {
+			return fail(errors.New("remote enrollment cannot be combined with implicit local delegation trust; configure its explicit logical delegation audience"))
+		}
+		if delegationAudience != "" {
+			audience, err := url.Parse(delegationAudience)
+			if err != nil || audience.Scheme != "https" || audience.Hostname() == "" || audience.User != nil ||
+				delegationAudience != "https://"+audience.Host || trustPath == "" {
+				return fail(errors.New("remote enrollment logical delegation requires an exact HTTPS operator audience and explicit shared trust"))
+			}
+			data, err := readOperatorFile(trustPath, 65536, false)
+			if err != nil {
+				return fail(err)
+			}
+			var trust operatordelegation.Config
+			if err := decodeOperatorConfig(data, &trust); err != nil {
+				return fail(err)
+			}
+			if err := trust.Validate(); err != nil {
+				return fail(err)
+			}
+			if trust.Audience != delegationAudience {
+				return fail(errors.New("remote enrollment logical audience differs from the shared operator delegation trust"))
+			}
 		}
 	}
 	if endpoint == "" || cert == "" || key == "" || ca == "" {

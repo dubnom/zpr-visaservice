@@ -5639,7 +5639,7 @@ test("Simulator trusted source page uses the same read-only browser", async ({ p
 test.describe("Simulator operator login UI", () => {
   test.use({ ignoreHTTPSErrors: true });
 
-  test("shows scopes and signs out with CSRF", async ({ page, secureAppURL: appURL }) => {
+  test("shows concise identity without technical scopes and signs out with CSRF", async ({ page, secureAppURL: appURL }) => {
     let signedIn = true;
     let logoutCSRF = "";
     await page.route("**/auth/operator/config", (route) => route.fulfill({ json: { enabled: true } }));
@@ -5654,10 +5654,11 @@ test.describe("Simulator operator login UI", () => {
     });
     await page.goto(appURL + "/scenarios.html");
     await expect(page.locator("#operator-login-status")).toHaveText("User: Simulator Operator");
-    await expect(page.locator("#operator-scope")).toContainText("Configured organizations: *");
-    await expect(page.locator("#operator-scope")).toContainText("scenario.run");
-    await expect(page.locator("#operator-scope")).toContainText("simulator@example.test");
-    await expect(page.locator("#operator-scope")).not.toContainText("Enrollment actions");
+    await expect(page.locator("#operator-scope")).toHaveText("Signed in");
+    await expect(page.locator(".operator-login")).not.toContainText("https://identity.example");
+    await expect(page.locator(".operator-login")).not.toContainText("scenario.run");
+    await expect(page.locator(".operator-login")).not.toContainText("Configured organizations");
+    await expect(page.locator(".operator-login")).not.toContainText("simulator-operator");
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(page.locator("#operator-login-status")).toHaveText("Not signed in");
     expect(logoutCSRF).toBe("simulator-csrf-proof");

@@ -73,6 +73,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	runtimeBindIP := flags.String("runtime-bind-ip", "", "private IPv4 address for Control Room and Control-Service runtime bindings")
 	organizationID := flags.String("organization-id", "", "explicit organization ID for runtime operator grants")
 	organizationName := flags.String("organization-name", "", "explicit organization name for runtime configuration")
+	networkName := flags.String("network-name", "", "optional non-unique network display name; not a trust identity")
 	operatorIssuer := flags.String("operator-issuer", "", "exact verified issuer from a successful named IdP login")
 	operatorSubject := flags.String("operator-subject", "", "exact verified subject from a successful named IdP login")
 	operatorIdentityVerified := flags.Bool("operator-identity-verified", false, "confirm issuer and subject were verified from a successful named IdP login")
@@ -104,6 +105,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			BindIP:                   *runtimeBindIP,
 			OrganizationID:           *organizationID,
 			OrganizationName:         *organizationName,
+			NetworkName:              *networkName,
 			OperatorIssuer:           *operatorIssuer,
 			OperatorSubject:          *operatorSubject,
 			OperatorIdentityVerified: *operatorIdentityVerified,
@@ -119,7 +121,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if *identityInputDir != "" || *controlServiceOrigin != "" || *runtimeBindIP != "" ||
-		*organizationID != "" || *organizationName != "" || *operatorIssuer != "" || *operatorSubject != "" || *operatorIdentityVerified {
+		*organizationID != "" || *organizationName != "" || *networkName != "" || *operatorIssuer != "" || *operatorSubject != "" || *operatorIdentityVerified {
 		fmt.Fprintln(stderr, "zpr-lab-bootstrap: runtime configuration inputs require explicit -runtime-outputs")
 		return 2
 	}

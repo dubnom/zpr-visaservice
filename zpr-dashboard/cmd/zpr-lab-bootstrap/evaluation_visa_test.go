@@ -88,7 +88,7 @@ func TestEvaluationVisaServiceProtectedRender(t *testing.T) {
 	var document struct {
 		Services map[string]any `json:"services"`
 	}
-	if err := json.Unmarshal([]byte(read("compose.json")), &document); err != nil || len(document.Services) != 3 {
+	if err := json.Unmarshal([]byte(read("compose.json")), &document); err != nil || len(document.Services) != 4 {
 		t.Fatal("Visa Service must run natively, not as an extra container")
 	}
 	again, err := prepareEvaluation(state, config, time.Now().Add(time.Hour))
@@ -127,7 +127,7 @@ func TestEvaluationVisaServiceOptional(t *testing.T) {
 		}
 	}
 	env := strings.Join(evaluationEnvironment(state, inventory, "control-service"), "\n")
-	if strings.Contains(env, "ZPR_ADMIN_") || len(testEvaluationConfig().listenAddresses()) != 5 {
+	if strings.Contains(env, "ZPR_ADMIN_") || len(testEvaluationConfig().listenAddresses()) != 6 {
 		t.Fatal("Visa Service wiring without -visa-service")
 	}
 }

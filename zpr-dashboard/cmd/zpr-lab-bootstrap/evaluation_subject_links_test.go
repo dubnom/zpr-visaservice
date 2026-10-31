@@ -194,7 +194,7 @@ func TestEvaluationVisaServiceWithoutSubjectLinks(t *testing.T) {
 			t.Fatalf("%s has subject-link wiring without subject links", mode)
 		}
 	}
-	if len(testEvaluationVisaConfig().listenAddresses()) != 8 {
+	if len(testEvaluationVisaConfig().listenAddresses()) != 9 {
 		t.Fatal("disabled delivery port reserved")
 	}
 }

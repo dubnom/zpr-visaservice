@@ -241,8 +241,11 @@ func runSimulator(listen string) (runErr error) {
 		return err
 	}
 	if installs != nil {
+		if err := installs.run(context.Background()); err != nil {
+			return err
+		}
 		simulatorEvaluationInstallRegistry = installs
-		installs.run(context.Background())
+		defer installs.close()
 		endpointsHandler, workloadsHandler, installsHandler = installs.endpointsHandler(), installs.workloadsHandler(), installs
 	} else if dataPlaneEndpoints != nil {
 		go dataPlaneEndpoints.run(context.Background())
@@ -257,6 +260,7 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("POST /api/simulator/scenario-plans/budget-approval", simulatorScenarioBudgetApproval(security.auth, signer))
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-plans/budget-approval", simulatorScenarioBudgetApproval(security.auth, signer))
 	mux.HandleFunc("GET /simulator-navigation.json", handleSimulatorNavigationConfig)
+	mux.HandleFunc("GET /api/simulator/network", handleSimulatorNetworkMetadata)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenario-reset/status", resetHandler.ServeHTTP)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-reset/intents", resetHandler.ServeHTTP)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenario-reset/operations/{operation_id}", resetHandler.ServeHTTP)
@@ -332,6 +336,9 @@ func runSimulator(listen string) (runErr error) {
 		scenarioPlanHandler.resolveCurrentPolicy = func(
 			ctx context.Context, organizationID, targetID string,
 		) (simulatorRuntimePolicyEvidence, error) {
+			if simulatorEvaluationInstallRegistry != nil {
+				return currentSimulatorPolicyEvidence(ctx, organizationID, targetID)
+			}
 			current, err := policyStatusClient.current(ctx, organizationID, targetID)
 			if err != nil {
 				return simulatorRuntimePolicyEvidence{}, err
@@ -579,6 +586,21 @@ func handleSimulatorMachineSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if action == "start" || action == "stop" {
+		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+		defer cancel()
+		if output, handled, err := simulatorRetainedMachineAction(ctx, manifest, machineID, action); handled || err != nil {
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+			if action == "stop" {
+				simulatorSessions.clear(machineID)
+				simulatorControllers.clear(machineID)
+				simulatorMachineCommands.clear(machineID)
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"state": output})
+			return
+		}
 		command, commandErr := simulatorMachineLifecycleCommand(manifest, machineID, action)
 		if commandErr != nil {
 			http.Error(w, commandErr.Error(), http.StatusBadRequest)
@@ -1264,6 +1286,11 @@ func readControlRoomSnapshotWithContext(parent context.Context) (snapshot, error
 // Control Room snapshot when target has no service URL.
 func readOperatorSnapshot(parent context.Context, target simulatorOperatorTarget) (snapshot, error) {
 	var snapshotData snapshot
+	err := readOperatorJSON(parent, target, "/api/snapshot", &snapshotData)
+	return snapshotData, err
+}
+
+func readOperatorJSON(parent context.Context, target simulatorOperatorTarget, apiPath string, result any) error {
 	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
 	endpoint := strings.TrimRight(envOr("SIMULATOR_CONTROL_ROOM_URL", "http://127.0.0.1:8787"), "/")
@@ -1273,36 +1300,36 @@ func readOperatorSnapshot(parent context.Context, target simulatorOperatorTarget
 		u, err := url.Parse(serviceEndpoint)
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" ||
 			u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-			return snapshotData, errors.New("Simulator operator service must be an exact HTTPS origin")
+			return errors.New("Simulator operator service must be an exact HTTPS origin")
 		}
 		serverName := envOr("SIMULATOR_OPERATOR_SERVICE_TLS_SERVER_NAME", u.Hostname())
 		transport, transportErr := servicehttp.MutualTLSClientTransport(target.CertFile, target.KeyFile, target.CAFile, serverName)
 		if transportErr != nil {
-			return snapshotData, transportErr
+			return transportErr
 		}
 		defer transport.CloseIdleConnections()
 		client.Transport = transport
 		endpoint = serviceEndpoint
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/snapshot", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+apiPath, nil)
 	if err != nil {
-		return snapshotData, err
+		return err
 	}
 	if host := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_ROOM_HOST")); serviceEndpoint == "" && host != "" {
 		request.Host = host
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return snapshotData, err
+		return err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return snapshotData, fmt.Errorf("Operator snapshot endpoint returned %s", response.Status)
+		return fmt.Errorf("Operator endpoint returned %s", response.Status)
 	}
-	if err := json.NewDecoder(response.Body).Decode(&snapshotData); err != nil {
-		return snapshotData, err
+	if err := json.NewDecoder(response.Body).Decode(result); err != nil {
+		return err
 	}
-	return snapshotData, nil
+	return nil
 }
 
 func handleSimulatorActivity(w http.ResponseWriter, _ *http.Request) {
@@ -1340,6 +1367,11 @@ func simulatorStaticHandler(root fs.FS) http.Handler {
 	mux.HandleFunc("/agents.html", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/machine-logs.html", http.StatusFound)
 	})
+	for _, path := range []string{"/world.html", "/simulator-provisioning.html"} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/scenarios.html#simulate", http.StatusFound)
+		})
+	}
 	mux.HandleFunc("/activity.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(root, "activity.html", w) })
 	mux.HandleFunc("/machine-logs.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(root, "machine-logs.html", w) })
 	mux.HandleFunc("/trusted-source.html", func(w http.ResponseWriter, r *http.Request) { serveStaticPage(root, "trusted-source.html", w) })

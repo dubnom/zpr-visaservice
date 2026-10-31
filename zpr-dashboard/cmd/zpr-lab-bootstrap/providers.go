@@ -197,7 +197,7 @@ exec slapd -f /etc/zpr/lab/slapd.conf -h ldaps://0.0.0.0:1636 -d 0
 			"https":   "0.0.0.0:" + port,
 			"tlsCert": "/etc/zpr/lab/oidc-chain.pem", "tlsKey": "/etc/zpr/lab/oidc-key.pem",
 		},
-		"oauth2":           map[string]any{"responseTypes": []string{"code"}},
+		"oauth2":           map[string]any{"responseTypes": []string{"code"}, "skipApprovalScreen": true},
 		"enablePasswordDB": false,
 		"staticClients": []map[string]any{
 			{"id": "zpr-control-room", "name": "ZPR Lab Control Room", "secret": secret("oidc-room-client"),

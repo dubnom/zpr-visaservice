@@ -71,17 +71,17 @@
         <p>Validity is proposed review data, not a configured snapshot lease. Exact UUID presence is checked on submission and independent approval, not during registry-context capture.</p>
       </section>
       <section>
-        <h2>Read and independently review</h2>
+        <h2>Read and review</h2>
         <form id="subject-review-form">
           <label>Review ID <input id="subject-review-id" required maxlength="128" autocomplete="off"></label>
           <button id="subject-review-read" type="submit" disabled>Read review evidence</button>
         </form>
         <pre id="subject-review-evidence" aria-label="Immutable review evidence"></pre>
         <form id="subject-approval-form">
-          <label>Independent review reason <textarea id="subject-approval-reason" required rows="2" maxlength="1024"></textarea></label>
-          <button id="subject-approve" type="submit" disabled>Confirm independent review approval</button>
+          <label>Review reason <textarea id="subject-approval-reason" required rows="2" maxlength="1024"></textarea></label>
+          <button id="subject-approve" type="submit" disabled>Confirm review approval</button>
         </form>
-        <p>Approval binds the displayed immutable digest, observed review version and registry revision. The persisted proposer cannot approve their own review. There is no activation or revocation control here.</p>
+        <p>Approval binds the displayed immutable digest, observed review version and registry revision. Approving your own review requires explicit approval.self permission and is recorded as self-approval; otherwise another authorized reviewer must approve. There is no activation or revocation control here.</p>
       </section>
     </fieldset>
   </main>

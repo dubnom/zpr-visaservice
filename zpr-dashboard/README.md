@@ -2,6 +2,39 @@
 
 This repository contains the Zero-Trust Packet Routing (ZPR) Terminal User Interface application. The dashboard application allows you to manage your ZPR infrastructure quickly through an easy-to-understand and easy-to-use interface.
 
+## ZPR network display name
+
+Networks may have an optional **non-unique display name**, independent of the
+organization name, organization ID, installation identity, and trust material.
+Configure `ZPR_NETWORK_NAME` on production **Control-Service**, for example
+`ZPR_NETWORK_NAME="Research Network"`. Management bootstrap JSON accepts
+`"network_name": "Research Network"`; the runtime renderer emits the setting
+when it renders Control-Service. `zpr-lab-bootstrap -runtime-outputs` accepts
+`-network-name "Research Network"` for that configuration.
+
+The name is plain UTF-8 text up to 256 bytes, without surrounding whitespace,
+control characters, or Unicode formatting characters. Duplicates are allowed.
+An empty or omitted name means unnamed; it is not replaced with the organization
+name. Renaming requires updating the service's launch configuration and restarting
+Control-Service, not changing certificates, policy, DNS, grants, or membership.
+Persist the setting in your deployment configuration so restarts retain it.
+
+Control Room reads the production `GET /api/network` contract through its existing
+authenticated proxy (`monitor.read` for the configured organization). The service
+endpoint uses the existing mTLS boundary. The Simulator reads the same contract
+over its configured production connection, or the selected registered install,
+and exposes it locally through `GET /api/simulator/network` (`simulator.read`).
+It never defines a separate name or falls back to another install when the selected
+one is unavailable. Neither endpoint accepts a name from browser query parameters.
+
+Both interfaces show the label in the sidebar. The tooltip identifies the current
+interface origin to help distinguish duplicate names; the browser address remains
+the actual endpoint. Names are rendered as text, never HTML or authorization
+identifiers. Missing configuration shows **Unnamed ZPR network**; a denied,
+unreachable, or incompatible metadata endpoint shows **Network name unavailable**.
+Reload or navigate after a rename; Simulator organization changes refresh the label
+and discard responses from the previous selection.
+
 The separate [B1–B3 local evaluation bootstrap](packaging/evaluation/README.md)
 starts production Control Room/Control-Service plus isolated packaged OpenLDAP,
 OpenObserve and named-operator Dex with unique protected state and verified TLS.
@@ -15,6 +48,16 @@ can be added afterward as an ordinary authenticated client in the same evaluatio
 organization, with a separate synthetic HTTPS directory/source ID and explicit
 own-source removal. It never seeds bundled LDAP or changes policies; production
 operator services remain unaware and work without it.
+
+Simulator navigation focuses on Simulate, Activity, Workers, and Organizations.
+Demo World and the manual Machine provisioning GUI have been removed; old page
+URLs redirect to Simulate. Machine preparation belongs to the runtime rather
+than a separate user workflow. Technical plan payloads, resource calculations,
+and internal run identifiers are hidden from normal pages. Approval safeguards,
+blockers, actionable failures, and scenario results remain visible.
+Read-only policy-operation troubleshooting is available separately under
+**Info**, not in the organization workspace. The underlying provisioning APIs
+remain for explicitly authorized runtime tooling.
 
 Production appliance work is tracked in the
 [system packaging foundation](packaging/system/README.md). The new
@@ -1647,6 +1690,9 @@ verified device attributes or granted policy roles.
 | POST | `/api/enrollment/v1/invitations/{id}/cancel` | cancel | JSON `{"organization":"..."}`; cancels the invitation |
 | POST | `/api/enrollment/v1/invitations/{id}/approve` | approve | Organization, reviewed revision, key fingerprint, and verification reason |
 | POST | `/api/enrollment/v1/invitations/{id}/reject` | reject | Organization, reviewed revision, key fingerprint, and rejection reason |
+| POST | `/api/enrollment/v1/invitation-batches/review` | read | Organization and 1-128 unique invitation IDs; returns the exact sorted public inventory and its digest |
+| POST | `/api/enrollment/v1/invitation-batches/approve` | approve | Same organization/IDs, reviewed `inventory_digest`, and verification `reason`; atomically approves the exact inventory |
+| GET | `/api/enrollment/v1/invitation-batches/{digest}?organization=...` | read | Durable named approval receipt and the original reviewed inventory; use after a lost approval response |
 
 Creation accepts `organization`, `asset_id`, `name`, `owner`, `type`, `profile`,
 and `recipient`. All are required bounded strings; type/profile must be in the
@@ -1669,6 +1715,32 @@ creation are not yet implemented. Transfer the code through the approved
 separate secure channel, never an email, URL, command argument, or log.
 
 ### Reviewing a claimed device
+
+Named operators may also review a bounded batch through the two
+`invitation-batches` endpoints. Review accepts
+`{"organization":"example-company","invitation_ids":["INVITATION_ID"]}`.
+Inspect every returned asset, profile, enrollment fingerprint, and separate
+runtime fingerprint before submitting those IDs with the returned digest as
+`inventory_digest` and an explicit `reason` to `approve`.
+
+The digest covers the complete returned invitation records, including revisions
+and deadlines, in stable ID order. Approval re-reads them under one database
+transaction and rechecks the currently configured profile/type catalog. Missing
+or shared keys, expired/non-pending requests, changed IDs or inventory, and
+stale digests fail closed; an error approving any member or recording the durable
+review rolls back every member and its success audit. The original reviewed
+inventory, digest, named principal, reason and decision time are retained
+together in the enrollment registry. This does not grant future additions or
+changed identities automatic approval.
+Read the durable receipt by digest if the approval response is lost; do not
+replay approval blindly. `reviewed_inventory` is the immutable pre-decision
+snapshot, not a current credential, revocation or connectivity status.
+
+The same routes are available through named-user Control Room delegation, with
+the existing organization grants, HTTPS login, CSRF, body-bound proof and replay
+checks. They do not add a batch GUI or enable unattended approval. Enrollment
+approval remains distinct from issuance, adapter admission, policy permissions
+and observed connectivity; no Simulator availability is required.
 
 The device proof-of-possession service sets an explicit approval deadline
 from its deployment configuration. The claim records `claimed_at`, `approval_expires_at`, and the
@@ -1742,9 +1814,22 @@ proofs. The production ownership split, inventory API/storage,
 revision-bound invitation contract, credential issuer, trusted-attribute
 publication/revocation, and private network deployment have not been
 implemented. Do not treat this protocol as production device admission.
-For the initial single-operator deployment, the invitation creator may also
-approve the request. The named administrator's permission, revision/key binding,
-and audit checks remain required. Multi-person separation of duties is deferred.
+Approval is identity-driven in both Simulator and Control Room. The verified OIDC
+issuer and subject, with explicit organization-scoped grants, determine authority;
+display names and email addresses do not. Proposing, approving, and applying are
+separate actions. A proposer needs both the domain approval permission and
+`approval.self` to explicitly approve their own request. Without `approval.self`,
+another authorized reviewer must approve. Login and submission never imply approval.
+
+This rule covers policy/gateway change reviews, subject-link reviews, individual
+enrollment invitations and exact-inventory enrollment batches. A batch containing
+even one invitation created by the approver requires `approval.self`; denial leaves
+the entire batch unchanged. Existing revision, fingerprint, inventory digest and
+audit checks remain required. The legacy `allow_self_approval` review setting does
+not grant authority. For delegated requests, `approval.self` must exist in both the
+signed-in user's grant and the independent backend grant. Old proofs without this
+capability cannot self-approve. Existing grants are not automatically expanded;
+operators must explicitly configure the intended named identities before rollout.
 
 The service requires an explicit trusted HTTPS origin (`Audience`), challenge
 lifetime (1 second to 5 minutes), and approval lifetime (1 second to 30 days).
@@ -1971,8 +2056,9 @@ the Room signer audience and the service URL must match exactly.
 
 This opt-in does not migrate data, start containers, change the local stack or
 make BAS a network client. The standalone BAS command still opens its configured
-registry: **do not share that volume in a production package** or claim complete
-sole-writer lifecycle ownership until BAS access is redesigned. Asset lifecycle,
+registry: **do not share that volume in a production package**. Instead, the
+optional enrollment-owned BAS listeners described below use the owning process's
+existing Store. This does not complete the proposed production lifecycle API. Asset lifecycle,
 idempotency/reconciliation, complete credential delivery, supervision, trust
 bootstrap and package acceptance remain open. No deployment is implied.
 
@@ -1993,10 +2079,37 @@ The adapter client ID and JWT subject are the **inventory asset ID**, not the
 display name, invitation ID, or a device-submitted identity. Each BAS process
 is explicitly scoped to one organization, so identically named asset IDs in
 another organization cannot be used through this issuer.
-The adapter's configured authentication CN/name (including its Noise
-certificate CN when present) must therefore equal that inventory asset ID.
-Installer configuration delivery must establish this binding; setting only
-the asset's display name is insufficient.
+The current PH supports an explicit `authentication.bas_client_id`, independent
+of adapter/Noise/display name. `prepare-runtime` obtains this ID from fresh,
+key-authenticated Enrollment Service status, never from browser input or the
+directory name. Older services that omit `asset_id` cannot prepare a runtime
+handoff. Install matching PH and enrollment binaries together: older PH releases
+do not implement this field and must not be used for namespaced enrollment IDs.
+Existing generated files are immutable; a changed identity or trust binding is
+rejected rather than rewritten.
+
+#### Enrollment-owned BAS listeners
+
+The device service's optional `bas` object accepts the standalone BAS JSON
+configuration shown below. Its `database_file` must exactly equal the owning
+Enrollment Service's `database_file` (relative paths resolve against the same
+configuration file). In this mode one process opens one Store for device,
+delegated administration, BAS nonce/authorization and token redemption. Do not
+run the standalone BAS command against that database.
+
+Device HTTPS, administration mTLS, adapter BAS HTTPS and VS token mTLS each
+retain distinct listeners, authorities and route allowlists. BAS adapter/token
+listeners must not collide with device/administration listeners. All listeners
+are constructed and reserved before serving; startup failure or shutdown stops
+the whole owning process. No invalid BAS configuration is silently disabled.
+The token peer must be an explicitly pinned Visa Service TLS identity, not a
+generic caller on the private CA. With `bas` absent, existing deployment behavior
+is unchanged.
+
+This process ownership option does not create the policy-authorized
+authentication actor, trust its bootstrap root, install claim mappings or apply
+any workload policy. These require explicit operator configuration and review.
+Simulator is not involved in the service's configuration or operation.
 
 Only an approved invitation with a stored, distinct BAS runtime public key
 and recorded review can authenticate. Enrollment keys cannot sign BAS
@@ -3367,6 +3480,13 @@ No running service is changed by adding this opt-in mode.
 
 ### Local development operator login
 
+Dedicated ZPR lab and evaluation identity-provider configurations skip Dex's
+**Grant Access** consent page for their registered ZPR applications. Password
+authentication, OIDC validation, organization grants, and API authorization
+remain required. The shared sign-in widget shows only the human-readable user
+label and signed-in status, not issuer URLs, internal subject identifiers,
+configured organizations, or permission lists.
+
 The local stack can now run a real Dex identity provider, **not** the test
 login fixture or the certificate-only browser gateway. Both listener ports are
 published only on host loopback. The dedicated development CA is independent of
@@ -3395,6 +3515,18 @@ Docker maps that hostname explicitly for the Control Room OIDC client.
 The browser resolves `.localhost` locally. Certificates last 90 days and the
 development CA 365 days; arrange deliberate renewal rather than disabling TLS
 verification when they expire.
+
+The customized provider sign-in form remembers the last submitted email or
+username in this browser's local storage, including across sign-out and browser
+restarts. **Remember email or username on this device** is checked by default;
+uncheck it on shared devices to immediately remove the saved value and disable
+remembering until checked again. Browser site-data clearing also removes it.
+Only the email/username and this preference are saved by this feature, never a
+password, token, or session; it does not extend authentication or change account
+permissions. If browser
+storage is blocked, the form reports that remembering is unavailable and sign-in
+continues normally. Externally managed identity providers control their own
+sign-in forms and are not changed by this customization.
 
 The local error template replaces Dex's "Requested resource does not exist."
 error for expired login pages (including refresh) with **Sign-in timed out**
