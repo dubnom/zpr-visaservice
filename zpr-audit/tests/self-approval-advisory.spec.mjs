@@ -34,7 +34,8 @@ test('budget request advisory is evidence-bound and does not claim an approval',
   const events = page.locator('#live-history-events .event');
   await expect(events).toHaveCount(4);
   const warning = events.nth(0).locator('.audit-warning');
-  await expect(warning).toContainText('Potential self-approval authority');
+  await expect(warning).toContainText('Risky self-approval role combination');
+  await expect(warning).toContainText('both budget.approve (required by this route) and approval.self at request time');
   await expect(warning).toContainText('does not establish a self-approved operation, a successful decision, or a current grant');
   await expect(warning).toContainText('Organization: org-<example> · Role: unknown · Exact approval or revision: unknown');
   await expect(events.nth(0)).toContainText('https://idp.example / operator <img src=x>');

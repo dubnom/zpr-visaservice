@@ -65,16 +65,22 @@ evidence. Distinguish an observed self-approved operation from potential risk
 in a role assignment; incomplete evidence means unknown, not safe.
 
 The Audit history UI identifies two Control-Service signals. A
-`budget.approval.create` / `self-approval-requested` event records that a
-verified delegation contained `approval.self` when a request was made; it
-precedes the mutation and does not establish a self-approved operation, a
-successful decision, a role, or a current grant. A `subject-link.approve` /
+`budget.approval.create` / `self-approval-requested` event records a known
+risky role combination at request time: the budget-approval route requires
+`budget.approve`, and this outcome means the same verified delegation also
+carried organization-scoped `approval.self`, so the requester held
+budget-approval and self-approval authority together. The advisory names that
+combination explicitly (2026-10-31); the event still precedes the mutation and
+does not establish a self-approved operation, a successful decision, a role,
+or a current grant. A `subject-link.approve` /
 `approved-single-operator` event reports a committed review by its proposer,
 not publication or enforcement; an exact retry can produce another event with
 a later timestamp. The advisories display available actor, organization,
 target and event references and mark missing details as unknown. Browser
 fixtures cover matching and nonmatching events, pagination, unavailable
-history and Simulator independence; they are not live acceptance.
+history and Simulator independence; they are not live acceptance. These two
+rules do not constitute the role-risk engine: combinations outside the budget
+route and grant-inventory analysis remain pending.
 
 Warnings are advisory, do not add a mandatory Simulator confirmation, and
 cannot confer permissions or excuse a failed backend authorization check.

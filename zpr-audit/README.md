@@ -119,10 +119,13 @@ historical archive.
 
 The History view recognizes two narrowly scoped `control-service` advisories:
 
-- `budget.approval.create` with outcome `self-approval-requested` means the
-  verified delegation contained `approval.self` at request time. The event
-  precedes the mutation: it does not prove that author and approver were the
-  same person, that approval succeeded, or that the permission remains active.
+- `budget.approval.create` with outcome `self-approval-requested` reports a
+  risky self-approval role combination: the route requires `budget.approve`,
+  and this outcome means the same verified delegation also carried
+  `approval.self` at request time, so the requester held budget-approval and
+  self-approval authority together. The event precedes the mutation: it does
+  not prove that author and approver were the same person, that approval
+  succeeded, or that either permission remains active.
 - `subject-link.approve` with outcome `approved-single-operator` reports that a
   subject-link review was approved by its proposer. The source appends this
   event after the review commits; it does not establish publication or

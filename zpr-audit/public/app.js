@@ -616,7 +616,7 @@ function renderLiveHistoryEvents(events,append){
    ?' · Correlation: '+escapeHTML(event.correlation_id):'';
   let warning='';
   if(event.source==='control-service'&&event.action==='budget.approval.create'&&event.outcome==='self-approval-requested'){
-   warning='<div class="audit-warning" role="note"><strong>Potential self-approval authority · advisory</strong><p>This operation approval request carried the approval.self permission. The event does not establish a self-approved operation, a successful decision, or a current grant.</p><p>Organization: '+organization+' · Role: unknown · Exact approval or revision: unknown.</p></div>';
+   warning='<div class="audit-warning" role="note"><strong>Risky self-approval role combination · advisory</strong><p>This budget approval request was authorized by a verified delegation carrying both budget.approve (required by this route) and approval.self at request time, so the requester held budget-approval and self-approval authority together. The event does not establish a self-approved operation, a successful decision, or a current grant.</p><p>Organization: '+organization+' · Role: unknown · Exact approval or revision: unknown.</p></div>';
   }else if(event.source==='control-service'&&event.action==='subject-link.approve'&&event.outcome==='approved-single-operator'){
    warning='<div class="audit-warning" role="note"><strong>Observed single-operator review · advisory</strong><p>Control-Service reported that the proposer approved this subject-link review. This is review evidence, not publication or enforcement. The event may reflect a retry, so its time may not be the original approval time.</p><p>Organization: '+organization+' · Role: unknown · Revision: unknown.</p></div>';
   }
