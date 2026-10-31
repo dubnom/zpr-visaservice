@@ -39,7 +39,7 @@
   },
   "staged_organization_runtimes": {
     "root": "/home/dubnom/zpr-dev-organizations-r9",
-    "status": "Velocity is the sole active release gate and remains a diagnostic installation, not a release candidate. Four persistent services active; other twelve organization units stopped. Approved workload policy remains version 4. Velocity-only r20 preserves signed BAS claims during refresh and uses owned-PID shutdown; isolated r21 endpoints/r22 controller pass all 20 original actions, two clean repeats and a run after independent base restart, including exact 100-sample/16-MiB/75-second assertions. Canonical Simulator UI/resource approval and matched package rollout remain incomplete. Main dev and stable unchanged.",
+    "status": "Velocity is the sole active release gate and remains a diagnostic installation, not a release candidate. Four persistent services active; other twelve organization units stopped. Approved workload policy remains version 4. Velocity-only r20 preserves signed BAS claims during refresh and uses owned-PID shutdown; isolated r21 endpoints/r22 controller pass all 20 original actions, two clean repeats and a run after independent base restart, including exact 100-sample/16-MiB/75-second assertions. Velocity is Simulator-paired at 24788 since 2026-10-31 (see velocity_simulator_pairing). Canonical Simulator UI/resource approval and matched package rollout remain incomplete. Main dev and stable unchanged.",
     "organizations": ["northstar", "great-lakes", "load-lab", "redwood", "velocity"],
     "evidence": ["qualification-base.json", "qualification-policy-services.json", "qualification-enrollment-services.json", "qualification-self-approval-velocity.json", "qualification-approved-bas-velocity-r11.json", "enrollment/velocity/approved-machine-runtime-receipt-r11.json", "policy/velocity/bas-root-r13-evidence/current-after.json", "qualification-bas-root-velocity-r13.json", "endpoints/velocity/velocity-machine-03-controller/qualification-admission-r14.json", "endpoints/velocity/velocity-machine-03-finance-client/qualification-admission-r14.json", "endpoints/velocity/velocity-machine-05-controller/qualification-admission-r14.json", "endpoints/velocity/velocity-machine-05-echo-service/qualification-admission-r14.json", "endpoints/velocity/velocity-simulator-control/qualification-admission-r14.json"],
     "verified": "Original LDAP scopes/counts; 1/3/1/2/1 nodes; protected DNS; logging; retained identity; CA-verified named OIDC policy context/review capabilities; exact Policy-Service-to-VS guarded readback; cross-organization denial; current-invocation readiness and clean stop with no organization Simulator.",
@@ -61,6 +61,16 @@
     "scenario_acceptance": false,
     "first_acceptance_target": "velocity-single-node",
     "turn_key_acceptance": false,
+    "velocity_simulator_pairing": {
+      "deployed": "2026-10-31",
+      "simulator_url": "https://10.0.1.160:24788",
+      "issuer": "https://10.0.1.160:24556",
+      "transaction": "Recorded add-later -evaluation-simulator-pairing against the stopped install with the original enrollment/velocity/operator-services.json; derived state/velocity/simulator-paired-operator-services.json; Room client, secret, signing key and retained identities preserved; offline pre-pairing state backup retained in /home/dubnom/zpr-velocity-pairing-20261031.",
+      "runtime": "organization-runtime.sh r10 starts paired installs with the recorded -simulator-port, the derived paired service bindings and bin/zpr-lab-bootstrap.simulator-r10; unpaired organizations keep the shared r9 binary and original bindings. SHA256SUMS updated with dated backups.",
+      "simulator_unit": "Transient user unit zpr-simulator-dev-velocity (systemd-run) in SIMULATION_SETUP_MODE=ordinary-client with the source-built 2026-10-31 zpr-simulator binary from /home/dubnom/zpr-velocity-pairing-20261031; recreate it with the same systemd-run command after stop.",
+      "verified": "Full install readiness after paired restart; Room 200 and issuer discovery 200 with Simulator stopped; Control-Service answering over mTLS; Simulator 302 with named operator login configured; Simulator-only restart clean.",
+      "not_verified": "Human named UI login, scenario selection or execution on Velocity, retained machine runtime wiring through the paired Simulator, Audit role-risk warnings, onboarding, and installed-package acceptance remain open."
+    },
     "self_approval": {
       "permission": "approval.self",
       "workflow": "Explicit approval separate from submission and application",

@@ -244,11 +244,29 @@ endpoints file, and the organization profile and manifest say no
 bootstrap-admitted endpoints exist; nothing claims live endpoint traffic.
 Unsupported shapes (operator directory without subject links, no data plane
 and no admitted endpoints, unpaired install) fail closed with specific errors.
-Focused launcher tests cover the supported and rejected shapes. This is
-source-tested support, not deployment: the retained Velocity installation's
-installed bootstrap still lacks the new signer support, and its supported
-Simulator catalog/lifecycle wiring and independent downstream trust remain
-work before pairing can be deployed safely.
+Focused launcher tests cover the supported and rejected shapes.
+
+**Velocity pairing deployment (2026-10-31):** the retained Velocity
+installation (`0422ecb887a5106caea70975`, operator directory
+`dc=velocity,dc=test`, no bootstrap-admitted endpoints) was paired live on the
+workbench through the recorded add-later transaction: BAS adapter and install
+stopped cleanly, offline state backup retained, pairing registered the
+separate `zpr-simulator` client and independent signer for port 24788 against
+issuer 24556, and the install restarted fully healthy with the recorded port,
+the derived paired service bindings and the pairing-capable
+`bin/zpr-lab-bootstrap.simulator-r10` selected by the maintained
+`organization-runtime.sh` r10 rule (unpaired organizations keep the shared r9
+binary; SHA256SUMS updated with dated backups). The paired Simulator runs as
+user unit `zpr-simulator-dev-velocity` in `ordinary-client` mode with the
+2026-10-31 source-built `zpr-simulator`. Verified: Room 200 and issuer
+discovery 200 with Simulator stopped, Control-Service answering over mTLS,
+Simulator 302 with named operator login configured, and a clean
+Simulator-only restart. Still open for G1: human named UI login on Velocity,
+scenario selection against the retained machine runtime, Audit role-risk
+warnings, and the per-installation operator grant contract. The installed
+package bootstrap still lacks signer support; this deployment used
+source-built binaries from a task-owned directory, and the retained install's
+independent downstream trust (Enrollment Service) is unchanged.
 
 ### Delivery discipline and completion
 
