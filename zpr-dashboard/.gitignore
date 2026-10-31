@@ -14,3 +14,7 @@ policy-records.db*
 node_modules/
 test-results/
 playwright-report/
+
+# Local go build outputs at the module root
+/zpr-lab-bootstrap
+/zpr-web-dashboard
