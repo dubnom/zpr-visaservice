@@ -289,6 +289,19 @@ checks the exact scope and principal and removes a successfully consumed
 record; unknown, mismatched, or already-consumed IDs are rejected. Neither
 the permit nor its recovery is durable across a Simulator restart.
 
+Approved run admission now appends a durable, fsynced local run-evidence
+record per organization (`<workspace-db-dir>/<organization>-run-evidence.jsonl`)
+**before** consuming the one-use permit, so an interrupted admission leaves the
+permit intact and the allocation visible. A refused start appends
+`not-started`; a finished run appends its locally recorded terminal state.
+`GET /api/simulator/organizations/{organization}/runs/{run}/evidence` reports
+`active`, `finished`, `not-started`, `uncertain` (allocated without a terminal
+record; never automatically retried) or `unknown`, scoped to the authorized
+organization. A corrupt or unsafe journal fails closed. These records are
+local allocation/outcome evidence only: they are not remote acceptance,
+scenario-step results, production Audit evidence, or permit recovery, and the
+in-memory permit itself still does not survive a restart.
+
 ## Starting an approved Simulator run
 
 The run endpoint is:

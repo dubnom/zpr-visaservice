@@ -123,8 +123,12 @@ authoring requirements. Each organization has isolated retained state.
   `budget.approve` and `approval.self`. Ordinary budget approvals without that
   intent retain their existing contract. This intent does not establish a
   recorded requester or prove an observed self-approval. Run namespace
-  preparation precedes permit consumption, but
-  there is no durable actor/permit/run evidence or restart-safe reconciliation.
+  preparation precedes permit consumption. Since 2026-10-31 run admission
+  durably records allocation before permit consumption and the locally
+  observed terminal state at finish, and a scoped readback endpoint reports
+  `uncertain` for an allocation without a terminal record, never retrying
+  automatically; in-memory permits themselves still do not survive a restart,
+  and restart-safe permit reconciliation remains open.
   After the plan, budget and session are rechecked, the same named operator (or
   explicit local mode) can recover an unconsumed in-memory permit for the exact
   organization, scenario and plan digest. Another operator cannot recover it

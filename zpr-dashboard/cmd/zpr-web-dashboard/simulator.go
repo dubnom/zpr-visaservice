@@ -353,6 +353,7 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("POST /api/simulator/scenario-plans/approve", scenarioPlanHandler.Approve)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-plans/preflight", scenarioPlanHandler.Preflight)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-plans/approve", scenarioPlanHandler.Approve)
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/runs/{run}/evidence", handleSimulatorRunEvidence)
 	mux.HandleFunc("POST /api/simulator/scenarios/clear", handleSimulatorScenarioClear)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}/revisions/{revision}", handleWorkspaceScenarioRevisionGet)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenarios/{scenario}/revisions", handleWorkspaceScenarioRevisions)

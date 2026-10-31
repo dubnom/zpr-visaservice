@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -600,12 +601,25 @@ func (manager *simulatorScenarioManager) startApprovedVersionedContext(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Durable allocation evidence precedes permit consumption so an
+	// interrupted admission leaves the one-use approval intact and the
+	// allocation visible to readback. Failure to record blocks the run.
+	if err := appendSimulatorRunEvidence(simulatorRunEvidenceRecord{
+		Event: simulatorRunEvidenceAllocated, RunID: runID, RunNamespace: namespace.Canonical(),
+		OrganizationID: organizationID, ScenarioID: scenario.ID, PlanDigest: planDigest,
+		ApprovalReference: simulatorScenarioPlanApprovalReference(approvalID),
+		ActorIssuer:       principal.issuer, ActorSubject: principal.subject,
+	}); err != nil {
+		return fmt.Errorf("record durable run allocation evidence: %w", err)
+	}
 	consumedPlan, err := simulatorScenarioPlanApprovals.consumeForPrincipal(
 		approvalID, organizationID, scenario.ID, planDigest, principal)
 	if err != nil {
+		recordSimulatorRunNotStarted(runID, organizationID, scenario.ID, err)
 		return err
 	}
 	if !reflect.DeepEqual(consumedPlan, plan) {
+		recordSimulatorRunNotStarted(runID, organizationID, scenario.ID, errSimulatorScenarioApprovalPlanMismatch)
 		return errSimulatorScenarioApprovalPlanMismatch
 	}
 	approval := &simulatorScenarioRunApproval{
@@ -1000,7 +1014,36 @@ func (manager *simulatorScenarioManager) finish(state string, runErr error) {
 	finished := time.Now()
 	manager.run.FinishedAt = &finished
 	manager.cancel = nil
+	record := simulatorRunEvidenceRecord{
+		Event: simulatorRunEvidenceFinished, RunID: manager.run.RunID,
+		RunNamespace:   manager.run.RunNamespace,
+		OrganizationID: manager.run.OrganizationID, ScenarioID: manager.run.ScenarioID,
+		PlanDigest: manager.run.PlanDigest, State: state, Error: manager.run.Error,
+	}
 	manager.mu.Unlock()
+	// Approved runs carry a run ID; record their terminal state durably.
+	// A failed append cannot change the finished run, so readback reports
+	// the missing record as an uncertain outcome rather than inventing one.
+	if record.RunID != "" {
+		if err := appendSimulatorRunEvidence(record); err != nil {
+			log.Printf("Durable run terminal-state evidence could not be recorded for %s: %v", record.RunID, err)
+		}
+	}
+}
+
+// recordSimulatorRunNotStarted resolves an allocated run that was refused
+// before start. A failed append leaves the allocation visible as uncertain.
+func recordSimulatorRunNotStarted(runID, organizationID, scenarioID string, cause error) {
+	message := ""
+	if cause != nil {
+		message = cause.Error()
+	}
+	if err := appendSimulatorRunEvidence(simulatorRunEvidenceRecord{
+		Event: simulatorRunEvidenceNotStarted, RunID: runID,
+		OrganizationID: organizationID, ScenarioID: scenarioID, Error: message,
+	}); err != nil {
+		log.Printf("Durable not-started run evidence could not be recorded for %s: %v", runID, err)
+	}
 }
 
 func scenarioCommand(ctx context.Context, name string, args ...string) (string, error) {
