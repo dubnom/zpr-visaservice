@@ -236,3 +236,137 @@ func TestEvaluationSimulatorLifecycleExcludesRecovery(t *testing.T) {
 		t.Fatal("administrator reset did not require stopping companion", err)
 	}
 }
+
+// testEvaluationSimulatorLogin writes the verified Simulator identity
+// configuration that readiness normally produces for the install.
+func testEvaluationSimulatorLogin(t *testing.T, evaluation string, inventory evaluationInventory) {
+	t.Helper()
+	config := inventory.Config
+	login := operatorauth.Config{
+		Version: 1, Issuer: config.browserOrigin(config.OIDCPort), ClientID: "zpr-simulator",
+		RedirectURL: config.browserOrigin(config.SimulatorPort) + "/auth/operator/callback", SessionLifetimeSeconds: 3600,
+		Grants: []operatorauth.Grant{{
+			Issuer: config.browserOrigin(config.OIDCPort), Subject: "verified-test-subject",
+			Organizations: []string{evaluationOrganization(inventory)}, Permissions: []string{"simulator.read"},
+		}},
+	}
+	data, err := json.Marshal(login)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(evaluation, "simulator-oidc.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEvaluationSimulatorPairedOperatorDirectoryWithoutBootstrapEndpoints(t *testing.T) {
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := testEvaluationDataPlaneConfig()
+	config.SimulatorPort = 28791
+	config.Directory = &evaluationDirectory{
+		BaseDN: "dc=example,dc=test", LDIFFiles: []string{writeTestDirectoryLDIF(t, testDirectoryLDIF)},
+	}
+	evaluation := filepath.Join(parent, "evaluation")
+	inventory, err := prepareEvaluation(evaluation, config, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	testEvaluationSimulatorLogin(t, evaluation, inventory)
+	binary := filepath.Join(parent, "simulator")
+	if err := os.WriteFile(binary, []byte("prebuilt"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(parent, "simulator-state")
+	image := "sha256:" + strings.Repeat("a", 64)
+	_, listen, err := prepareEvaluationSimulator(evaluation, state, binary, image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listen != "127.0.0.1:28791" {
+		t.Fatalf("unexpected listener %q", listen)
+	}
+	installs, err := os.ReadFile(filepath.Join(state, "installs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(installs), "data_plane_endpoints_file") {
+		t.Fatal("install without bootstrap-admitted endpoints must not claim an endpoints file")
+	}
+	profile, err := os.ReadFile(filepath.Join(state, "organizations", evaluationOrganization(inventory)+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(profile), `"base_dn": "dc=example,dc=test"`) {
+		t.Fatal("organization profile must publish the operator base DN")
+	}
+	if !strings.Contains(string(profile), "No bootstrap-admitted evaluation endpoints") ||
+		strings.Contains(string(profile), "Live admitted evaluation endpoints") {
+		t.Fatalf("organization profile claims endpoints that are not admitted: %s", profile)
+	}
+	manifest, err := os.ReadFile(filepath.Join(state, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(manifest), "without bootstrap-admitted endpoints") {
+		t.Fatal("manifest must not claim admitted endpoint traffic")
+	}
+}
+
+func TestEvaluationSimulatorLaunchRejectsUnsupportedInstallShapes(t *testing.T) {
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(parent, "simulator")
+	if err := os.WriteFile(binary, []byte("prebuilt"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	image := "sha256:" + strings.Repeat("a", 64)
+	prepare := func(t *testing.T, name string, config evaluationConfig) (string, string) {
+		t.Helper()
+		evaluation := filepath.Join(parent, name)
+		inventory, err := prepareEvaluation(evaluation, config, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if config.SimulatorPort != 0 {
+			testEvaluationSimulatorLogin(t, evaluation, inventory)
+		}
+		return evaluation, filepath.Join(parent, name+"-state")
+	}
+
+	t.Run("operator directory without subject links", func(t *testing.T) {
+		config := testEvaluationDataPlaneConfig()
+		config.SimulatorPort, config.SnapshotDeliveryPort = 28792, 0
+		config.Directory = &evaluationDirectory{
+			BaseDN: "dc=example,dc=test", LDIFFiles: []string{writeTestDirectoryLDIF(t, testDirectoryLDIF)},
+		}
+		evaluation, state := prepare(t, "no-subject-links", config)
+		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image); err == nil ||
+			!strings.Contains(err.Error(), "subject links") {
+			t.Fatalf("directory install without seeded health identity accepted: %v", err)
+		}
+	})
+
+	t.Run("no data plane and no admitted endpoints", func(t *testing.T) {
+		config := testEvaluationVisaConfig()
+		config.SimulatorPort = 28793
+		evaluation, state := prepare(t, "no-data-plane", config)
+		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image); err == nil ||
+			!strings.Contains(err.Error(), "data plane") {
+			t.Fatalf("install without any data plane accepted: %v", err)
+		}
+	})
+
+	t.Run("unpaired install", func(t *testing.T) {
+		config := testEvaluationDataPlaneConfig()
+		evaluation, state := prepare(t, "unpaired", config)
+		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image); err == nil ||
+			!strings.Contains(err.Error(), "evaluation-simulator-pairing") {
+			t.Fatalf("unpaired install accepted: %v", err)
+		}
+	})
+}

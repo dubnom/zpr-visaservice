@@ -233,10 +233,22 @@ used the retained approved budget and again verified all fifteen probes; CA,
 client, signer and endpoint identities were unchanged. The temporary installs
 were stopped and removed. This is starter-directory evaluation evidence, not
 Velocity, onboarding, durable recovery, matched-package or gate acceptance.
-The retained Velocity installation still has a custom directory and no
-bootstrap-admitted evaluation endpoints, and its installed bootstrap lacks the
-new signer support. Its supported Simulator catalog/lifecycle wiring and
-independent downstream trust remain work before pairing can be deployed safely.
+
+**Launcher install-shape support (2026-10-31, source only):** the paired
+Simulator launcher now starts against an operator-directory install whose
+subject links seed the reserved `evaluation-subject` health identity, and
+against an install without bootstrap-admitted evaluation endpoints when the
+install-owned data plane exists — the two shapes of the retained Velocity
+installation. Without admitted endpoints the published install omits the
+endpoints file, and the organization profile and manifest say no
+bootstrap-admitted endpoints exist; nothing claims live endpoint traffic.
+Unsupported shapes (operator directory without subject links, no data plane
+and no admitted endpoints, unpaired install) fail closed with specific errors.
+Focused launcher tests cover the supported and rejected shapes. This is
+source-tested support, not deployment: the retained Velocity installation's
+installed bootstrap still lacks the new signer support, and its supported
+Simulator catalog/lifecycle wiring and independent downstream trust remain
+work before pairing can be deployed safely.
 
 ### Delivery discipline and completion
 

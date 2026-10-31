@@ -396,8 +396,18 @@ bounded evaluation workloads exercise allowed and denied flows. These workload
 observations are **not full Scenario runner acceptance** or successful
 human/device enrollment. The 20 legacy scenario-machine records are explicitly
 unprovisioned, not representations of the live endpoint containers.
-The evaluation organization profile currently supports only the starter
-directory, not custom LDIF installations.
+The paired launcher also supports an operator-directory (custom LDIF)
+installation when its subject links seed the reserved `evaluation-subject`
+health identity, and an installation without bootstrap-admitted endpoints when
+the install-owned data plane exists. Without admitted endpoints the published
+install omits the endpoints file, and the organization profile and manifest
+state that no bootstrap-admitted endpoints exist; there is no endpoint
+reconciliation or claimed live endpoint traffic. An operator directory without
+subject links, an install with neither data plane nor admitted endpoints, and
+an unpaired install are rejected with specific errors. This is source-tested
+launcher support, not deployment or scenario acceptance; the bounded
+`-scenario-demo` opt-in still requires the starter directory and at least two
+admitted endpoints.
 
 Stopping this foreground companion stops only Simulator. ZPR remains running;
 already started evaluation endpoint containers remain until ZPR teardown.

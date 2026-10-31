@@ -179,8 +179,13 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 	if _, err := readEvaluation(evaluation, inventory.Config); err != nil {
 		return nil, "", err
 	}
-	if inventory.Config.SimulatorPort == 0 || inventory.Config.DataPlaneEndpoints == 0 {
-		return nil, "", errors.New("create a separate evaluation with -simulator-port and -data-plane-endpoints; existing state cannot be implicitly migrated")
+	if inventory.Config.SimulatorPort == 0 {
+		return nil, "", errors.New("register the Simulator client first with -evaluation-simulator-pairing (or create the install with -simulator-port); existing state is never implicitly migrated")
+	}
+	// Without bootstrap-admitted endpoints (X15) the install-owned data plane
+	// must exist so the published topology stays real; nothing is fabricated.
+	if inventory.Config.DataPlaneEndpoints == 0 && !inventory.Config.DataPlane {
+		return nil, "", errors.New("Simulator launch requires the install-owned data plane or bootstrap-admitted evaluation endpoints")
 	}
 	data, err = os.ReadFile(filepath.Join(evaluation, "simulator-oidc.json"))
 	var login operatorauth.Config
@@ -190,8 +195,12 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 		return nil, "", errors.New("verified Simulator identity configuration unavailable; wait for ZPR readiness")
 	}
 	organization := evaluationOrganization(inventory)
-	if inventory.Config.Directory != nil {
-		return nil, "", errors.New("automatic Simulator pairing currently supports the starter directory only")
+	// An operator directory is supported only when subject links are
+	// configured: that is what seeds the reserved uid=evaluation-subject
+	// health identity under the operator base DN (reserved at import), so the
+	// published health_uid below remains truthful.
+	if inventory.Config.Directory != nil && !inventory.Config.subjectLinks() {
+		return nil, "", errors.New("an operator-directory install requires subject links for its seeded health identity; the profile health_uid would not exist")
 	}
 	for _, grant := range login.Grants {
 		if !reflect.DeepEqual(grant.Organizations, []string{organization}) {
@@ -245,8 +254,14 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 			"model": "Unprovisioned scenario fixture", "location": "Not provisioned", "secure": false,
 		})
 	}
+	manifestName := "Evaluation endpoint traffic (scenario machines not provisioned)"
+	profileDescription := "Live admitted evaluation endpoints; scenario machine provisioning is not configured."
+	if inventory.Config.DataPlaneEndpoints == 0 {
+		manifestName = "Evaluation install without bootstrap-admitted endpoints (scenario machines not provisioned)"
+		profileDescription = "No bootstrap-admitted evaluation endpoints; runtime endpoints are managed outside this install. Scenario machine provisioning is not configured."
+	}
 	if err := write("manifest.json", map[string]any{
-		"name":            "Evaluation endpoint traffic (scenario machines not provisioned)",
+		"name":            manifestName,
 		"organization_id": organization, "machines": machines,
 		"agents": []any{}, "services": []any{}, "components": []any{},
 	}); err != nil {
@@ -268,7 +283,7 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 	}
 	profile := map[string]any{
 		"id": organization, "name": "ZPR Evaluation",
-		"description": "Live admitted evaluation endpoints; scenario machine provisioning is not configured.",
+		"description": profileDescription,
 		"runtime":     map[string]any{"driver": "docker-multinode", "topology": topology, "nodes": nodes},
 		"directory": map[string]any{
 			"base_dn": inventory.Config.directoryBaseDN(), "seed_mode": "ldif", "ldif_files": []string{"evaluation.ldif"},
@@ -320,13 +335,15 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 		return nil, "", err
 	}
 	target := map[string]any{
-		"organization_id":           organization,
-		"control_room_url":          inventory.Config.browserOrigin(inventory.Config.RoomPort),
-		"operator_service_url":      fmt.Sprintf("https://localhost:%d", inventory.Config.ServicePort),
-		"client_cert_file":          filepath.Join(evaluation, "simulator-client-chain.pem"),
-		"client_key_file":           filepath.Join(evaluation, "simulator-client-key.pem"),
-		"service_ca_file":           filepath.Join(evaluation, "ca.pem"),
-		"data_plane_endpoints_file": filepath.Join(evaluation, evaluationDataPlaneEndpointsFile),
+		"organization_id":      organization,
+		"control_room_url":     inventory.Config.browserOrigin(inventory.Config.RoomPort),
+		"operator_service_url": fmt.Sprintf("https://localhost:%d", inventory.Config.ServicePort),
+		"client_cert_file":     filepath.Join(evaluation, "simulator-client-chain.pem"),
+		"client_key_file":      filepath.Join(evaluation, "simulator-client-key.pem"),
+		"service_ca_file":      filepath.Join(evaluation, "ca.pem"),
+	}
+	if inventory.Config.DataPlaneEndpoints != 0 {
+		target["data_plane_endpoints_file"] = filepath.Join(evaluation, evaluationDataPlaneEndpointsFile)
 	}
 	if inventory.Config.ScenarioDemo {
 		target["visa_admin_url"] = fmt.Sprintf("https://localhost:%d", inventory.Config.VSAdminPort)
