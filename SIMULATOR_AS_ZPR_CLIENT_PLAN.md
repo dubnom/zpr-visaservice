@@ -77,20 +77,28 @@ authoring requirements. Each organization has isolated retained state.
   [Audit owner](ENTITY_HISTORY_PLAN.md#self-approval-role-risk-warnings).
 - Passive organization selection and explicit organization activation are
   separate actions. The current organization browser selects without mutation;
-  its explicit Activate action requires confirmation before calling the legacy
-  Simulator activation route. With `SIMULATION_SETUP_MODE=ordinary-client`,
-  web activation and Restore, legacy packaged `approve-and-provision` and
+  its explicit Activate action requires confirmation. With
+  `SIMULATION_SETUP_MODE=ordinary-client` (since 2026-11-01), confirmed web
+  activation performs the ordinary authorized setup instead of the legacy
+  lifecycle: the exact required retained endpoint inventory is compared
+  through the authorized enrollment contracts, activation records the
+  organization selection only when every requirement is retained and
+  approved, and otherwise every missing prerequisite is reported explicitly
+  without starting any setup; the legacy activation machinery is never
+  invoked and unconfigured named delegation fails closed (`U01-ACTIVATION`).
+  Restore, legacy packaged `approve-and-provision` and
   `verify`, global legacy stack/agent lifecycle, and unbound legacy machine
-  start/stop fail explicitly. Packaged status and existing-machine start/stop
+  start/stop still fail explicitly. Packaged status and existing-machine start/stop
   remain available; status can update local inventory and issue readiness
   traffic. Scenario preflight reports the unbound machine fallback before
-  approval, but these scoped guards do not implement enrollment. The paired evaluation launcher
+  approval. The paired evaluation launcher
   forwards the explicit setting to the Simulator process, while the legacy
   default remains available for compatibility. The setting is process-local
   and must be repeated on restart; it does not cover every Simulator
   entrypoint or separately invoked scripts.
-  The approved independent setup contracts are not yet wired under
-  `U01-ACTIVATION`. Scenario selection independently drives the
+  Automatic onboarding of genuinely new profile-declared endpoints at
+  activation remains a separate explicit operation. Scenario selection
+  independently drives the
   scoped preflight/approval/run flow and does not activate the organization.
   Focused desktop/tablet browser fixtures assert that passive organization
   selection submits no setup or scenario mutation, scenario selection submits
@@ -499,11 +507,23 @@ without a bundle failed closed. The live duplicate-retry evidence also
 exposed and fixed a record-persistence defect: attempts that never reach
 approval now persist to a separate per-asset attempt file and can no longer
 clobber the canonical approved record, whose full lifecycle on Velocity now
-reads approved → readback approved → local-bundle handoff → bas-authorized.
-Still open for the G2 gate: wiring onboarding to explicit organization
-activation under `U01-ACTIVATION` and the Simulator UI surface; token
-redemption remains exclusively the pinned Visa Service peer's, and no
-onboarded endpoint has a visa or traffic grant.
+reads approved → readback approved → local-bundle handoff → bas-authorized. **Ordinary-client activation wiring (2026-11-01, source
+only at first):** with `SIMULATION_SETUP_MODE=ordinary-client`, confirmed
+explicit web activation now performs the ordinary authorized setup instead of
+rejecting: the required retained inventory comparison runs through the
+authorized contracts, activation records the organization selection only when
+every requirement is retained and approved (never invoking the legacy
+activation lifecycle), and otherwise returns HTTP 409 with every exact
+missing prerequisite and no setup started. Restore stays blocked
+(`U01-ACTIVATION`), unconfigured delegation or a non-named session fails
+closed, and the scenario-running and machine-session conflicts still apply.
+Focused tests cover the verified activation with the recorded selection and
+the fail-closed missing-prerequisite refusal; the existing guard tests and
+browser fixtures (which mock the backend denial) continue to pass. Still open
+for the G2 gate: automatic onboarding of genuinely new profile-declared
+endpoints at activation and the Simulator UI surface; token redemption
+remains exclusively the pinned Visa Service peer's, and no onboarded endpoint
+has a visa or traffic grant.
 
 ### Delivery discipline and completion
 

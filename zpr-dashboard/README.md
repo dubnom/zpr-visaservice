@@ -979,9 +979,15 @@ sh scripts/activate-organization.sh preflight-ordinary-client
 Expected exit is **1** with explicit `U01-*` blockers, before helpers, locks,
 profile/runtime reads, compiler, Docker or network calls. Setting
 `SIMULATION_SETUP_MODE=ordinary-client` also blocks any invocation of this legacy
-launcher before side effects. Set the same variable on the Simulator web process
-to reject activation and Restore immediately with `U01-ACTIVATION`, before
-starting either activation lifecycle. The web API and internal command path
+launcher before side effects. Setting the same variable on the Simulator web
+process changes explicit web activation into the ordinary authorized setup:
+the exact required retained endpoint inventory is compared through the
+authorized enrollment contracts, activation records the organization selection
+only when every requirement is retained and approved, and otherwise every
+missing prerequisite is reported explicitly without starting any setup. The
+legacy activation lifecycle is never invoked in this mode; Restore still
+fails immediately with `U01-ACTIVATION`, and without configured named
+delegation activation fails closed the same way. The web API and internal command path
 also reject legacy packaged `approve-and-provision` and `verify`; the latter can
 change trusted attributes. Global legacy stack/agent start/stop, stack restart,
 and unbound legacy machine start/stop are blocked. Scenario preflight reports

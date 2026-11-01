@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"neboagency.com/zpr-dashborad/internal/gateway"
+	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 	evaluationruntime "neboagency.com/zpr-dashborad/internal/simulator/evaluation"
 	"neboagency.com/zpr-dashborad/internal/simulator/setupmode"
 )
@@ -185,27 +186,33 @@ func simulatorActiveOrganizationPath() string {
 	return filepath.Join(filepath.Dir(simulatorManifestPath()), "active-organization.txt")
 }
 
-func handleSimulatorOrganizationActivate(w http.ResponseWriter, r *http.Request) {
-	handleSimulatorOrganizationOperation(w, r, false)
+func handleSimulatorOrganizationActivate(auth operatorEnrollmentAuthorizer, signer *operatordelegation.Signer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		handleSimulatorOrganizationOperation(w, r, false, auth, signer)
+	}
 }
 
 func handleSimulatorOrganizationRestoreBase(w http.ResponseWriter, r *http.Request) {
-	handleSimulatorOrganizationOperation(w, r, true)
+	handleSimulatorOrganizationOperation(w, r, true, nil, nil)
 }
 
-func handleSimulatorOrganizationOperation(w http.ResponseWriter, r *http.Request, restoreBase bool) {
+func handleSimulatorOrganizationOperation(w http.ResponseWriter, r *http.Request, restoreBase bool, auth operatorEnrollmentAuthorizer, signer *operatordelegation.Signer) {
 	mode, err := setupmode.Parse(os.Getenv(setupmode.Environment))
 	if err != nil {
 		writeWorkspaceError(w, http.StatusServiceUnavailable,
 			"Invalid SIMULATION_SETUP_MODE; expected legacy-launcher or ordinary-client. No setup was started.")
 		return
 	}
+	ordinary := false
 	switch mode {
 	case setupmode.LegacyLauncher:
 	case setupmode.OrdinaryClient:
-		writeWorkspaceError(w, http.StatusServiceUnavailable,
-			"Organization activation and Restore are blocked in ordinary-client mode until independent setup contracts are available (U01-ACTIVATION). No setup was started.")
-		return
+		if restoreBase {
+			writeWorkspaceError(w, http.StatusServiceUnavailable,
+				"Restore is blocked in ordinary-client mode until an independent restore contract is available (U01-ACTIVATION). No setup was started.")
+			return
+		}
+		ordinary = true
 	default:
 		writeWorkspaceError(w, http.StatusServiceUnavailable,
 			"Simulator setup mode is unsupported. No setup was started.")
@@ -230,6 +237,10 @@ func handleSimulatorOrganizationOperation(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	if ordinary {
+		handleOrdinaryClientActivation(w, r, auth, signer, organizationID)
+		return
+	}
 	var started bool
 	if restoreBase {
 		started = activeOrganizationActivation.restoreBase(organizationID, simulatorActiveOrganizationPath())
@@ -242,6 +253,69 @@ func handleSimulatorOrganizationOperation(w http.ResponseWriter, r *http.Request
 	}
 	w.WriteHeader(http.StatusAccepted)
 	writeSimulatorJSON(w, map[string]any{"activation": activeOrganizationActivation.snapshot()})
+}
+
+// handleOrdinaryClientActivation performs the ordinary-client authorized
+// setup for explicit organization activation: the exact required endpoint
+// inventory is compared with retained enrollment state through the ordinary
+// authorized contracts, activation proceeds only when every requirement is
+// retained and approved, and every missing prerequisite is reported
+// explicitly without starting any setup. The legacy launcher-owned
+// activation, resets and restores are never invoked in this mode, and
+// automatic onboarding of genuinely new profile-declared endpoints remains a
+// separate explicit operation.
+func handleOrdinaryClientActivation(w http.ResponseWriter, r *http.Request, auth operatorEnrollmentAuthorizer, signer *operatordelegation.Signer, organizationID string) {
+	if operatorAuthorizationDisabled(auth) || signer == nil {
+		writeWorkspaceError(w, http.StatusServiceUnavailable,
+			"Named enrollment delegation is not configured; explicit activation starts no setup (U01-ACTIVATION).")
+		return
+	}
+	principal, err := simulatorScenarioPrincipalFromContext(r.Context())
+	if err != nil || principal.mode != simulatorAuthorizationNamed {
+		writeWorkspaceError(w, http.StatusForbidden,
+			"Explicit activation requires the current named operator session. No setup was started.")
+		return
+	}
+	readiness := r.Clone(r.Context())
+	readiness.Method = http.MethodGet
+	readiness.URL.RawQuery = ""
+	readiness.Body, readiness.ContentLength = http.NoBody, 0
+	recorder := newSimulatorEnrollmentRecorder()
+	newSimulatorEnrollmentReadinessHandler().serve(auth, signer)(recorder, readiness)
+	if recorder.code != http.StatusOK {
+		writeWorkspaceError(w, http.StatusBadGateway, fmt.Sprintf(
+			"activation readiness is unavailable (HTTP %d); no setup was started", recorder.code))
+		return
+	}
+	var report simulatorEnrollmentReadiness
+	if err := json.Unmarshal(recorder.body.Bytes(), &report); err != nil {
+		writeWorkspaceError(w, http.StatusBadGateway, "activation readiness response is invalid; no setup was started")
+		return
+	}
+	if !report.Ready {
+		w.WriteHeader(http.StatusConflict)
+		writeSimulatorJSON(w, map[string]any{
+			"error":     "the organization's required endpoints are not all retained and approved; resolve the exact missing prerequisites first. No setup was started.",
+			"readiness": report,
+		})
+		return
+	}
+	selection := simulatorActiveOrganizationPath()
+	temporary := selection + ".tmp"
+	if err := os.WriteFile(temporary, []byte(organizationID+"\n"), 0o600); err != nil {
+		writeWorkspaceError(w, http.StatusInternalServerError, "cannot record the activated organization; no setup was started")
+		return
+	}
+	if err := os.Rename(temporary, selection); err != nil {
+		writeWorkspaceError(w, http.StatusInternalServerError, "cannot record the activated organization; no setup was started")
+		return
+	}
+	writeSimulatorJSON(w, map[string]any{
+		"activation": map[string]any{
+			"organization_id": organizationID, "state": "ready-verified", "setup_mode": "ordinary-client",
+		},
+		"readiness": report,
+	})
 }
 
 func loadSimulatorOrganizations(directory string) ([]simulatorOrganization, error) {

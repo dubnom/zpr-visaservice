@@ -272,7 +272,7 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenario-reset/operations/{operation_id}", resetHandler.ServeHTTP)
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-reset/operations/{operation_id}/confirm", resetHandler.ServeHTTP)
 	mux.Handle("/api/simulator/policy-operations/status/", simulatorPolicyStatusHandler(policyStatusClient))
-	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate)
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/activate", handleSimulatorOrganizationActivate(security.auth, signer))
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/restore-base", handleSimulatorOrganizationRestoreBase)
 	mux.HandleFunc("GET /api/simulator/status", handleSimulatorStatus)
 	mux.Handle("GET /api/simulator/data-plane-endpoints", endpointsHandler)

@@ -54,7 +54,7 @@ func TestSimulatorOrdinaryClientBlocksWebActivationAndRestore(t *testing.T) {
 			request.SetPathValue("organization", "velocity")
 			response := httptest.NewRecorder()
 			if test.operation == "activate" {
-				handleSimulatorOrganizationActivate(response, request)
+				handleSimulatorOrganizationActivate(nil, nil)(response, request)
 			} else {
 				handleSimulatorOrganizationRestoreBase(response, request)
 			}
@@ -84,7 +84,7 @@ func TestSimulatorLegacySetupModesPreserveOrganizationValidation(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/api/simulator/organizations/missing/activate", nil)
 			request.SetPathValue("organization", "missing")
 			response := httptest.NewRecorder()
-			handleSimulatorOrganizationActivate(response, request)
+			handleSimulatorOrganizationActivate(nil, nil)(response, request)
 			if response.Code != http.StatusNotFound {
 				t.Fatalf("legacy mode status=%d body=%s", response.Code, response.Body.String())
 			}

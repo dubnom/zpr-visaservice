@@ -727,7 +727,7 @@ func TestSimulatorOrganizationActivationPersistsSelection(t *testing.T) {
 	request := httptest.NewRequest("POST", "/api/simulator/organizations/velocity/activate", nil)
 	request.SetPathValue("organization", "velocity")
 	response := httptest.NewRecorder()
-	handleSimulatorOrganizationActivate(response, request)
+	handleSimulatorOrganizationActivate(nil, nil)(response, request)
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("activation failed: %d %s", response.Code, response.Body.String())
 	}
@@ -738,7 +738,7 @@ func TestSimulatorOrganizationActivationPersistsSelection(t *testing.T) {
 	}
 	request.SetPathValue("organization", "missing")
 	response = httptest.NewRecorder()
-	handleSimulatorOrganizationActivate(response, request)
+	handleSimulatorOrganizationActivate(nil, nil)(response, request)
 	if response.Code != 404 {
 		t.Fatalf("unknown organization activation status = %d", response.Code)
 	}
@@ -753,7 +753,7 @@ func TestSimulatorOrganizationActivationPersistsSelection(t *testing.T) {
 	})
 	request.SetPathValue("organization", "redwood")
 	response = httptest.NewRecorder()
-	handleSimulatorOrganizationActivate(response, request)
+	handleSimulatorOrganizationActivate(nil, nil)(response, request)
 	if response.Code != 409 {
 		t.Fatalf("running scenario activation status = %d", response.Code)
 	}
@@ -763,7 +763,7 @@ func TestSimulatorOrganizationActivationPersistsSelection(t *testing.T) {
 	simulatorSessions.set("activation-test-machine", simulatorUserSession{Authenticated: true})
 	t.Cleanup(func() { simulatorSessions.clear("activation-test-machine") })
 	response = httptest.NewRecorder()
-	handleSimulatorOrganizationActivate(response, request)
+	handleSimulatorOrganizationActivate(nil, nil)(response, request)
 	if response.Code != 409 {
 		t.Fatalf("authenticated session activation status = %d", response.Code)
 	}
