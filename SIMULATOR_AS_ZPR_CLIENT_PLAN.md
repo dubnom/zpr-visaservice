@@ -455,6 +455,27 @@ runtime credential handoff, retry/restart duplicate-identity proof beyond the
 store's active-invitation uniqueness, and wiring onboarding to explicit
 organization activation under `U01-ACTIVATION`.
 
+**Issuance readback, protected local handoff and duplicate-retry proof
+(2026-11-01):** after automatic named self-approval, onboarding now performs
+a proof-of-possession status readback with the same endpoint-owned keys
+(requiring exactly the approved fingerprints and no credential envelope) and
+writes a protected local handoff bundle — a 0700 directory with 0600 files
+holding the endpoint-owned runtime and enrollment private keys plus a
+non-secret identity manifest — under the Simulator workspace. A failure after
+approval reports the approved endpoint's exact failed stage and is never
+rolled back or silently retried; no secret reaches the response or the
+operation record. This is the evaluation client's local handoff, not the
+separate privileged installer or Keychain import contract. **Exercised live
+on Velocity with `zpr-simulator-r8`:** `velocity-sim-onboarded-endpoint-2`
+completed the whole chain in one explicit request — approved, readback
+`approved`, protected bundle on disk — and an immediate duplicate retry for
+the same asset failed closed at invitation creation (HTTP 409 from the paired
+operator service), leaving exactly one approved identity per asset. Still
+open for the G2 gate: adapter/BAS credential issuance for onboarded
+endpoints (the local bundle is not an admitted runtime), wiring onboarding to
+explicit organization activation under `U01-ACTIVATION`, and the Simulator UI
+surface.
+
 ### Delivery discipline and completion
 
 - One coordinator owns live changes. Parallel chats may take bounded source-only
