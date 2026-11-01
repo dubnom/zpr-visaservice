@@ -109,6 +109,36 @@ func TestEvaluationBASProvisionsMaterialConfigAndScripts(t *testing.T) {
 	if err != nil || info.Size() != 48 || info.Mode().Perm() != 0o600 {
 		t.Fatalf("token signing key shape is wrong: %v %v", info, err)
 	}
+	// Root adapter public key: SPKI PEM beside the private key.
+	pubPEM, err := os.ReadFile(filepath.Join(basDir, "root-adapter.pub"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if block, _ := pem.Decode(pubPEM); block == nil || block.Type != "PUBLIC KEY" {
+		t.Fatalf("root adapter public key is not SPKI PEM: %s", pubPEM)
+	}
+	// Compiler-config fragment: bootstrap pin, validation authority, services.
+	fragment, err := os.ReadFile(filepath.Join(basDir, "bas-compiler-config-fragment.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"[bootstrap]",
+		"\"northstar-enrollment-bas\" = \"" + filepath.Join(basDir, "root-adapter.pub") + "\"",
+		"[trusted_services.northstar-enrollment-bas]",
+		"api = \"validation/2\"",
+		"client = \"NorthstarEnrollmentAuth\"",
+		"cert_path = \"" + filepath.Join(basDir, "bas-ca.pem") + "\"",
+		"[services.northstar-enrollment-bas-vs]",
+		"port = 20997",
+		"[services.NorthstarEnrollmentAuth]",
+		"protocol = \"zpr-oauthrsa\"",
+		"port = 20996",
+	} {
+		if !strings.Contains(string(fragment), expected) {
+			t.Fatalf("config fragment lacks %q:\n%s", expected, fragment)
+		}
+	}
 	// Config: single-store BAS section with pinned VS peer.
 	var config map[string]any
 	data, err := os.ReadFile(enrollment)

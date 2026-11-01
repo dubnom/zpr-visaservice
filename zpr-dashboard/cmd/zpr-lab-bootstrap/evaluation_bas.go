@@ -39,16 +39,18 @@ import (
 )
 
 const (
-	evaluationBASCAFile        = "bas-ca.pem"
-	evaluationBASCAKeyFile     = "bas-ca.key"
-	evaluationBASServerCert    = "auth.zpr-runtime.pem"
-	evaluationBASServerKey     = "auth.zpr-runtime.key"
-	evaluationBASTokenKeyFile  = "token-signing.key"
-	evaluationBASRootKeyFile   = "root-adapter.key"
-	evaluationBASHostScript    = "bas-adapter-host.sh"
-	evaluationBASInnerScript   = "bas-adapter-container.sh"
-	evaluationBASTokenKeyBytes = 48
-	evaluationBASCertDays      = 730
+	evaluationBASCAFile         = "bas-ca.pem"
+	evaluationBASCAKeyFile      = "bas-ca.key"
+	evaluationBASServerCert     = "auth.zpr-runtime.pem"
+	evaluationBASServerKey      = "auth.zpr-runtime.key"
+	evaluationBASTokenKeyFile   = "token-signing.key"
+	evaluationBASRootKeyFile    = "root-adapter.key"
+	evaluationBASRootPubFile    = "root-adapter.pub"
+	evaluationBASConfigFragment = "bas-compiler-config-fragment.toml"
+	evaluationBASHostScript     = "bas-adapter-host.sh"
+	evaluationBASInnerScript    = "bas-adapter-container.sh"
+	evaluationBASTokenKeyBytes  = 48
+	evaluationBASCertDays       = 730
 )
 
 func runEvaluationBAS(args []string, stdout, stderr io.Writer) int {
@@ -125,18 +127,87 @@ func provisionEvaluationBAS(state, enrollmentConfig, basDir, adapterListen, toke
 	if err := writeEvaluationBASAdapterScripts(state, basDir, organization, inventory, adapterImage, adapterListen, tokenListen, material); err != nil {
 		return err
 	}
+	if err := writeEvaluationBASConfigFragment(state, basDir, organization, adapterListen, tokenListen); err != nil {
+		return err
+	}
 	fmt.Fprintf(stdout, "Evaluation BAS provisioned for %s.\n", organization)
 	fmt.Fprintf(stdout, "Root adapter public key SHA-256: %s\n", material.rootPublicKeySHA256)
 	fmt.Fprintf(stdout, "Visa Service peer certificate SHA-256: %s\n", material.visaServicePeerSHA256)
 	fmt.Fprintf(stdout, "Restart only the Enrollment Service to serve the BAS listeners, then run the adapter host script (%s) under its own unit.\n",
 		filepath.Join(basDir, evaluationBASHostScript))
-	fmt.Fprintf(stdout, "The authentication root still requires the separate self-approved policy/configuration review. Policy stanza:\n\n"+
+	fmt.Fprintf(stdout, "The authentication root still requires the separate self-approved review of the emitted compiler-config fragment (%s) and the policy stanza below. Both are merged through the maintained change-review pipeline; this command grants nothing.\n\n"+
 		"# Explicit authentication-root proposal only; not workload access policy.\n"+
 		"define %sEnrollmentAuth as a service with device.zpr.adapter.cn:'%s-enrollment-bas'.\n"+
 		"service %sEnrollmentAuth as json {\"service_class\":\"%sEnrollmentAuth\"}.\n"+
 		"  allow zpr.adapter.cn: devices.\n",
+		filepath.Join(basDir, evaluationBASConfigFragment),
 		evaluationBASTitle(organization), organization, evaluationBASTitle(organization), evaluationBASTitle(organization))
 	return nil
+}
+
+// ensureEvaluationBASRootPublicKey writes the root adapter SPKI public key
+// PEM beside its private key for the reviewed compiler-config bootstrap pin.
+func ensureEvaluationBASRootPublicKey(path string, keyPEM []byte) error {
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		return errors.New("invalid root adapter key PEM")
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return err
+	}
+	signer, ok := key.(interface{ Public() crypto.PublicKey })
+	if !ok {
+		return errors.New("unsupported root adapter key type")
+	}
+	der, err := x509.MarshalPKIXPublicKey(signer.Public())
+	if err != nil {
+		return err
+	}
+	return writeEvaluationBASFile(path, pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
+}
+
+// writeEvaluationBASConfigFragment emits the exact reviewed compiler-config
+// stanzas an operator merges (through the self-approved configuration review)
+// so the data plane bootstraps the BAS root adapter, trusts its validation
+// authority, and exposes its OAuth and mTLS validation services. Paths are
+// absolute so the fragment is unambiguous when merged.
+func writeEvaluationBASConfigFragment(state, basDir, organization, adapterListen, tokenListen string) error {
+	_, adapterPort, _ := net.SplitHostPort(adapterListen)
+	_, tokenPort, _ := net.SplitHostPort(tokenListen)
+	adapterCN := organization + "-enrollment-bas"
+	fragment := fmt.Sprintf(`# EVALUATION ONLY BAS authentication-root compiler-config fragment for %[1]s.
+# Merge these stanzas into the data-plane compiler configuration through the
+# self-approved configuration review; they admit only the authentication root.
+
+[bootstrap]
+%[2]q = %[3]q
+
+[trusted_services.%[2]s]
+expiration_seconds = 300
+api = "validation/2"
+client = "%[4]sEnrollmentAuth"
+cert_path = %[5]q
+returns_attributes = [
+  "organization -> device.enrollment.organization",
+  "asset_id -> device.enrollment.asset_id",
+  "profile -> device.enrollment.profile",
+  "type -> device.enrollment.type",
+]
+identity_attributes = ["asset_id"]
+provider = [["device.zpr.adapter.cn", %[2]q]]
+
+[services.%[2]s-vs]
+protocol = "zpr-validation2"
+port = %[6]s
+
+[services.%[4]sEnrollmentAuth]
+protocol = "zpr-oauthrsa"
+port = %[7]s
+`, organization, adapterCN, filepath.Join(basDir, evaluationBASRootPubFile),
+		evaluationBASTitle(organization), filepath.Join(basDir, evaluationBASCAFile),
+		tokenPort, adapterPort)
+	return writeEvaluationBASFile(filepath.Join(basDir, evaluationBASConfigFragment), []byte(fragment))
 }
 
 type evaluationBASMaterial struct {
@@ -213,6 +284,9 @@ func ensureEvaluationBASMaterial(basDir, organization string) (evaluationBASMate
 	rootDigest, err := evaluationBASPublicKeySHA256(rootPEM)
 	if err != nil {
 		return none, fmt.Errorf("root adapter key: %w", err)
+	}
+	if err := ensureEvaluationBASRootPublicKey(filepath.Join(basDir, evaluationBASRootPubFile), rootPEM); err != nil {
+		return none, err
 	}
 	peerDigest := sha256.Sum256(peerCertificate.Raw)
 	return evaluationBASMaterial{
