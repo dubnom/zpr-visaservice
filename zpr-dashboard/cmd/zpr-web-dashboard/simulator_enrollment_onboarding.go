@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,6 +38,13 @@ type simulatorEnrollmentClaimResult struct {
 	Revision              int
 	KeyFingerprint        string
 	RuntimeKeyFingerprint string
+	// readback performs the proof-of-possession status read with the same
+	// endpoint-owned keys after approval.
+	readback func(ctx context.Context) (enrollment.DeviceStatus, error)
+	close    func()
+	// PKCS#8 PEM private keys for the protected local handoff bundle.
+	enrollmentKeyPEM []byte
+	runtimeKeyPEM    []byte
 }
 
 type simulatorEnrollmentOnboardingHandler struct {
@@ -68,6 +76,14 @@ func simulatorEnrollmentKeyFingerprint(key *rsa.PrivateKey) (string, error) {
 	}
 	digest := sha256.Sum256(der)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+func simulatorEnrollmentPrivateKeyPEM(key *rsa.PrivateKey) ([]byte, error) {
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), nil
 }
 
 // simulatorEnrollmentDeviceClaim generates fresh endpoint-owned enrollment and
@@ -103,18 +119,35 @@ func simulatorEnrollmentDeviceClaim(ctx context.Context, deviceURL, caFile, orga
 	if err != nil {
 		return simulatorEnrollmentClaimResult{}, errors.New("enrollment device client configuration is invalid")
 	}
-	defer client.Close()
 	status, err := client.Claim(ctx, organization, invitation, code)
 	if err != nil {
+		client.Close()
 		return simulatorEnrollmentClaimResult{}, fmt.Errorf("device claim: %w", err)
 	}
 	if status.State != "pending_approval" || status.KeyFingerprint != keyFingerprint ||
 		status.RuntimeKeyFingerprint != runtimeFingerprint {
+		client.Close()
 		return simulatorEnrollmentClaimResult{}, errors.New("device claim result does not bind exactly the locally generated endpoint keys")
+	}
+	enrollmentPEM, err := simulatorEnrollmentPrivateKeyPEM(enrollmentKey)
+	if err != nil {
+		client.Close()
+		return simulatorEnrollmentClaimResult{}, err
+	}
+	runtimePEM, err := simulatorEnrollmentPrivateKeyPEM(runtimeKey)
+	if err != nil {
+		client.Close()
+		return simulatorEnrollmentClaimResult{}, err
 	}
 	return simulatorEnrollmentClaimResult{
 		State: status.State, Revision: status.Revision,
 		KeyFingerprint: keyFingerprint, RuntimeKeyFingerprint: runtimeFingerprint,
+		readback: func(ctx context.Context) (enrollment.DeviceStatus, error) {
+			return client.Status(ctx, organization, invitation)
+		},
+		close:            client.Close,
+		enrollmentKeyPEM: enrollmentPEM,
+		runtimeKeyPEM:    runtimePEM,
 	}, nil
 }
 
@@ -126,9 +159,52 @@ type simulatorEnrollmentOnboardingRecord struct {
 	Revision              int       `json:"revision"`
 	KeyFingerprint        string    `json:"key_fingerprint,omitempty"`
 	RuntimeKeyFingerprint string    `json:"runtime_key_fingerprint,omitempty"`
+	ReadbackState         string    `json:"readback_state,omitempty"`
 	FailedStage           string    `json:"failed_stage,omitempty"`
 	RuntimeHandoff        string    `json:"runtime_handoff"`
+	HandoffPath           string    `json:"handoff_path,omitempty"`
 	RecordedAt            time.Time `json:"recorded_at"`
+}
+
+// handoffEndpointBundle writes the endpoint-owned private keys and a
+// non-secret identity manifest into a protected local bundle owned by the
+// Simulator workspace. This is a local handoff for the evaluation client,
+// not the separate privileged installer or Keychain import contract.
+func (h *simulatorEnrollmentOnboardingHandler) handoffEndpointBundle(record simulatorEnrollmentOnboardingRecord, claimed simulatorEnrollmentClaimResult) (string, error) {
+	if h.workspace == "" {
+		return "", errors.New("simulator workspace is not configured")
+	}
+	directory := filepath.Join(h.workspace, "enrollment-identities", record.Organization, record.AssetID)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", err
+	}
+	manifest, err := json.MarshalIndent(struct {
+		Organization          string    `json:"organization"`
+		AssetID               string    `json:"asset_id"`
+		InvitationID          string    `json:"invitation_id"`
+		KeyFingerprint        string    `json:"key_fingerprint"`
+		RuntimeKeyFingerprint string    `json:"runtime_key_fingerprint"`
+		RecordedAt            time.Time `json:"recorded_at"`
+	}{record.Organization, record.AssetID, record.InvitationID,
+		record.KeyFingerprint, record.RuntimeKeyFingerprint, record.RecordedAt}, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	for name, contents := range map[string][]byte{
+		"runtime-auth.key":    claimed.runtimeKeyPEM,
+		"enrollment-auth.key": claimed.enrollmentKeyPEM,
+		"identity.json":       append(manifest, '\n'),
+	} {
+		target := filepath.Join(directory, name)
+		temporary := target + ".tmp"
+		if err := os.WriteFile(temporary, contents, 0o600); err != nil {
+			return "", err
+		}
+		if err := os.Rename(temporary, target); err != nil {
+			return "", err
+		}
+	}
+	return directory, nil
 }
 
 func (h *simulatorEnrollmentOnboardingHandler) persist(record simulatorEnrollmentOnboardingRecord) error {
@@ -228,6 +304,9 @@ func (h *simulatorEnrollmentOnboardingHandler) serve(auth operatorEnrollmentAuth
 				created.Invitation.ID, err))
 			return
 		}
+		if claimed.close != nil {
+			defer claimed.close()
+		}
 		record.State, record.Revision = claimed.State, claimed.Revision
 		record.KeyFingerprint, record.RuntimeKeyFingerprint = claimed.KeyFingerprint, claimed.RuntimeKeyFingerprint
 		// Stage 3: automatic named self-approval bound to the exact claimed
@@ -264,6 +343,35 @@ func (h *simulatorEnrollmentOnboardingHandler) serve(auth operatorEnrollmentAuth
 			return
 		}
 		record.State, record.Revision = approved.State, approved.Revision
+		// Stage 4: proof-of-possession issuance readback with the same
+		// endpoint-owned keys; the endpoint is already approved, so a failure
+		// here is reported explicitly instead of being rolled back.
+		if claimed.readback == nil {
+			fail(http.StatusInternalServerError, "issuance-readback",
+				"the endpoint is approved but no readback is available; reconcile the enrollment inventory")
+			return
+		}
+		readbackContext, cancelReadback := context.WithTimeout(r.Context(), 30*time.Second)
+		status, err := claimed.readback(readbackContext)
+		cancelReadback()
+		if err != nil || status.State != "approved" ||
+			status.KeyFingerprint != claimed.KeyFingerprint ||
+			status.RuntimeKeyFingerprint != claimed.RuntimeKeyFingerprint ||
+			status.CredentialsIssued {
+			fail(http.StatusBadGateway, "issuance-readback", fmt.Sprintf(
+				"the endpoint is approved but the proof-of-possession readback for invitation %s did not confirm exactly the approved endpoint keys: %v",
+				created.Invitation.ID, err))
+			return
+		}
+		record.ReadbackState = status.State
+		// Stage 5: protected local handoff of the endpoint-owned keys.
+		handoffPath, err := h.handoffEndpointBundle(record, claimed)
+		if err != nil {
+			fail(http.StatusInternalServerError, "runtime-handoff", fmt.Sprintf(
+				"the endpoint is approved and read back but its protected key bundle could not be written: %v", err))
+			return
+		}
+		record.RuntimeHandoff, record.HandoffPath = "local-bundle", handoffPath
 		if err := h.persist(record); err != nil {
 			writeWorkspaceError(w, http.StatusInternalServerError,
 				"endpoint was approved but the operation record could not be persisted; reconcile the enrollment inventory")

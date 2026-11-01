@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"neboagency.com/zpr-dashborad/internal/enrollment"
 )
 
 func simulatorEnrollmentOnboardingTestHandler(
@@ -71,15 +73,32 @@ func readOnboardingRecord(t *testing.T, workspace, organization, asset string) s
 	return record
 }
 
+func syntheticClaimResult(readbackErr error) simulatorEnrollmentClaimResult {
+	result := simulatorEnrollmentClaimResult{
+		State: "pending_approval", Revision: 2,
+		KeyFingerprint:        strings.Repeat("a", 64),
+		RuntimeKeyFingerprint: strings.Repeat("b", 64),
+		enrollmentKeyPEM:      []byte("-----BEGIN PRIVATE KEY-----\nsynthetic-enrollment\n-----END PRIVATE KEY-----\n"),
+		runtimeKeyPEM:         []byte("-----BEGIN PRIVATE KEY-----\nsynthetic-runtime\n-----END PRIVATE KEY-----\n"),
+	}
+	result.readback = func(context.Context) (enrollment.DeviceStatus, error) {
+		if readbackErr != nil {
+			return enrollment.DeviceStatus{}, readbackErr
+		}
+		return enrollment.DeviceStatus{
+			State: "approved", Revision: 3,
+			KeyFingerprint:        result.KeyFingerprint,
+			RuntimeKeyFingerprint: result.RuntimeKeyFingerprint,
+		}, nil
+	}
+	return result
+}
+
 func TestSimulatorEnrollmentOnboardingApprovesExactClaimedKeys(t *testing.T) {
 	const organization = "velocity"
 	fixture := newSimulatorEnrollmentRelayFixture(t, organization)
 	simulatorEnrollmentTestRegistry(t, organization, fixture)
-	claimed := simulatorEnrollmentClaimResult{
-		State: "pending_approval", Revision: 2,
-		KeyFingerprint:        strings.Repeat("a", 64),
-		RuntimeKeyFingerprint: strings.Repeat("b", 64),
-	}
+	claimed := syntheticClaimResult(nil)
 	var claimedInvitation, claimedCode string
 	handler, workspace := simulatorEnrollmentOnboardingTestHandler(t, fixture,
 		func(_ context.Context, org, invitation, code string) (simulatorEnrollmentClaimResult, error) {
@@ -109,20 +128,60 @@ func TestSimulatorEnrollmentOnboardingApprovesExactClaimedKeys(t *testing.T) {
 	record := readOnboardingRecord(t, workspace, organization, "velocity-sim-onboarded-endpoint")
 	if record.State != "approved" || record.Revision != 3 || record.FailedStage != "" ||
 		record.InvitationID != "ABCDEFGHIJKLMNOPQRSTUVWX23" ||
-		record.KeyFingerprint != claimed.KeyFingerprint || record.RuntimeHandoff != "not-performed" {
+		record.KeyFingerprint != claimed.KeyFingerprint ||
+		record.ReadbackState != "approved" || record.RuntimeHandoff != "local-bundle" || record.HandoffPath == "" {
 		t.Fatalf("unexpected operation record: %+v", record)
 	}
-	if strings.Contains(response.Body.String(), "synthetic-code") {
-		t.Fatalf("onboarding response leaks the one-time code: %s", response.Body)
+	for name, expected := range map[string][]byte{
+		"runtime-auth.key": claimed.runtimeKeyPEM, "enrollment-auth.key": claimed.enrollmentKeyPEM,
+	} {
+		path := filepath.Join(record.HandoffPath, name)
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+			t.Fatalf("handoff bundle %s missing or unprotected: %v", name, err)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil || string(data) != string(expected) {
+			t.Fatalf("handoff bundle %s does not contain the exact endpoint key", name)
+		}
+	}
+	manifest, err := os.ReadFile(filepath.Join(record.HandoffPath, "identity.json"))
+	if err != nil || strings.Contains(string(manifest), "PRIVATE KEY") ||
+		!strings.Contains(string(manifest), record.InvitationID) {
+		t.Fatalf("handoff manifest invalid: %s (%v)", manifest, err)
+	}
+	if strings.Contains(response.Body.String(), "synthetic-code") ||
+		strings.Contains(response.Body.String(), "PRIVATE KEY") {
+		t.Fatalf("onboarding response leaks secret material: %s", response.Body)
 	}
 }
 
 func TestSimulatorEnrollmentOnboardingFailsClosedPerStage(t *testing.T) {
 	const organization = "velocity"
 	okClaim := func(context.Context, string, string, string) (simulatorEnrollmentClaimResult, error) {
-		return simulatorEnrollmentClaimResult{State: "pending_approval", Revision: 2,
-			KeyFingerprint: strings.Repeat("a", 64), RuntimeKeyFingerprint: strings.Repeat("b", 64)}, nil
+		return syntheticClaimResult(nil), nil
 	}
+	t.Run("readback failure reports the approved endpoint explicitly", func(t *testing.T) {
+		fixture := newSimulatorEnrollmentRelayFixture(t, organization)
+		simulatorEnrollmentTestRegistry(t, organization, fixture)
+		handler, workspace := simulatorEnrollmentOnboardingTestHandler(t, fixture,
+			func(context.Context, string, string, string) (simulatorEnrollmentClaimResult, error) {
+				return syntheticClaimResult(errors.New("device listener unavailable")), nil
+			})
+		response := serveSimulatorEnrollmentOnboarding(t, fixture, handler, organization,
+			[]string{"create", "approve", "approval.self"})
+		if response.Code != http.StatusBadGateway || fixture.approveCalls.Load() != 1 ||
+			!strings.Contains(response.Body.String(), "approved but") {
+			t.Fatalf("status=%d approve=%d body=%s", response.Code, fixture.approveCalls.Load(), response.Body)
+		}
+		record := readOnboardingRecord(t, workspace, organization, "velocity-sim-onboarded-endpoint")
+		if record.FailedStage != "issuance-readback" || record.State != "approved" || record.RuntimeHandoff != "not-performed" {
+			t.Fatalf("unexpected failure record: %+v", record)
+		}
+		if _, err := os.Lstat(filepath.Join(workspace, "enrollment-identities")); !os.IsNotExist(err) {
+			t.Fatal("failed readback still wrote a key bundle")
+		}
+	})
 	t.Run("device claim failure keeps the invitation for review", func(t *testing.T) {
 		fixture := newSimulatorEnrollmentRelayFixture(t, organization)
 		simulatorEnrollmentTestRegistry(t, organization, fixture)
