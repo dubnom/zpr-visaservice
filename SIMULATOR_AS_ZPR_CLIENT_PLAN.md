@@ -491,7 +491,19 @@ operation record (`runtime_credential_check: bas-authorized`); a denied
 proof, mismatched bundle, missing bundle or unconfigured contract fails
 closed with a distinct status. This proves the approved runtime key is
 accepted by the production issuer; it does not admit the endpoint, issue a
-visa or grant any traffic.
+visa or grant any traffic. **Exercised live on Velocity the same day:** with
+`zpr-simulator-r10` and the BAS contract flags, the onboarded endpoint's
+runtime key completed the live nonce/proof exchange against the production
+adapter listener (`bas-authorized`, code discarded unread) and an endpoint
+without a bundle failed closed. The live duplicate-retry evidence also
+exposed and fixed a record-persistence defect: attempts that never reach
+approval now persist to a separate per-asset attempt file and can no longer
+clobber the canonical approved record, whose full lifecycle on Velocity now
+reads approved → readback approved → local-bundle handoff → bas-authorized.
+Still open for the G2 gate: wiring onboarding to explicit organization
+activation under `U01-ACTIVATION` and the Simulator UI surface; token
+redemption remains exclusively the pinned Visa Service peer's, and no
+onboarded endpoint has a visa or traffic grant.
 
 ### Delivery discipline and completion
 
