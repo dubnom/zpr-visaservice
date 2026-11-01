@@ -333,8 +333,27 @@ failed closed. See the
 [dev environment record](environments/dev.json). Still open: enrollment
 mutations from the Simulator, a Simulator UI surface for the read, the
 backend budget-authority grant (live scenario budget self-approval still
-fails closed), and G2 inventory comparison, endpoint key generation and
+fails closed), and G2 endpoint key generation and
 issuance/readback wiring.
+
+**Activation readiness inventory comparison (2026-10-31, source only):**
+`GET /api/simulator/organizations/{organization}/enrollment/readiness` now
+implements the non-mutating first step of G2 activation wiring: it compares
+the exact reviewed retained Velocity endpoint inventory (the shared
+five-asset list also enforced by the retained machine lifecycle) with the
+organization's current enrollment state read through the same authorized
+operator-bound relay, and reports per-endpoint status
+(`approved-retained`/`not-approved`/`approval-expired`/`missing`) plus every
+exact missing prerequisite. An organization without a retained
+machine-runtime inventory contract truthfully reports that single
+prerequisite without calling enrollment; an upstream denial or invalid
+response reports unknown-not-ready explicitly; nothing starts setup, and
+explicit activation itself remains blocked in ordinary-client mode
+(U01-ACTIVATION). Focused tests cover the ready and mixed comparisons and the
+fail-closed paths. The live paired Velocity Simulator state has no retained
+machine-runtime binding wired yet, so live readiness currently reports that
+exact missing prerequisite; wiring the retained runtime into the paired
+Simulator and the activation-triggered onboarding mutations remain open.
 
 ### Delivery discipline and completion
 

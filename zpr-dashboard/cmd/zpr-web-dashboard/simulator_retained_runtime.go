@@ -37,6 +37,14 @@ type simulatorRetainedMachineRuntime struct {
 
 const retainedCallbackAddress = "fd5a:5052:adda:1:ffff:ffff:ffff:fffe"
 
+// simulatorRetainedRequiredAssets is the exact reviewed retained Velocity
+// machine-runtime endpoint inventory; the retained lifecycle and enrollment
+// readiness comparison both use this list and never infer additional assets.
+var simulatorRetainedRequiredAssets = []string{
+	"velocity-machine-03-controller", "velocity-machine-03-finance-client",
+	"velocity-machine-05-controller", "velocity-machine-05-echo-service", "velocity-simulator-control",
+}
+
 var retainedMachineLifecycleMu sync.Mutex
 
 func validateSimulatorRetainedMachineRuntime(organization simulatorOrganization) error {
@@ -103,10 +111,7 @@ func verifySimulatorRetainedMachineFiles(organization simulatorOrganization) err
 	if err != nil || !x509.NewCertPool().AppendCertsFromPEM(ca) {
 		return errors.New("retained data-plane CA is unavailable or invalid")
 	}
-	for _, asset := range []string{
-		"velocity-machine-03-controller", "velocity-machine-03-finance-client",
-		"velocity-machine-05-controller", "velocity-machine-05-echo-service", "velocity-simulator-control",
-	} {
+	for _, asset := range simulatorRetainedRequiredAssets {
 		files := retainedEndpointFiles(runtime, asset)
 		if _, err := machinePHAuthenticationArguments("", files[0]); err != nil {
 			return fmt.Errorf("retained asset %s: %w", asset, err)

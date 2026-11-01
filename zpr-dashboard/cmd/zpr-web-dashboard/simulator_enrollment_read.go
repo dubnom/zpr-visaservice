@@ -78,32 +78,46 @@ func simulatorEnrollmentInvitations(auth operatorEnrollmentAuthorizer, signer *o
 			writeWorkspaceError(w, http.StatusForbidden, "Enrollment reads require the current named operator session with the enrollment read grant for this organization.")
 			return
 		}
-		registry := simulatorEvaluationInstallRegistry
-		if registry == nil {
-			http.Error(w, "paired operator service is unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		target, err := registry.target(organization)
-		if err != nil {
-			http.Error(w, "paired operator service is unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		transport, err := servicehttp.MutualTLSClientTransport(target.CertFile, target.KeyFile, target.CAFile, "")
-		if err != nil {
-			http.Error(w, "paired operator service TLS configuration is unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		defer transport.CloseIdleConnections()
-		origin, err := url.Parse(target.ServiceURL)
-		if err != nil {
-			http.Error(w, "invalid paired operator origin", http.StatusServiceUnavailable)
-			return
-		}
-		request := r.Clone(r.Context())
-		request.URL.Path = enrollment.APIPrefix + "invitations"
-		request.URL.RawQuery = url.Values{"organization": []string{organization}}.Encode()
-		request.Body, request.ContentLength = http.NoBody, 0
-		boundAuth := simulatorEnrollmentBoundAuthorizer{auth: auth, principal: principal}
-		operatorEnrollmentProxy(boundAuth, signer, controlroom.NewProxy(origin, transport)).ServeHTTP(w, request)
+		relaySimulatorEnrollmentInvitations(w, r, auth, signer, principal, organization)
 	}
+}
+
+// relaySimulatorEnrollmentInvitations performs the authorized, operator-bound
+// invitations read against the organization's paired operator service.
+func relaySimulatorEnrollmentInvitations(
+	w http.ResponseWriter,
+	r *http.Request,
+	auth operatorEnrollmentAuthorizer,
+	signer *operatordelegation.Signer,
+	principal simulatorScenarioPrincipal,
+	organization string,
+) {
+	registry := simulatorEvaluationInstallRegistry
+	if registry == nil {
+		http.Error(w, "paired operator service is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	target, err := registry.target(organization)
+	if err != nil {
+		http.Error(w, "paired operator service is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	transport, err := servicehttp.MutualTLSClientTransport(target.CertFile, target.KeyFile, target.CAFile, "")
+	if err != nil {
+		http.Error(w, "paired operator service TLS configuration is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	defer transport.CloseIdleConnections()
+	origin, err := url.Parse(target.ServiceURL)
+	if err != nil {
+		http.Error(w, "invalid paired operator origin", http.StatusServiceUnavailable)
+		return
+	}
+	request := r.Clone(r.Context())
+	request.Method = http.MethodGet
+	request.URL.Path = enrollment.APIPrefix + "invitations"
+	request.URL.RawQuery = url.Values{"organization": []string{organization}}.Encode()
+	request.Body, request.ContentLength = http.NoBody, 0
+	boundAuth := simulatorEnrollmentBoundAuthorizer{auth: auth, principal: principal}
+	operatorEnrollmentProxy(boundAuth, signer, controlroom.NewProxy(origin, transport)).ServeHTTP(w, request)
 }

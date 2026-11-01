@@ -260,6 +260,7 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("POST /api/simulator/scenario-plans/budget-approval", simulatorScenarioBudgetApproval(security.auth, signer))
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/scenario-plans/budget-approval", simulatorScenarioBudgetApproval(security.auth, signer))
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/enrollment/invitations", simulatorEnrollmentInvitations(security.auth, signer))
+	mux.HandleFunc("GET /api/simulator/organizations/{organization}/enrollment/readiness", newSimulatorEnrollmentReadinessHandler().serve(security.auth, signer))
 	mux.HandleFunc("GET /simulator-navigation.json", handleSimulatorNavigationConfig)
 	mux.HandleFunc("GET /api/simulator/network", handleSimulatorNetworkMetadata)
 	mux.HandleFunc("GET /api/simulator/organizations/{organization}/scenario-reset/status", resetHandler.ServeHTTP)

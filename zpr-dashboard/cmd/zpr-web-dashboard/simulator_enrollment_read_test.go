@@ -77,13 +77,15 @@ func (s *simulatorEnrollmentTestReplayStore) ConsumeOperatorDelegation(_ context
 }
 
 type simulatorEnrollmentRelayFixture struct {
-	server     *httptest.Server
-	signer     *operatordelegation.Signer
-	identity   operatorauth.Identity
-	certPath   string
-	keyPath    string
-	caPath     string
-	relayCalls atomic.Int32
+	server          *httptest.Server
+	signer          *operatordelegation.Signer
+	identity        operatorauth.Identity
+	certPath        string
+	keyPath         string
+	caPath          string
+	relayCalls      atomic.Int32
+	invitationsBody string
+	failStatus      int
 }
 
 // newSimulatorEnrollmentRelayFixture stands in for the paired Control-Service
@@ -137,6 +139,7 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 	}
 	fixture := &simulatorEnrollmentRelayFixture{
 		signer: signer, identity: identity, certPath: certPath, keyPath: keyPath, caPath: caPath,
+		invitationsBody: `{"invitations":[{"id":"inv-1","state":"invited"}]}`,
 	}
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 {
@@ -163,8 +166,12 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 			return
 		}
 		fixture.relayCalls.Add(1)
+		if fixture.failStatus != 0 {
+			http.Error(w, "upstream denied", fixture.failStatus)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"invitations":[{"id":"inv-1","state":"invited"}]}`))
+		_, _ = w.Write([]byte(fixture.invitationsBody))
 	}))
 	server.TLS = &tls.Config{
 		MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{certificate},
