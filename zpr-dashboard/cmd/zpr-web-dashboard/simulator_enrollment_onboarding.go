@@ -152,18 +152,20 @@ func simulatorEnrollmentDeviceClaim(ctx context.Context, deviceURL, caFile, orga
 }
 
 type simulatorEnrollmentOnboardingRecord struct {
-	Organization          string    `json:"organization"`
-	AssetID               string    `json:"asset_id"`
-	InvitationID          string    `json:"invitation_id"`
-	State                 string    `json:"state"`
-	Revision              int       `json:"revision"`
-	KeyFingerprint        string    `json:"key_fingerprint,omitempty"`
-	RuntimeKeyFingerprint string    `json:"runtime_key_fingerprint,omitempty"`
-	ReadbackState         string    `json:"readback_state,omitempty"`
-	FailedStage           string    `json:"failed_stage,omitempty"`
-	RuntimeHandoff        string    `json:"runtime_handoff"`
-	HandoffPath           string    `json:"handoff_path,omitempty"`
-	RecordedAt            time.Time `json:"recorded_at"`
+	Organization               string     `json:"organization"`
+	AssetID                    string     `json:"asset_id"`
+	InvitationID               string     `json:"invitation_id"`
+	State                      string     `json:"state"`
+	Revision                   int        `json:"revision"`
+	KeyFingerprint             string     `json:"key_fingerprint,omitempty"`
+	RuntimeKeyFingerprint      string     `json:"runtime_key_fingerprint,omitempty"`
+	ReadbackState              string     `json:"readback_state,omitempty"`
+	FailedStage                string     `json:"failed_stage,omitempty"`
+	RuntimeHandoff             string     `json:"runtime_handoff"`
+	HandoffPath                string     `json:"handoff_path,omitempty"`
+	RuntimeCredentialCheck     string     `json:"runtime_credential_check,omitempty"`
+	RuntimeCredentialCheckedAt *time.Time `json:"runtime_credential_checked_at,omitempty"`
+	RecordedAt                 time.Time  `json:"recorded_at"`
 }
 
 // handoffEndpointBundle writes the endpoint-owned private keys and a

@@ -51,6 +51,9 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 	oidcOverride := flags.String("simulator-oidc-file", "", "optional protected Simulator OIDC session override that may add only explicit enrollment/budget permissions to the frozen named grants")
 	retainedFile := flags.String("retained-machine-runtime-file", "", "optional protected retained topology/machine-runtime bindings for this installation's paired Simulator launch")
 	enrollmentDeviceURL := flags.String("enrollment-device-url", "", "optional exact HTTPS origin of this installation's Enrollment Service device listener for explicit Simulator onboarding")
+	basURL := flags.String("enrollment-bas-url", "", "optional exact HTTPS dial origin of this installation's enrollment BAS adapter listener for the explicit runtime credential check")
+	basAuthority := flags.String("enrollment-bas-authority", "", "exact host:port authority the BAS adapter listener expects (required with enrollment-bas-url)")
+	basCAFile := flags.String("enrollment-bas-ca-file", "", "protected CA bundle for the BAS adapter listener TLS (required with enrollment-bas-url)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -92,6 +95,19 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 		}
 		env = append(env, "SIMULATOR_ENROLLMENT_DEVICE_URL="+*enrollmentDeviceURL,
 			"SIMULATOR_ENROLLMENT_DEVICE_CA_FILE="+filepath.Join(*evaluation, "ca.pem"))
+	}
+	if *basURL != "" || *basAuthority != "" || *basCAFile != "" {
+		origin, err := url.Parse(*basURL)
+		host, port, hostErr := net.SplitHostPort(*basAuthority)
+		if err != nil || origin.Scheme != "https" || origin.Hostname() == "" || origin.User != nil ||
+			*basURL != "https://"+origin.Host || hostErr != nil || host == "" || port == "" ||
+			!filepath.IsAbs(*basCAFile) || filepath.Clean(*basCAFile) != *basCAFile {
+			fmt.Fprintln(stderr, "Simulator setup: the BAS credential check requires an exact HTTPS dial origin, the listener's exact host:port authority and an absolute CA file")
+			return 1
+		}
+		env = append(env, "SIMULATOR_ENROLLMENT_BAS_URL="+*basURL,
+			"SIMULATOR_ENROLLMENT_BAS_AUTHORITY="+*basAuthority,
+			"SIMULATOR_ENROLLMENT_BAS_CA_FILE="+*basCAFile)
 	}
 	if *catalog != "" {
 		env, err = prepareEvaluationSimulatorCatalog(*evaluation, *state, *catalog, env)

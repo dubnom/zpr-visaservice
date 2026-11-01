@@ -476,6 +476,23 @@ endpoints (the local bundle is not an admitted runtime), wiring onboarding to
 explicit organization activation under `U01-ACTIVATION`, and the Simulator UI
 surface.
 
+**Explicit BAS runtime credential check (2026-11-01, source only):**
+`POST /api/simulator/organizations/{organization}/enrollment/credential-check`
+exercises the endpoint side of the production BAS runtime credential contract
+for one onboarded endpoint: the handoff bundle's runtime key (verified
+against the recorded approved fingerprint before any network call) requests a
+one-time nonce from the separately configured BAS adapter listener (launcher
+flags `-enrollment-bas-url`/`-enrollment-bas-authority`/
+`-enrollment-bas-ca-file`) and proves possession with an RSA signature; the
+resulting one-time authorization code is deliberately discarded unread, since
+redemption belongs exclusively to the pinned Visa Service peer and the code
+expires on its configured short lifetime. Success updates the persisted
+operation record (`runtime_credential_check: bas-authorized`); a denied
+proof, mismatched bundle, missing bundle or unconfigured contract fails
+closed with a distinct status. This proves the approved runtime key is
+accepted by the production issuer; it does not admit the endpoint, issue a
+visa or grant any traffic.
+
 ### Delivery discipline and completion
 
 - One coordinator owns live changes. Parallel chats may take bounded source-only
