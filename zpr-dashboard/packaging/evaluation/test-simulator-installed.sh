@@ -41,7 +41,56 @@ grep -Fx -- 'unset' "$SETUP_MODE"
 SIMULATION_SETUP_MODE=ordinary-client sh "$tmp/companion/simulator.sh" start \
     "$tmp/package" "$tmp/evaluation" "$tmp/simulator" >/dev/null
 grep -Fx -- 'ordinary-client' "$SETUP_MODE"
+# Paired-operation options pass through verbatim to the bootstrap.
+printf 'operator-config\n' > "$tmp/oidc.json"
+printf 'operator-config\n' > "$tmp/retained.json"
+printf 'operator-config\n' > "$tmp/bas-ca.pem"
+sh "$tmp/companion/simulator.sh" start "$tmp/package" "$tmp/evaluation" "$tmp/simulator" \
+    --full-catalog \
+    --simulator-oidc-file "$tmp/oidc.json" \
+    --retained-machine-runtime-file "$tmp/retained.json" \
+    --enrollment-device-url https://device.example:24991 \
+    --enrollment-bas-url https://bas.example:24996 \
+    --enrollment-bas-authority auth.zpr:24996 \
+    --enrollment-bas-ca-file "$tmp/bas-ca.pem" >/dev/null
+grep -Fx -- '-simulator-oidc-file' "$ARGS"
+grep -Fx -- "$tmp/oidc.json" "$ARGS"
+grep -Fx -- '-retained-machine-runtime-file' "$ARGS"
+grep -Fx -- "$tmp/retained.json" "$ARGS"
+grep -Fx -- '-enrollment-device-url' "$ARGS"
+grep -Fx -- 'https://device.example:24991' "$ARGS"
+grep -Fx -- '-enrollment-bas-url' "$ARGS"
+grep -Fx -- '-enrollment-bas-authority' "$ARGS"
+grep -Fx -- 'auth.zpr:24996' "$ARGS"
+grep -Fx -- '-enrollment-bas-ca-file' "$ARGS"
+grep -Fx -- "$tmp/bas-ca.pem" "$ARGS"
+grep -Fx -- '-catalog' "$ARGS"
 cp "$ARGS" "$tmp/original-args"
+# Unsupported options, relative paths, missing files and plain-HTTP URLs are refused.
+if sh "$tmp/companion/simulator.sh" start "$tmp/package" "$tmp/evaluation" "$tmp/simulator" \
+    --unknown-option value >"$tmp/error" 2>&1; then
+    echo "unsupported option accepted" >&2
+    exit 1
+fi
+grep 'unsupported option' "$tmp/error"
+if sh "$tmp/companion/simulator.sh" start "$tmp/package" "$tmp/evaluation" "$tmp/simulator" \
+    --simulator-oidc-file relative.json >"$tmp/error" 2>&1; then
+    echo "relative operator file accepted" >&2
+    exit 1
+fi
+grep 'absolute path' "$tmp/error"
+if sh "$tmp/companion/simulator.sh" start "$tmp/package" "$tmp/evaluation" "$tmp/simulator" \
+    --retained-machine-runtime-file "$tmp/missing.json" >"$tmp/error" 2>&1; then
+    echo "missing operator file accepted" >&2
+    exit 1
+fi
+grep 'does not exist' "$tmp/error"
+if sh "$tmp/companion/simulator.sh" start "$tmp/package" "$tmp/evaluation" "$tmp/simulator" \
+    --enrollment-device-url http://device.example:24991 >"$tmp/error" 2>&1; then
+    echo "plain-HTTP device URL accepted" >&2
+    exit 1
+fi
+grep 'HTTPS URL' "$tmp/error"
 printf 'different-build\n' > "$tmp/package/BUILD-INFO.txt"
 checksum
 if sh "$tmp/companion/simulator.sh" start "$tmp/package" "$tmp/evaluation" "$tmp/simulator" >"$tmp/error" 2>&1; then
@@ -56,4 +105,4 @@ if sh "$tmp/companion/simulator.sh" start "$tmp/package" "$tmp/evaluation" "$tmp
 fi
 grep 'Simulator package verification failed' "$tmp/error"
 cmp "$ARGS" "$tmp/original-args"
-printf 'PASS: paired build identity, exact launch arguments, setup-mode forwarding, tamper rejection\n'
+printf 'PASS: paired build identity, exact launch arguments, setup-mode and paired-operation option forwarding, fail-closed option validation, tamper rejection\n'

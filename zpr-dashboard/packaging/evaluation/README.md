@@ -212,6 +212,28 @@ changed assets. Catalog availability does not provision independent production
 installs, machine runtimes, or authorize scenario execution. Live activation
 still requires the organization's independently configured install.
 Without the flag, the companion retains its evaluation-only behavior.
+
+For paired operation against an installation whose operator has explicitly
+registered this Simulator, the launch script passes operator-owned
+configuration through verbatim; the bootstrap revalidates every file and
+contract and never fabricates one:
+
+```sh
+./simulator.sh start PACKAGE EVALUATION_STATE SIMULATOR_STATE \
+  [--full-catalog] \
+  [--simulator-oidc-file /absolute/operator-session-override.json] \
+  [--retained-machine-runtime-file /absolute/retained-bindings.json] \
+  [--enrollment-device-url https://host:port] \
+  [--enrollment-bas-url https://host:port] \
+  [--enrollment-bas-authority host:port] \
+  [--enrollment-bas-ca-file /absolute/bas-ca.pem]
+```
+
+Operator files must exist as absolute paths and enrollment URLs must be
+HTTPS; anything else, including unrecognized options, is refused before the
+bootstrap starts. These options configure the ordinary authorized client
+only: they grant nothing by themselves, and every mutation stays gated by
+the installation's own delegation trust and the named session grants.
 Full-catalog startup points Northstar's pre-generated directory loader at its
 installed private LDIF assets; it does not require the old source runtime's
 `linux-integration/pregen` directory.
