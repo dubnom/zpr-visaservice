@@ -718,6 +718,22 @@ authority, the adapter container joins only the install-owned network, the
 policy diff admits exactly the authentication root, and Velocity remains
 untouched.
 
+**Delivered and deployed (2026-11-01, `e317b4d`):** the maintained
+`-evaluation-bas` command exists with focused tests (material shapes and CA
+chain, single-store configuration extension with the pinned Visa Service
+peer, emitted script contracts, resumable adoption, and fail-closed partial
+material/differing section/missing data-plane/identical listener refusals).
+Run live against Northstar: key material generated under
+`enrollment/northstar/bas/`, the Enrollment Service configuration extended
+(dated `.before-evaluation-bas` backup) and restarted serving both BAS
+listeners at 10.0.1.160:20996/20997, adapter scripts emitted, root adapter
+public key `0a66bc2494965ee2af00f72ec02e12f2d742b087af1b024f0c20d90e3246b578`
+recorded. Still open, in order: the self-approved authentication-root
+policy/configuration change through the change-review pipeline, the adapter
+unit start and the `bas-authorized` acceptance; then the approved decision
+also requires migrating Velocity's artisanal BAS scripts to this maintained
+command (adopting its existing key material unchanged).
+
 **Scenario stack for paired installs (2026-11-01, source only):** four
 changes prepare live scenario selection on the paired retained install.
 Paired installs (recorded `simulator_port`) now host the bounded
