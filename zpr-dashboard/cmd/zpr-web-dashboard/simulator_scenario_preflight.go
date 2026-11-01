@@ -104,9 +104,14 @@ type simulatorScenarioPlanApprovalStore struct {
 	mu             sync.Mutex
 	byID           map[string]simulatorScenarioPlanApproval
 	pendingByScope map[string]string
+	// journal, when set, durably records issued and consumed approvals so
+	// the same principal can resume an unconsumed approval after a restart
+	// through the full approval recheck. A nil journal keeps the store
+	// memory-only.
+	journal simulatorScenarioPermitJournal
 }
 
-var simulatorScenarioPlanApprovals = newSimulatorScenarioPlanApprovalStore()
+var simulatorScenarioPlanApprovals = newDurableSimulatorScenarioPlanApprovalStore()
 
 func newSimulatorScenarioPlanHandler() *simulatorScenarioPlanHandler {
 	return &simulatorScenarioPlanHandler{
@@ -122,6 +127,12 @@ func newSimulatorScenarioPlanApprovalStore() *simulatorScenarioPlanApprovalStore
 		byID:           make(map[string]simulatorScenarioPlanApproval),
 		pendingByScope: make(map[string]string),
 	}
+}
+
+func newDurableSimulatorScenarioPlanApprovalStore() *simulatorScenarioPlanApprovalStore {
+	store := newSimulatorScenarioPlanApprovalStore()
+	store.journal = simulatorScenarioPermitFileJournal{}
+	return store
 }
 
 func validateSimulatorScenarioPlanIDs(w http.ResponseWriter, organizationID, scenarioID string) bool {
@@ -688,6 +699,33 @@ func (store *simulatorScenarioPlanApprovalStore) issueOrResume(
 		}
 		return approvalID, nil
 	}
+	// A durable unconsumed approval for this exact scope survives a restart:
+	// the same principal resumes it (the caller has already re-passed the full
+	// plan, budget and session recheck); any other principal stays blocked. An
+	// unavailable or corrupt journal fails closed.
+	if store.journal != nil {
+		record, err := store.journal.pendingForScope(plan.OrganizationID, plan.ScenarioID, digest)
+		if err != nil {
+			return "", fmt.Errorf("scenario permit journal is unavailable: %w", err)
+		}
+		if record != nil {
+			recorded, err := record.principal()
+			if err != nil {
+				return "", fmt.Errorf("scenario permit journal is unavailable: %w", err)
+			}
+			if !resume || recorded != principal {
+				return "", errSimulatorScenarioPlanApprovalPending
+			}
+			if _, exists := store.byID[record.ApprovalID]; exists {
+				return "", errors.New("durable scenario approval conflicts with the in-memory store; inspect the journal")
+			}
+			store.byID[record.ApprovalID] = simulatorScenarioPlanApproval{
+				ID: record.ApprovalID, Plan: plan, PlanDigest: digest, Principal: principal,
+			}
+			store.pendingByScope[scope] = record.ApprovalID
+			return record.ApprovalID, nil
+		}
+	}
 	token := make([]byte, 32)
 	if _, err := rand.Read(token); err != nil {
 		return "", err
@@ -695,6 +733,19 @@ func (store *simulatorScenarioPlanApprovalStore) issueOrResume(
 	approvalID := base64.RawURLEncoding.EncodeToString(token)
 	if _, exists := store.byID[approvalID]; exists {
 		return "", errors.New("scenario plan approval identifier collision")
+	}
+	if store.journal != nil {
+		mode, issuer, subject, err := simulatorScenarioPermitPrincipalFields(principal)
+		if err != nil {
+			return "", err
+		}
+		if err := store.journal.appendRecord(simulatorScenarioPermitRecord{
+			Event: simulatorScenarioPermitIssued, ApprovalID: approvalID,
+			OrganizationID: plan.OrganizationID, ScenarioID: plan.ScenarioID, PlanDigest: digest,
+			PrincipalMode: mode, ActorIssuer: issuer, ActorSubject: subject,
+		}); err != nil {
+			return "", fmt.Errorf("record durable scenario approval: %w", err)
+		}
 	}
 	approval := simulatorScenarioPlanApproval{
 		ID: approvalID, Plan: plan, PlanDigest: digest, Principal: principal,
@@ -717,6 +768,23 @@ func (store *simulatorScenarioPlanApprovalStore) consumeForPrincipal(
 	approval, err := store.matchingApprovalLocked(approvalID, organizationID, scenarioID, planDigest, principal)
 	if err != nil {
 		return simulatorRuntimePlan{}, err
+	}
+	// Durable consumption precedes in-memory consumption so a restart can
+	// never resume an approval whose run was already admitted; a journal
+	// failure keeps the one-use approval intact and blocks the run.
+	if store.journal != nil {
+		mode, issuer, subject, err := simulatorScenarioPermitPrincipalFields(principal)
+		if err != nil {
+			return simulatorRuntimePlan{}, err
+		}
+		if err := store.journal.appendRecord(simulatorScenarioPermitRecord{
+			Event: simulatorScenarioPermitConsumed, ApprovalID: approvalID,
+			OrganizationID: approval.Plan.OrganizationID, ScenarioID: approval.Plan.ScenarioID,
+			PlanDigest:    approval.PlanDigest,
+			PrincipalMode: mode, ActorIssuer: issuer, ActorSubject: subject,
+		}); err != nil {
+			return simulatorRuntimePlan{}, fmt.Errorf("record durable scenario approval consumption: %w", err)
+		}
 	}
 	delete(store.byID, approvalID)
 	scope := simulatorScenarioPlanApprovalScope(approval.Plan.OrganizationID, approval.Plan.ScenarioID, approval.PlanDigest)
