@@ -350,10 +350,13 @@ prerequisite without calling enrollment; an upstream denial or invalid
 response reports unknown-not-ready explicitly; nothing starts setup, and
 explicit activation itself remains blocked in ordinary-client mode
 (U01-ACTIVATION). Focused tests cover the ready and mixed comparisons and the
-fail-closed paths. The live paired Velocity Simulator state has no retained
-machine-runtime binding wired yet, so live readiness currently reports that
-exact missing prerequisite; wiring the retained runtime into the paired
-Simulator and the activation-triggered onboarding mutations remain open.
+fail-closed paths. **Live on Velocity the same day** with `zpr-simulator-r4`:
+after real named login, the readiness route returned HTTP 200 with
+`ready=false` and exactly the truthful missing prerequisite — the paired
+Simulator state has no retained machine-runtime inventory contract wired —
+and the invitations read still passed. Wiring the retained runtime into the
+paired Simulator (enabling the real five-asset live comparison) and the
+activation-triggered onboarding mutations remain open.
 
 ### Delivery discipline and completion
 
