@@ -71,6 +71,12 @@
       "verified": "Full install readiness after paired restart; Room 200 and issuer discovery 200 with Simulator stopped; Control-Service answering over mTLS; Simulator 302 with named operator login configured; Simulator-only restart clean.",
       "not_verified": "Human named UI login, scenario selection or execution on Velocity, retained machine runtime wiring through the paired Simulator, Audit role-risk warnings, onboarding, and installed-package acceptance remain open."
     },
+    "velocity_simulator_enrollment_trust": {
+      "deployed": "2026-10-31",
+      "transaction": "Task-owned zpr-lab-bootstrap-r11 (-evaluation-simulator-enrollment-trust, source b728276) derived state/velocity/simulator-paired-enrollment-trust.json from enrollment/velocity/delegation-trust-self-approval.json with all Velocity units stopped: audience, named grants and the Room key preserved byte for byte; only the registered evaluation-simulator key added, pinned to the enrollment relay transport certificate. enrollment/velocity/service-development.json administration delegation_trust_file now points at the derived file; dated .before-simulator-enrollment-trust-20261031 backup retained. SHA256SUMS does not cover this file and is unchanged.",
+      "verified": "Enrollment Service restarted cleanly onto the derived trust with all four listeners up (24991/24994/24996/24997); Room 200 and issuer discovery 200 with Simulator stopped; administration mTLS still refuses clients without a verified certificate; Simulator transient unit recreated and answering 302; all five Velocity units active.",
+      "not_verified": "No Simulator-signed enrollment administration call was exercised; Simulator-side enrollment client wiring, G2 inventory comparison and onboarding remain open. Room-driven enrollment uses the unchanged Room key entry."
+    },
     "self_approval": {
       "permission": "approval.self",
       "workflow": "Explicit approval separate from submission and application",

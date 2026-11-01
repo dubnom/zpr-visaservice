@@ -286,10 +286,18 @@ unpaired installs, foreign audiences or keys, differing existing targets or
 staging, and inputs that are its own output; the operator-owned input file is
 never modified and an exact rerun verifies instead of rewriting. Focused tests
 cover derivation, resume after an interrupted rename and the refusal cases.
-This prepares, but does not perform, authorized Simulator enrollment calls:
-it is not deployed on Velocity, the Enrollment Service is not restarted onto
-the derived trust, and G2 inventory comparison, endpoint key generation,
-enrollment requests and issuance/readback wiring remain open.
+**Deployed on Velocity the same day:** with all Velocity units stopped, the
+task-owned `zpr-lab-bootstrap-r11` derived the trust from the staged
+`delegation-trust-self-approval.json`, the Enrollment Service configuration
+now points at the derived file (dated backup retained, SHA256SUMS unaffected),
+and the install restarted fully healthy: all four enrollment listeners up,
+Room 200 and issuer discovery 200 with Simulator stopped, administration mTLS
+still refusing unverified clients, Simulator 302 after its transient unit was
+recreated. See the
+[dev environment record](environments/dev.json). This registers signer
+acceptance only: no Simulator-signed enrollment administration call has been
+exercised, and G2 inventory comparison, endpoint key generation, enrollment
+requests and issuance/readback wiring remain open.
 
 ### Delivery discipline and completion
 
