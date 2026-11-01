@@ -624,6 +624,38 @@ single-node data plane), per-organization pairing/enrollment/control-TLS
 provisioning for each remaining organization, and the full five-organization
 seventeen-scenario acceptance matrix.
 
+**Northstar paired live (2026-11-01, user-approved):** the recorded add-later
+pairing registered a separate Northstar Simulator client and independent
+delegation signer at port 20788 against the stopped install. Because the
+original Northstar operator services lacked a delegation trust override, the
+operator-owned `enrollment/northstar/control-delegation-trust-self-approval.json`
+was derived from the install's canonical `operator-delegation-trust.json`
+(admin grant plus `approval.self` and `budget.approve`, mirroring the
+reviewed Velocity pattern; dated backup of the operator services). The
+derived paired Control-Service trust therefore already carries both
+permissions, with the Room key and viewer grant unchanged. The Simulator
+enrollment trust was derived and the Enrollment Service administration
+listener repointed (the setting belongs under `administration`, unlike the
+Velocity layout with its BAS section). The install restarted paired and
+healthy (Room 200, issuer discovery 200, scenario-capable Control Room via
+the generic paired runtime branch), and a second Simulator instance launched
+at 20788 **from the same installed `velocity-paired-20261101-r2` package**
+with a Northstar session override (onboarding permissions plus
+`budget.approve`). Live evidence: named login against Northstar’s own
+issuer; the first Simulator-signed Northstar enrollment read returned the
+eight pre-existing claimed invitations (`pending_approval`, including exactly
+the `client-service` scenario assets for machine-03/machine-05); readiness
+truthfully reports that no retained inventory or declared endpoints are
+configured; explicit activation fails closed with that exact prerequisite;
+the Velocity Simulator at 24788 was unaffected throughout. Still open for a
+Northstar scenario run: resolution of the eight stranded `pending_approval`
+claims through the explicit review path, a `northstar-simulator-control`
+identity, issued runtime credentials (the install has no BAS section;
+admission credential provisioning is unresolved), Northstar control-TLS
+identities and the operator retained-bindings file (callback upstream
+172.28.0.1), and verification that Northstar’s applied policy grants its
+original scenario flows.
+
 **Scenario stack for paired installs (2026-11-01, source only):** four
 changes prepare live scenario selection on the paired retained install.
 Paired installs (recorded `simulator_port`) now host the bounded
