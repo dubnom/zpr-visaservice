@@ -318,10 +318,23 @@ callback, lifetime and organizations are preserved exactly, retained
 permissions cannot be removed, and only explicit enrollment administration
 permissions plus bounded `budget.approve` may be added — never
 `approval.self`, which keeps its own earlier explicit mechanism. The frozen
-file is never modified. Not deployed: the live Velocity Simulator session
-grant does not yet include the enrollment read permission, no Simulator-signed
-enrollment call has been exercised live, the Simulator UI does not surface the
-read, and G2 inventory comparison and onboarding mutations remain open.
+file is never modified. **Deployed and exercised live on Velocity the same
+day:** with user approval, the explicit override
+`enrollment/velocity/simulator-oidc-enrollment-read.json` adds exactly the
+enrollment `read` and bounded `budget.approve` permissions to the existing
+named administrator; the task-owned `zpr-simulator-r3`/`zpr-lab-bootstrap-r12`
+replaced only the Simulator transient unit. A real named OIDC login through
+the separate `zpr-simulator` client then performed the first live
+Simulator-signed enrollment contract call: the invitations read returned
+HTTP 200 with the five retained approved machine-runtime invitations after
+Control-Service relayed the delegation and the Enrollment Service verified it
+against the derived paired trust; unauthenticated and pre-override reads
+failed closed. See the
+[dev environment record](environments/dev.json). Still open: enrollment
+mutations from the Simulator, a Simulator UI surface for the read, the
+backend budget-authority grant (live scenario budget self-approval still
+fails closed), and G2 inventory comparison, endpoint key generation and
+issuance/readback wiring.
 
 ### Delivery discipline and completion
 
