@@ -436,6 +436,24 @@ reference and are never retried or cleaned up silently. Focused tests cover
 the exact fingerprint/revision binding, per-stage fail-closed behavior and
 the unconfigured device contract. Protected runtime credential handoff and
 issuance readback remain open.
+**Exercised live on Velocity the same day (G2 core chain):** with
+`zpr-simulator-r7`, the launcher's `-enrollment-device-url` and the
+user-approved onboarding session override (adds `approve`), one explicit POST
+onboarded the genuinely new endpoint `velocity-sim-onboarded-endpoint`:
+invitation created, fresh endpoint-owned keys generated, proof-of-possession
+device claim at the production device listener, exact local/recorded
+fingerprint binding verified, and automatic named self-approval — final state
+`approved` with the persisted operation record and no prompt, manual
+credential or shell step after the explicit request. The first attempt's
+state-name defect (`claimed` vs the service's `pending_approval`) failed
+closed exactly as designed, and the stranded claim whose keys had been
+discarded was cancelled through the explicit review path with the exact
+fingerprints, revision and a recorded reason before the successful rerun.
+The approved identity has no issued credentials, no runtime handoff and no
+traffic grants. Still open for the G2 gate: issuance/readback, protected
+runtime credential handoff, retry/restart duplicate-identity proof beyond the
+store's active-invitation uniqueness, and wiring onboarding to explicit
+organization activation under `U01-ACTIVATION`.
 
 ### Delivery discipline and completion
 
