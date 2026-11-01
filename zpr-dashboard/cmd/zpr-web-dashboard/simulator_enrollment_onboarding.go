@@ -108,7 +108,7 @@ func simulatorEnrollmentDeviceClaim(ctx context.Context, deviceURL, caFile, orga
 	if err != nil {
 		return simulatorEnrollmentClaimResult{}, fmt.Errorf("device claim: %w", err)
 	}
-	if status.State != "claimed" || status.KeyFingerprint != keyFingerprint ||
+	if status.State != "pending_approval" || status.KeyFingerprint != keyFingerprint ||
 		status.RuntimeKeyFingerprint != runtimeFingerprint {
 		return simulatorEnrollmentClaimResult{}, errors.New("device claim result does not bind exactly the locally generated endpoint keys")
 	}

@@ -76,7 +76,7 @@ func TestSimulatorEnrollmentOnboardingApprovesExactClaimedKeys(t *testing.T) {
 	fixture := newSimulatorEnrollmentRelayFixture(t, organization)
 	simulatorEnrollmentTestRegistry(t, organization, fixture)
 	claimed := simulatorEnrollmentClaimResult{
-		State: "claimed", Revision: 2,
+		State: "pending_approval", Revision: 2,
 		KeyFingerprint:        strings.Repeat("a", 64),
 		RuntimeKeyFingerprint: strings.Repeat("b", 64),
 	}
@@ -120,7 +120,7 @@ func TestSimulatorEnrollmentOnboardingApprovesExactClaimedKeys(t *testing.T) {
 func TestSimulatorEnrollmentOnboardingFailsClosedPerStage(t *testing.T) {
 	const organization = "velocity"
 	okClaim := func(context.Context, string, string, string) (simulatorEnrollmentClaimResult, error) {
-		return simulatorEnrollmentClaimResult{State: "claimed", Revision: 2,
+		return simulatorEnrollmentClaimResult{State: "pending_approval", Revision: 2,
 			KeyFingerprint: strings.Repeat("a", 64), RuntimeKeyFingerprint: strings.Repeat("b", 64)}, nil
 	}
 	t.Run("device claim failure keeps the invitation for review", func(t *testing.T) {
@@ -152,7 +152,7 @@ func TestSimulatorEnrollmentOnboardingFailsClosedPerStage(t *testing.T) {
 			t.Fatalf("status=%d approve=%d body=%s", response.Code, fixture.approveCalls.Load(), response.Body)
 		}
 		record := readOnboardingRecord(t, workspace, organization, "velocity-sim-onboarded-endpoint")
-		if record.FailedStage != "self-approval" || record.State != "claimed" {
+		if record.FailedStage != "self-approval" || record.State != "pending_approval" {
 			t.Fatalf("unexpected failure record: %+v", record)
 		}
 	})
@@ -169,7 +169,7 @@ func TestSimulatorEnrollmentOnboardingFailsClosedPerStage(t *testing.T) {
 			t.Fatalf("status=%d approve=%d body=%s", response.Code, fixture.approveCalls.Load(), response.Body)
 		}
 		record := readOnboardingRecord(t, workspace, organization, "velocity-sim-onboarded-endpoint")
-		if record.FailedStage != "self-approval" || record.State != "claimed" {
+		if record.FailedStage != "self-approval" || record.State != "pending_approval" {
 			t.Fatalf("unexpected failure record: %+v", record)
 		}
 	})
