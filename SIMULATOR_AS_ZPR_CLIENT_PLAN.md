@@ -535,10 +535,38 @@ the full five-asset readiness report and recorded the organization selection;
 Restore remained blocked (the live session grant also lacks
 `organization.restore`, so the route policy denies before the handler's own
 guard); production stayed untouched. Still open
-for the G2 gate: automatic onboarding of genuinely new profile-declared
-endpoints at activation and the Simulator UI surface; token redemption
+for the G2 gate after the same-day declared-endpoint record below: the
+Simulator UI surface; token redemption
 remains exclusively the pinned Visa Service peer's, and no onboarded endpoint
 has a visa or traffic grant.
+
+**Profile-declared endpoint onboarding at activation (2026-11-01,
+`544a335`):** organization profiles may declare required endpoints
+(`declared_endpoints`: complete bounded asset fields, unique identifiers, no
+overlap with the reviewed retained inventory, at most 32). The authorized
+readiness comparison includes declared endpoints in the required inventory,
+and explicit ordinary-client activation onboards exactly the genuinely new
+declared endpoints — those the readiness readback reports with no invitation
+at all — through the maintained explicit onboarding chain, then re-verifies
+readiness before recording the selection; onboarding evidence alone never
+substitutes for the readiness readback. Required endpoints in any other
+unready state fail closed to the ordinary prerequisite report, so unapproved
+or revoked endpoints never join and interrupted issuance reconciles through
+the explicit review path, never an automatic retry. Focused tests cover the
+onboarded activation, the fail-closed unapproved and stopped-onboarding
+paths and the profile contract refusals. **Proven live on Velocity** with
+`zpr-simulator-r15` and an operator-owned catalog variant declaring
+`velocity-declared-probe`: readiness reported the declared endpoint missing;
+one explicit activation created the invitation, performed the device claim
+with fresh endpoint-owned keys, automatic named self-approval (revision 3),
+proof-of-possession readback and the protected local key bundle, then
+re-verified readiness (all six approved-retained) and returned
+`ready-verified`; an immediate repeat activation returned HTTP 200 with no
+duplicate identity, and scenario preflight afterwards remained plan-only
+with no blockers. This completes the G2 automatic-onboarding acceptance for
+the Simulator-side chain; the declared endpoint has no visa or traffic
+grant, and custom-organization launch additionally needs its own paired
+production install.
 
 **Scenario stack for paired installs (2026-11-01, source only):** four
 changes prepare live scenario selection on the paired retained install.
