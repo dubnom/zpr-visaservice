@@ -48,6 +48,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 	image := flags.String("data-plane-image", "", "exact paired data-plane image ID")
 	catalog := flags.String("catalog", "", "optional packaged five-organization Simulator catalog")
 	oidcOverride := flags.String("simulator-oidc-file", "", "optional protected Simulator OIDC session override that may add only explicit enrollment/budget permissions to the frozen named grants")
+	retainedFile := flags.String("retained-machine-runtime-file", "", "optional protected retained topology/machine-runtime bindings for this installation's paired Simulator launch")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -68,7 +69,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer lock.Close()
-	env, listen, err := prepareEvaluationSimulator(*evaluation, *state, *binary, *image)
+	env, listen, err := prepareEvaluationSimulator(*evaluation, *state, *binary, *image, *retainedFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "Simulator setup: %v\n", err)
 		return 1
@@ -171,7 +172,7 @@ func validateEvaluationSimulatorArguments(evaluation, state, binary, image strin
 	return nil
 }
 
-func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]string, string, error) {
+func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile string) ([]string, string, error) {
 	setupMode, setupModeSet := os.LookupEnv(setupmode.Environment)
 	if err := validateEvaluationSimulatorArguments(evaluation, state, binary, image); err != nil {
 		return nil, "", err
@@ -357,7 +358,19 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 		target["visa_admin_url"] = fmt.Sprintf("https://localhost:%d", inventory.Config.VSAdminPort)
 		target["visa_admin_key_file"] = filepath.Join(evaluation, "vs-admin-api.key")
 	}
-	if err := write("installs.json", map[string]any{
+	registryName := "installs.json"
+	if retainedFile != "" {
+		binding, runtime, err := loadEvaluationSimulatorRetainedBindings(retainedFile, inventory)
+		if err != nil {
+			return nil, "", err
+		}
+		target["retained_topology_binding"] = binding
+		target["retained_machine_runtime"] = runtime
+		// The retained-augmented registry is its own frozen artifact so the
+		// original verified registry is never rewritten or silently rebound.
+		registryName = "installs-retained.json"
+	}
+	if err := write(registryName, map[string]any{
 		"version": 1, "kind": "zpr-simulator-evaluation-installs", "evaluation_only": true, "installs": []any{target},
 	}); err != nil {
 		return nil, "", err
@@ -373,7 +386,7 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 		"SIMULATION_ORGANIZATIONS_DIR":            filepath.Join(state, "organizations"),
 		"SIMULATION_SCENARIOS_DIR":                filepath.Join(state, "scenarios"),
 		"SIMULATION_WORKSPACE_DB_DIR":             filepath.Join(state, "workspace"),
-		"SIMULATOR_EVALUATION_INSTALLS_FILE":      filepath.Join(state, "installs.json"),
+		"SIMULATOR_EVALUATION_INSTALLS_FILE":      filepath.Join(state, registryName),
 		"SIMULATOR_DATA_PLANE_IMAGE":              image,
 		"ZPR_SIMULATOR_OPERATOR_CERT_FILE":        filepath.Join(evaluation, "server-chain.pem"),
 		"ZPR_SIMULATOR_OPERATOR_KEY_FILE":         filepath.Join(evaluation, "server-key.pem"),

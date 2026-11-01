@@ -51,7 +51,7 @@ func TestEvaluationSimulatorRejectsIncompatibleStoredScenarioOrganization(t *tes
 		t.Fatal(err)
 	}
 	simulatorState := filepath.Join(parent, "simulator-state")
-	_, _, err = prepareEvaluationSimulator(state, simulatorState, binary, "sha256:"+strings.Repeat("a", 64))
+	_, _, err = prepareEvaluationSimulator(state, simulatorState, binary, "sha256:"+strings.Repeat("a", 64), "")
 	if err == nil || !strings.Contains(err.Error(), "omit -organization-id") {
 		t.Fatalf("stored incompatible scenario organization was not reported: %v", err)
 	}

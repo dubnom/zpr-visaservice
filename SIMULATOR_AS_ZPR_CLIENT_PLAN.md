@@ -354,9 +354,26 @@ fail-closed paths. **Live on Velocity the same day** with `zpr-simulator-r4`:
 after real named login, the readiness route returned HTTP 200 with
 `ready=false` and exactly the truthful missing prerequisite — the paired
 Simulator state has no retained machine-runtime inventory contract wired —
-and the invitations read still passed. Wiring the retained runtime into the
-paired Simulator (enabling the real five-asset live comparison) and the
-activation-triggered onboarding mutations remain open.
+and the invitations read still passed. The activation-triggered onboarding
+mutations remain open.
+
+**Retained-binding launch support (2026-10-31, source only):** the paired
+Simulator launcher now accepts an explicit operator-owned
+`-retained-machine-runtime-file` containing exactly this installation's
+retained topology binding and retained machine runtime (the contracts the
+isolated r21/r22 consumer evidence already exercised). The launcher checks
+the canonical protected path, strict JSON, version 1, the exact install ID,
+the install-owned single-node data-plane container/network, the published
+logical node and canonical absolute runtime paths; the Simulator revalidates
+both authoritative contracts at startup, and the retained machine lifecycle
+still verifies the referenced executable, identities and containers before
+any use. The bindings are written into a separate frozen
+`installs-retained.json` registry selected by the launch environment, so the
+original verified registry is never rewritten; an exact repeat verifies and a
+changed binding is refused rather than silently rebound. Focused tests cover
+the frozen-registry selection, exact repeat, changed-binding refusal and the
+unsafe-input refusals. Until this is deployed, the live Velocity Simulator
+launches without retained bindings.
 
 ### Delivery discipline and completion
 
