@@ -137,14 +137,21 @@ func configuredOperatorEnrollment(store *enrollment.Store, config enrollment.Con
 	return enrollment.NewOperatorAdminHandler(store, config, trust, auditRepositories...)
 }
 
-func operatorEnrollmentProxy(auth *operatorauth.Auth, signer *operatordelegation.Signer, proxy http.Handler) http.Handler {
+// operatorEnrollmentAuthorizer authorizes enrollment routes: scoped
+// per-organization authorization plus the session read used by the catalog.
+type operatorEnrollmentAuthorizer interface {
+	operatorRequestAuthorizer
+	Session(r *http.Request) (operatorauth.Identity, string, error)
+}
+
+func operatorEnrollmentProxy(auth operatorEnrollmentAuthorizer, signer *operatordelegation.Signer, proxy http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		deny := func(status int, message string) {
 			log.Printf("Control Room operator enrollment denied (HTTP %d)", status)
 			writePolicyError(w, status, message)
 		}
-		if auth == nil || signer == nil {
+		if operatorAuthorizationDisabled(auth) || signer == nil {
 			deny(http.StatusForbidden, "Control Room enrollment requires configured named-user authorization and verified backend delegation.")
 			return
 		}

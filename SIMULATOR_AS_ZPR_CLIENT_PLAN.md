@@ -299,6 +299,30 @@ acceptance only: no Simulator-signed enrollment administration call has been
 exercised, and G2 inventory comparison, endpoint key generation, enrollment
 requests and issuance/readback wiring remain open.
 
+**Simulator enrollment read and session-grant override (2026-10-31, source
+only):** the Simulator web backend now serves
+`GET /api/simulator/organizations/{organization}/enrollment/invitations`: the
+named operator session is authorized for the enrollment `read` permission at
+the route policy and again before signing, the request is bound to the exact
+initiating operator, a delegation is signed with the Simulator's independent
+signer and relayed by the paired install's Control-Service to the Enrollment
+Service. It performs no mutation and fails closed without a named session, a
+missing enrollment read grant, a changed operator, an unconfigured signer or
+an unknown paired install; focused tests verify the forwarded delegation
+against the Simulator key behind a synthetic mTLS relay and all refusal
+paths. The paired launcher now passes the independent Simulator delegation
+signer to every paired install (previously scenario-demo only) and accepts an
+explicit operator-owned `-simulator-oidc-file` session override, validated
+against the frozen verified configuration: identity, issuer, client,
+callback, lifetime and organizations are preserved exactly, retained
+permissions cannot be removed, and only explicit enrollment administration
+permissions plus bounded `budget.approve` may be added — never
+`approval.self`, which keeps its own earlier explicit mechanism. The frozen
+file is never modified. Not deployed: the live Velocity Simulator session
+grant does not yet include the enrollment read permission, no Simulator-signed
+enrollment call has been exercised live, the Simulator UI does not surface the
+read, and G2 inventory comparison and onboarding mutations remain open.
+
 ### Delivery discipline and completion
 
 - One coordinator owns live changes. Parallel chats may take bounded source-only

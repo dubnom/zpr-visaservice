@@ -380,6 +380,21 @@ at the derived file and restart only the Enrollment Service. This registers
 signer acceptance only; it performs no enrollment operation and production
 services still never require Simulator.
 
+The paired Simulator launcher passes the independent Simulator delegation
+signer to every paired install, and authorized enrollment reads additionally
+require the enrollment `read` permission in the Simulator operator session.
+The frozen verified session grants never change implicitly: supply an
+explicit protected override with
+`-evaluation-simulator ... -simulator-oidc-file /absolute/private/simulator-oidc-override.json`.
+The override must preserve the frozen issuer, client, callback, session
+lifetime and exact named identities, cannot remove retained permissions, and
+may add only explicit enrollment administration permissions
+(`read`, `create`, `cancel`, `approve`, `reject`) and bounded
+`budget.approve` to existing named operators. `approval.self` keeps its own
+earlier explicit mechanism and is never added through this override. The
+frozen configuration file is never modified; authorization is still enforced
+by each backend's independent delegation trust.
+
 After pairing, restart the installation with its original flags **plus** the
 same `-simulator-port` and, when applicable, the derived service bindings
 above; the frozen configuration now records the port, and the next verified

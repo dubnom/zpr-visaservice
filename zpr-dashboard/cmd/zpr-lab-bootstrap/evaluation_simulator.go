@@ -47,6 +47,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 	binary := flags.String("binary", "", "absolute prebuilt Simulator executable")
 	image := flags.String("data-plane-image", "", "exact paired data-plane image ID")
 	catalog := flags.String("catalog", "", "optional packaged five-organization Simulator catalog")
+	oidcOverride := flags.String("simulator-oidc-file", "", "optional protected Simulator OIDC session override that may add only explicit enrollment/budget permissions to the frozen named grants")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -71,6 +72,13 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "Simulator setup: %v\n", err)
 		return 1
+	}
+	if *oidcOverride != "" {
+		env, err = applyEvaluationSimulatorOIDCOverride(*evaluation, *oidcOverride, env)
+		if err != nil {
+			fmt.Fprintf(stderr, "Simulator setup: %v\n", err)
+			return 1
+		}
 	}
 	if *catalog != "" {
 		env, err = prepareEvaluationSimulatorCatalog(*evaluation, *state, *catalog, env)
@@ -377,15 +385,18 @@ func prepareEvaluationSimulator(evaluation, state, binary, image string) ([]stri
 	if setupModeSet {
 		values[setupmode.Environment] = setupMode
 	}
+	// Every paired install carries the independent Simulator delegation
+	// signer; authorized operator calls remain gated by the named session
+	// grants and each backend's own delegation trust.
+	values["ZPR_OPERATOR_DELEGATION_SIGNER_FILE"] = filepath.Join(evaluation, "simulator-delegation-signer.json")
+	values["ZPR_OPERATOR_DELEGATION_KEY_FILE"] = filepath.Join(evaluation, "simulator-delegation-key.pem")
+	values["ZPR_OPERATOR_DELEGATION_AUDIENCE"] = evaluationServiceAudience(inventory.Config)
 	if inventory.Config.ScenarioDemo {
 		values["SIMULATOR_DATA_PLANE_WORKLOAD_INTERVAL"] = "off"
 		values["ZPR_BUDGET_AUTHORITY_URL"] = fmt.Sprintf("https://localhost:%d", inventory.Config.ServicePort)
 		values["ZPR_BUDGET_AUTHORITY_CLIENT_CERT_FILE"] = filepath.Join(evaluation, "simulator-client-chain.pem")
 		values["ZPR_BUDGET_AUTHORITY_CLIENT_KEY_FILE"] = filepath.Join(evaluation, "simulator-client-key.pem")
 		values["ZPR_BUDGET_AUTHORITY_CA_FILE"] = filepath.Join(evaluation, "ca.pem")
-		values["ZPR_OPERATOR_DELEGATION_SIGNER_FILE"] = filepath.Join(evaluation, "simulator-delegation-signer.json")
-		values["ZPR_OPERATOR_DELEGATION_KEY_FILE"] = filepath.Join(evaluation, "simulator-delegation-key.pem")
-		values["ZPR_OPERATOR_DELEGATION_AUDIENCE"] = evaluationServiceAudience(inventory.Config)
 	}
 	if inventory.Config.BrowserIP != "" {
 		values["ZPR_SIMULATOR_OPERATOR_DIRECT_IP"] = inventory.Config.BrowserIP
