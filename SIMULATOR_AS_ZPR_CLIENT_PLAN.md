@@ -161,6 +161,21 @@ authoring requirements. Each organization has isolated retained state.
   Room secrets/signing keys or ask for the approved pairing again.
 - Existing exact-ID traffic grants remain effective. Broader role/profile-based
   policy is a separately reviewed proposal, not permission granted by this plan.
+- **Approved decision (2026-11-01):** per-change user approval is no longer
+  required for policy changes: the submitter and approver may be the same
+  named operator through the existing organization-scoped `approval.self`
+  review path, with the Audit role-risk warning recording the self-approval.
+  The Simulator and Control Room may therefore submit and approve policy
+  changes without separate user input. Audit attribution, the named-session
+  and delegation-trust gates, and guarded readback evidence remain required.
+- **Approved decision (2026-11-01):** an endpoint-authentication authority
+  (the evaluation BAS) is part of the evaluation-install minimum: the
+  documented minimal network already requires a configured authentication
+  source, and an install without one cannot admit any endpoint. New installs
+  should provision it at creation with the BAS root in the initial reviewed
+  policy; existing installs use a maintained resumable add-later command
+  (replacing the per-organization scripts), with the production contract
+  staying a pluggable authentication/attribute-source interface.
 - DNS locates services; it does not establish identity, trust or authorization.
   Pre-admission discovery needs an independently trusted bootstrap address.
   Nodes follow the [infrastructure join model](System%20release%20plan.md#multi-host-role-based-deployment),
