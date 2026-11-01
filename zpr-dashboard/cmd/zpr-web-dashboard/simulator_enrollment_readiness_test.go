@@ -100,6 +100,23 @@ func TestSimulatorEnrollmentReadinessReportsExactInventoryComparison(t *testing.
 			},
 			missing: 5,
 		},
+		{
+			name: "cancelled invitations never block genuinely new onboarding",
+			states: map[string]string{
+				"velocity-machine-03-controller": "approved", "velocity-machine-03-finance-client": "approved",
+				"velocity-machine-05-controller": "approved",
+				// A reconciled (cancelled) claim is terminal and leaves the
+				// asset genuinely missing, unlike a rejected or pending one.
+				"velocity-machine-05-echo-service": "cancelled",
+				"velocity-simulator-control":       "approved",
+			},
+			expiry: now.Add(time.Hour), ready: false,
+			statuses: map[string]string{
+				"velocity-machine-03-controller":   "approved-retained",
+				"velocity-machine-05-echo-service": "missing",
+			},
+			missing: 1,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newSimulatorEnrollmentRelayFixture(t, organization)
