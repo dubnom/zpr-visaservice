@@ -88,9 +88,13 @@ type simulatorEnrollmentRelayFixture struct {
 	cancelCalls     atomic.Int32
 	approveCalls    atomic.Int32
 	invitationsBody string
-	failStatus      int
-	approveStatus   int
-	lastMutation    atomic.Value
+	// approvedInvitationsBody, when set, is returned by the invitations read
+	// after at least one approval mutation, modeling the authorized readback
+	// observing the onboarded state.
+	approvedInvitationsBody string
+	failStatus              int
+	approveStatus           int
+	lastMutation            atomic.Value
 }
 
 // newSimulatorEnrollmentRelayFixture stands in for the paired Control-Service
@@ -182,7 +186,11 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(fixture.invitationsBody))
+			invitations := fixture.invitationsBody
+			if fixture.approvedInvitationsBody != "" && fixture.approveCalls.Load() > 0 {
+				invitations = fixture.approvedInvitationsBody
+			}
+			_, _ = w.Write([]byte(invitations))
 		case r.Method == http.MethodPost && r.URL.Path == operatordelegation.Prefix+"invitations" && r.URL.RawQuery == "":
 			var request map[string]any
 			if json.Unmarshal(body, &request) != nil || request["organization"] != organization {

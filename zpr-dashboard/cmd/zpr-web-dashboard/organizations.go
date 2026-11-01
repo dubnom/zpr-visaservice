@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -52,6 +54,54 @@ type simulatorOrganization struct {
 	EvaluationRuntime       *evaluationruntime.Contract       `json:"evaluation_runtime,omitempty"`
 	RetainedTopologyBinding *simulatorRetainedTopologyBinding `json:"retained_topology_binding,omitempty"`
 	RetainedMachineRuntime  *simulatorRetainedMachineRuntime  `json:"retained_machine_runtime,omitempty"`
+	DeclaredEndpoints       []simulatorDeclaredEndpoint       `json:"declared_endpoints,omitempty"`
+}
+
+// simulatorDeclaredEndpoint is one profile-declared required endpoint. Every
+// field feeds the Enrollment Service invitation contract verbatim, so each is
+// required and bounded exactly like the service's own asset validation. The
+// declaration states a requirement only: enrollment, approval and issuance
+// stay with the Enrollment Service through the explicit onboarding chain.
+type simulatorDeclaredEndpoint struct {
+	AssetID   string `json:"asset_id"`
+	Name      string `json:"name"`
+	Owner     string `json:"owner"`
+	Type      string `json:"type"`
+	Profile   string `json:"profile"`
+	Recipient string `json:"recipient"`
+}
+
+const maxSimulatorDeclaredEndpoints = 32
+
+func validSimulatorDeclaredEndpointText(value string) bool {
+	return strings.TrimSpace(value) == value && value != "" && len(value) <= 256 &&
+		!strings.ContainsAny(value, "\x00\r\n")
+}
+
+// validateSimulatorDeclaredEndpoints enforces the profile contract for
+// declared endpoints: complete bounded fields, unique asset identifiers, and
+// no overlap with the reviewed retained inventory (retained assets are a
+// separate pinned contract and are never onboarded from a declaration).
+func validateSimulatorDeclaredEndpoints(endpoints []simulatorDeclaredEndpoint) error {
+	if len(endpoints) > maxSimulatorDeclaredEndpoints {
+		return fmt.Errorf("at most %d declared endpoints are supported", maxSimulatorDeclaredEndpoints)
+	}
+	seen := make(map[string]struct{}, len(endpoints))
+	for _, endpoint := range endpoints {
+		for _, value := range []string{endpoint.AssetID, endpoint.Name, endpoint.Owner, endpoint.Type, endpoint.Profile, endpoint.Recipient} {
+			if !validSimulatorDeclaredEndpointText(value) {
+				return fmt.Errorf("declared endpoint %q requires complete bounded asset fields", endpoint.AssetID)
+			}
+		}
+		if _, exists := seen[endpoint.AssetID]; exists {
+			return fmt.Errorf("declared endpoint %q is listed more than once", endpoint.AssetID)
+		}
+		if slices.Contains(simulatorRetainedRequiredAssets, endpoint.AssetID) {
+			return fmt.Errorf("declared endpoint %q collides with the reviewed retained inventory", endpoint.AssetID)
+		}
+		seen[endpoint.AssetID] = struct{}{}
+	}
+	return nil
 }
 
 type simulatorSyntheticWorkload struct {
@@ -280,17 +330,39 @@ func handleOrdinaryClientActivation(w http.ResponseWriter, r *http.Request, auth
 	readiness.Method = http.MethodGet
 	readiness.URL.RawQuery = ""
 	readiness.Body, readiness.ContentLength = http.NoBody, 0
-	recorder := newSimulatorEnrollmentRecorder()
-	newSimulatorEnrollmentReadinessHandler().serve(auth, signer)(recorder, readiness)
-	if recorder.code != http.StatusOK {
-		writeWorkspaceError(w, http.StatusBadGateway, fmt.Sprintf(
-			"activation readiness is unavailable (HTTP %d); no setup was started", recorder.code))
+	readReadiness := func() (simulatorEnrollmentReadiness, bool) {
+		recorder := newSimulatorEnrollmentRecorder()
+		newSimulatorEnrollmentReadinessHandler().serve(auth, signer)(recorder, readiness)
+		if recorder.code != http.StatusOK {
+			writeWorkspaceError(w, http.StatusBadGateway, fmt.Sprintf(
+				"activation readiness is unavailable (HTTP %d); no setup was started", recorder.code))
+			return simulatorEnrollmentReadiness{}, false
+		}
+		var report simulatorEnrollmentReadiness
+		if err := json.Unmarshal(recorder.body.Bytes(), &report); err != nil {
+			writeWorkspaceError(w, http.StatusBadGateway, "activation readiness response is invalid; no setup was started")
+			return simulatorEnrollmentReadiness{}, false
+		}
+		return report, true
+	}
+	report, ok := readReadiness()
+	if !ok {
 		return
 	}
-	var report simulatorEnrollmentReadiness
-	if err := json.Unmarshal(recorder.body.Bytes(), &report); err != nil {
-		writeWorkspaceError(w, http.StatusBadGateway, "activation readiness response is invalid; no setup was started")
-		return
+	var onboarded []json.RawMessage
+	if !report.Ready {
+		operations, performed, ok := onboardDeclaredEndpointsForActivation(w, r, auth, signer, organizationID, report)
+		if !ok {
+			return
+		}
+		if performed {
+			// Re-verify through the same authorized comparison: onboarding
+			// evidence alone never substitutes for the readiness readback.
+			onboarded = operations
+			if report, ok = readReadiness(); !ok {
+				return
+			}
+		}
 	}
 	if !report.Ready {
 		w.WriteHeader(http.StatusConflict)
@@ -310,12 +382,94 @@ func handleOrdinaryClientActivation(w http.ResponseWriter, r *http.Request, auth
 		writeWorkspaceError(w, http.StatusInternalServerError, "cannot record the activated organization; no setup was started")
 		return
 	}
-	writeSimulatorJSON(w, map[string]any{
+	response := map[string]any{
 		"activation": map[string]any{
 			"organization_id": organizationID, "state": "ready-verified", "setup_mode": "ordinary-client",
 		},
 		"readiness": report,
-	})
+	}
+	if len(onboarded) > 0 {
+		response["onboarded"] = onboarded
+	}
+	writeSimulatorJSON(w, response)
+}
+
+// ordinaryActivationOnboardingHandler constructs the explicit onboarding
+// workflow used for genuinely new profile-declared endpoints at activation;
+// tests substitute a synthetic claim.
+var ordinaryActivationOnboardingHandler = newSimulatorEnrollmentOnboardingHandler
+
+// onboardDeclaredEndpointsForActivation onboards every genuinely new
+// profile-declared endpoint — exactly those the authorized readiness
+// comparison reports as missing with no invitation at all — through the
+// maintained explicit onboarding chain. Any required endpoint in any other
+// unready state (not approved, expired, or missing without a declaration)
+// fails closed to the ordinary prerequisite report: unapproved or revoked
+// endpoints never join, and interrupted issuance is reconciled through the
+// explicit review path, never retried here. It returns the recorded
+// operations, whether any onboarding was performed, and false when a
+// response was already written.
+func onboardDeclaredEndpointsForActivation(
+	w http.ResponseWriter,
+	r *http.Request,
+	auth operatorEnrollmentAuthorizer,
+	signer *operatordelegation.Signer,
+	organizationID string,
+	report simulatorEnrollmentReadiness,
+) ([]json.RawMessage, bool, bool) {
+	profile, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID)
+	if err != nil {
+		writeWorkspaceError(w, http.StatusNotFound, "unknown organization")
+		return nil, false, false
+	}
+	declared := make(map[string]simulatorDeclaredEndpoint, len(profile.DeclaredEndpoints))
+	for _, endpoint := range profile.DeclaredEndpoints {
+		declared[endpoint.AssetID] = endpoint
+	}
+	var missing []simulatorDeclaredEndpoint
+	for _, required := range report.Required {
+		switch required.Status {
+		case "approved-retained":
+		case "missing":
+			endpoint, isDeclared := declared[required.AssetID]
+			if !isDeclared {
+				return nil, false, true
+			}
+			missing = append(missing, endpoint)
+		default:
+			return nil, false, true
+		}
+	}
+	if len(missing) == 0 {
+		return nil, false, true
+	}
+	onboard := ordinaryActivationOnboardingHandler().serve(auth, signer)
+	operations := make([]json.RawMessage, 0, len(missing))
+	for _, endpoint := range missing {
+		body, err := json.Marshal(endpoint)
+		if err != nil {
+			writeWorkspaceError(w, http.StatusInternalServerError, "cannot encode the declared endpoint onboarding request; no setup was started")
+			return nil, false, false
+		}
+		request := r.Clone(r.Context())
+		request.Method = http.MethodPost
+		request.URL.RawQuery = ""
+		request.Header = r.Header.Clone()
+		request.Header.Set("Content-Type", "application/json")
+		request.Body = io.NopCloser(bytes.NewReader(body))
+		request.ContentLength = int64(len(body))
+		request.SetPathValue("organization", organizationID)
+		recorder := newSimulatorEnrollmentRecorder()
+		onboard(recorder, request)
+		if recorder.code != http.StatusCreated {
+			writeWorkspaceError(w, http.StatusBadGateway, fmt.Sprintf(
+				"activation onboarding for declared endpoint %s stopped (HTTP %d): %s. No setup was started; reconcile through the explicit enrollment review path.",
+				endpoint.AssetID, recorder.code, strings.TrimSpace(recorder.body.String())))
+			return nil, false, false
+		}
+		operations = append(operations, json.RawMessage(append([]byte(nil), recorder.body.Bytes()...)))
+	}
+	return operations, true, true
 }
 
 func loadSimulatorOrganizations(directory string) ([]simulatorOrganization, error) {
@@ -347,6 +501,9 @@ func loadSimulatorOrganizations(directory string) ([]simulatorOrganization, erro
 		var extra any
 		if err := decoder.Decode(&extra); err != io.EOF {
 			return nil, fmt.Errorf("organization %q contains trailing data", entry.Name())
+		}
+		if err := validateSimulatorDeclaredEndpoints(organization.DeclaredEndpoints); err != nil {
+			return nil, fmt.Errorf("organization %q declared endpoints: %w", entry.Name(), err)
 		}
 		fileID := strings.TrimSuffix(entry.Name(), ".json")
 		if organization.ID != fileID {

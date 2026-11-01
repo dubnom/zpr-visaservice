@@ -107,9 +107,10 @@ func (h *simulatorEnrollmentReadinessHandler) serve(auth operatorEnrollmentAutho
 			Organization: organization, SetupMode: mode,
 			Required: []simulatorEnrollmentRequiredAsset{}, MissingPrerequisites: []string{},
 		}
-		if profile.RetainedMachineRuntime == nil {
+		requiredAssets := simulatorEnrollmentRequiredAssetIDs(profile)
+		if len(requiredAssets) == 0 {
 			report.MissingPrerequisites = append(report.MissingPrerequisites,
-				"organization has no retained machine-runtime endpoint inventory contract; genuine new-endpoint onboarding is not configured (U01-ACTIVATION)")
+				"organization has no retained machine-runtime endpoint inventory contract and declares no endpoints; genuine new-endpoint onboarding is not configured (U01-ACTIVATION)")
 			writeSimulatorJSON(w, report)
 			return
 		}
@@ -136,7 +137,7 @@ func (h *simulatorEnrollmentReadinessHandler) serve(auth operatorEnrollmentAutho
 		}
 		now := h.now()
 		ready := true
-		for _, asset := range simulatorRetainedRequiredAssets {
+		for _, asset := range requiredAssets {
 			status, prerequisite := "missing", fmt.Sprintf("endpoint %s has no enrollment invitation", asset)
 			for _, invitation := range inventory.Invitations {
 				if invitation.Asset.AssetID != asset {
@@ -162,4 +163,21 @@ func (h *simulatorEnrollmentReadinessHandler) serve(auth operatorEnrollmentAutho
 		report.Ready = ready
 		writeSimulatorJSON(w, report)
 	}
+}
+
+// simulatorEnrollmentRequiredAssetIDs returns the organization's required
+// endpoint inventory: the exact reviewed retained inventory when a retained
+// machine runtime is bound, plus every profile-declared endpoint. Declared
+// endpoints never overlap the retained inventory (the profile contract
+// refuses the collision), and an empty result means no onboarding contract
+// is configured.
+func simulatorEnrollmentRequiredAssetIDs(profile simulatorOrganization) []string {
+	var required []string
+	if profile.RetainedMachineRuntime != nil {
+		required = append(required, simulatorRetainedRequiredAssets...)
+	}
+	for _, declared := range profile.DeclaredEndpoints {
+		required = append(required, declared.AssetID)
+	}
+	return required
 }
