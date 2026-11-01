@@ -135,19 +135,28 @@ authoring requirements. Each organization has isolated retained state.
   durably records allocation before permit consumption and the locally
   observed terminal state at finish, and a scoped readback endpoint reports
   `uncertain` for an allocation without a terminal record, never retrying
-  automatically; in-memory permits themselves still do not survive a restart,
-  and restart-safe permit reconciliation remains open.
+  automatically; since 2026-11-01 (`97c1d2e`) issued and consumed plan
+  approvals are also journaled durably per organization, so permit recovery
+  is restart-safe under the contract below.
   After the plan, budget and session are rechecked, the same named operator (or
-  explicit local mode) can recover an unconsumed in-memory permit for the exact
-  organization, scenario and plan digest. Another operator cannot recover it
-  and remains blocked while that scope is pending. A domain-separated,
+  explicit local mode) can recover an unconsumed permit for the exact
+  organization, scenario and plan digest, including after a Simulator restart:
+  re-approval through the full recheck returns the original approval
+  identifier from the durable journal, while direct consumption of a
+  pre-restart identifier without that explicit re-approval is refused.
+  Another operator cannot recover it
+  and remains blocked while that scope is pending, across restarts. Consumed
+  approvals are never resumed; durable consumption precedes in-memory
+  consumption, and an unavailable or corrupt permit journal fails closed
+  (a failed durable append keeps the one-use approval intact).
+  A domain-separated,
   non-secret permit fingerprint links an approval response to the current
   in-memory run. After an ambiguous run response, the UI makes one bounded
   catalog read and recognizes only a matching fingerprint, plan and scope; it
   never retries the run automatically. An absent, replaced or unavailable
   snapshot is still unknown, not proof that no run started. This is neither
-  durable run reconciliation nor production Audit evidence and does not
-  survive a restart. Velocity pairing and named login and installed-package
+  durable run reconciliation nor production Audit evidence. Velocity pairing
+  and named login and installed-package
   acceptance remain open. Do not reuse
   Room secrets/signing keys or ask for the approved pairing again.
 - Existing exact-ID traffic grants remain effective. Broader role/profile-based
@@ -226,10 +235,10 @@ local independent authority, including missing backend permission and changed
 session/actor. It does not prove Velocity integration or that ordinary approvals
 have a recorded requester. No durable production-owned scenario approval or
 run evidence is established by these tests. The per-installation operator
-grant contract and durable scenario-run permit reconciliation remain open. A
+grant contract remains open; durable scenario-run permit reconciliation was
+closed on 2026-11-01 (`97c1d2e`, see the scenario-execution record below). A
 local TLS browser/service fixture also tests same-operator permit recovery and
-matching-run readback after synthetic lost responses; this is not live or
-restart-safe evidence.
+matching-run readback after synthetic lost responses.
 
 **Isolated workbench evidence (2026-10-31):** On Ubuntu, a fresh source-built
 installation was paired add-later with a protected operator trust override.
@@ -578,8 +587,27 @@ retained machine containers, controller connections, logins, workload
 start, production-DNS publication of `echo-web.svc.zpr.`, the 100-sample
 HTTP round-trip and 16 MiB download assertions, and clean teardown.
 Still open: scenario launch from the Simulator UI has not been operator-
-verified end to end in the browser, and the remaining G2 UI surface and
-restart-safe reconciliation streams are unchanged.
+verified end to end in the browser, and the remaining G2 UI surface stream is
+unchanged.
+
+**Restart-safe permit reconciliation (2026-11-01, `97c1d2e`):** issued and
+consumed scenario plan approvals are journaled durably per organization in an
+append-only fsynced JSONL file beside the run evidence journal (records carry
+scope, approval identifier and the exact principal; no plans or secrets
+beyond the one-use identifier). After a restart, the same principal resumes
+an unconsumed approval with its original identifier only through the full
+approval recheck; other principals stay blocked for that scope; consumed
+approvals are never resumed; direct consumption of a pre-restart identifier
+is refused until re-approval; the journal fails closed when unavailable,
+corrupt or unwritable, and a failed durable append keeps the one-use
+approval intact. Focused tests cover restart resume, cross-principal
+blocking, local mode, consume-after-restart refusal, corrupt-journal
+fail-closed, failed-append preservation and the memory-only store contract.
+Live evidence on Velocity (zpr-simulator-r14): approval issued, durable
+journal written, Simulator-only restart, direct run with the old permit
+refused HTTP 409, re-approval returned the identical approval identifier,
+and the resumed permit ran `velocity-single-node` to completion (20/20); the
+journal records exactly issued then consumed for the named operator.
 
 ### Delivery discipline and completion
 
