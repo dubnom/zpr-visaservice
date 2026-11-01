@@ -519,7 +519,13 @@ missing prerequisite and no setup started. Restore stays blocked
 closed, and the scenario-running and machine-session conflicts still apply.
 Focused tests cover the verified activation with the recorded selection and
 the fail-closed missing-prerequisite refusal; the existing guard tests and
-browser fixtures (which mock the backend denial) continue to pass. Still open
+browser fixtures (which mock the backend denial) continue to pass.
+**Exercised live on Velocity the same day** with `zpr-simulator-r11`: after
+real named login, explicit activation returned HTTP 200 `ready-verified` with
+the full five-asset readiness report and recorded the organization selection;
+Restore remained blocked (the live session grant also lacks
+`organization.restore`, so the route policy denies before the handler's own
+guard); production stayed untouched. Still open
 for the G2 gate: automatic onboarding of genuinely new profile-declared
 endpoints at activation and the Simulator UI surface; token redemption
 remains exclusively the pinned Visa Service peer's, and no onboarded endpoint
