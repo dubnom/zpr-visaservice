@@ -250,3 +250,42 @@ func TestEvaluationOperatorBindingsRejectUnprotectedAndInvalidJSON(t *testing.T)
 		t.Fatal("public operator config accepted")
 	}
 }
+
+func TestEvaluationDelegationOverrideBoundedBudgetApprove(t *testing.T) {
+	base := operatordelegation.Config{
+		Version: 1, Audience: "https://localhost:18790",
+		Keys: []operatordelegation.TrustedKey{{
+			KeyID: "evaluation-room", PublicKey: strings.Repeat("A", 43),
+			CertificateSHA256: strings.Repeat("a", 64),
+		}},
+		Grants: []operatorauth.Grant{{
+			Issuer: "https://localhost:18556", Subject: "named-admin",
+			Organizations: []string{"velocity"},
+			Permissions:   []string{"monitor.read", "subject-link.approve"},
+		}},
+	}
+	override := func(permissions ...string) operatordelegation.Config {
+		configured := base
+		configured.Grants = []operatorauth.Grant{base.Grants[0]}
+		configured.Grants[0].Permissions = append(slices.Clone(base.Grants[0].Permissions), permissions...)
+		return configured
+	}
+	if err := validateEvaluationDelegationOverride(override("approval.self", "budget.approve"), base, "velocity"); err != nil {
+		t.Fatalf("bounded budget.approve alongside approval.self was refused: %v", err)
+	}
+	if err := validateEvaluationDelegationOverride(override("budget.approve"), base, "velocity"); err == nil {
+		t.Fatal("budget.approve without approval.self was accepted")
+	}
+	if err := validateEvaluationDelegationOverride(override("policy.edit"), base, "velocity"); err == nil {
+		t.Fatal("an unlisted permission addition was accepted")
+	}
+	nonApprover := base
+	nonApprover.Grants = []operatorauth.Grant{base.Grants[0]}
+	nonApprover.Grants[0].Permissions = []string{"monitor.read"}
+	configured := nonApprover
+	configured.Grants = []operatorauth.Grant{nonApprover.Grants[0]}
+	configured.Grants[0].Permissions = []string{"monitor.read", "approval.self", "budget.approve"}
+	if err := validateEvaluationDelegationOverride(configured, nonApprover, "velocity"); err == nil {
+		t.Fatal("approval.self for a non-approver was accepted")
+	}
+}

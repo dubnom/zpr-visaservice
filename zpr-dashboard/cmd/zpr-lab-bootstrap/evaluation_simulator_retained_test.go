@@ -84,7 +84,7 @@ func TestEvaluationSimulatorRetainedBindingsSelectFrozenAugmentedRegistry(t *tes
 	if err := os.WriteFile(retained, document, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	env, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained)
+	env, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained, "")
 	if err != nil {
 		t.Fatalf("retained preparation failed: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestEvaluationSimulatorRetainedBindingsSelectFrozenAugmentedRegistry(t *tes
 		t.Fatalf("retained registry lacks the exact supplied bindings: %s (%v)", data, err)
 	}
 	// An exact repeat verifies the frozen registry instead of rewriting it.
-	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained); err != nil {
+	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained, ""); err != nil {
 		t.Fatalf("exact retained repeat failed: %v", err)
 	}
 	// A changed binding is refused rather than silently rebound.
@@ -130,7 +130,7 @@ func TestEvaluationSimulatorRetainedBindingsSelectFrozenAugmentedRegistry(t *tes
 	if err := os.WriteFile(retained, changed, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained); err == nil ||
+	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained, ""); err == nil ||
 		!strings.Contains(err.Error(), "refuse implicit rebind") {
 		t.Fatalf("changed retained bindings were not refused: %v", err)
 	}
@@ -161,21 +161,21 @@ func TestEvaluationSimulatorRetainedBindingsFailClosed(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := write(t, retainedBindingsDocument(t, inventory, test.mutate))
-			if _, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory); err == nil ||
+			if _, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory, ""); err == nil ||
 				!strings.Contains(err.Error(), test.message) {
 				t.Fatalf("unsafe retained bindings %q were not refused: %v", test.name, err)
 			}
 		})
 	}
 	t.Run("relative path", func(t *testing.T) {
-		if _, _, err := loadEvaluationSimulatorRetainedBindings("retained.json", inventory); err == nil ||
+		if _, _, err := loadEvaluationSimulatorRetainedBindings("retained.json", inventory, ""); err == nil ||
 			!strings.Contains(err.Error(), "canonical absolute") {
 			t.Fatalf("relative retained path was not refused: %v", err)
 		}
 	})
 	t.Run("missing runtime member", func(t *testing.T) {
 		path := write(t, []byte(`{"retained_topology_binding":{"version":1}}`))
-		if _, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory); err == nil ||
+		if _, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory, ""); err == nil ||
 			!strings.Contains(err.Error(), "exactly retained_topology_binding and retained_machine_runtime") {
 			t.Fatalf("missing runtime member was not refused: %v", err)
 		}

@@ -44,7 +44,7 @@ func TestEvaluationSimulatorFullCatalog(t *testing.T) {
 	if output, err := exec.Command("sh", filepath.Join("..", "..", "packaging", "evaluation", "stage-catalog.sh"), catalog).CombinedOutput(); err != nil {
 		t.Fatalf("stage actual packaged catalog: %v: %s", err, output)
 	}
-	env := []string{"ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE=original", "SIMULATION_MANIFEST=original", "SIMULATION_PREGEN_DIR=/unavailable/old-runtime", "SIMULATION_SETUP_MODE=ordinary-client", "UNCHANGED=value"}
+	env := []string{"ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE=" + filepath.Join(evaluation, "simulator-oidc.json"), "SIMULATION_MANIFEST=original", "SIMULATION_PREGEN_DIR=/unavailable/old-runtime", "SIMULATION_SETUP_MODE=ordinary-client", "UNCHANGED=value"}
 	for range 2 {
 		got, err := prepareEvaluationSimulatorCatalog(evaluation, state, catalog, slices.Clone(env))
 		if err != nil {

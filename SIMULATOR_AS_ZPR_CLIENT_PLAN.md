@@ -531,6 +531,26 @@ endpoints at activation and the Simulator UI surface; token redemption
 remains exclusively the pinned Visa Service peer's, and no onboarded endpoint
 has a visa or traffic grant.
 
+**Scenario stack for paired installs (2026-11-01, source only):** four
+changes prepare live scenario selection on the paired retained install.
+Paired installs (recorded `simulator_port`) now host the bounded
+Control-Service budget authority — pairing is the explicit opt-in — and the
+paired Simulator always carries the budget-authority client; mutations remain
+gated by the delegation trust grants. The operator delegation override
+validation now also accepts bounded `budget.approve` added to an existing
+named grant, only alongside `approval.self` in the same override grant.
+The packaged-catalog launch integrates with a paired catalog organization:
+the launcher skips its own minimal profile when the catalog supplies the
+organization's original profile, the retained-binding validation accepts the
+catalog profile's published node, and `catalog-oidc.json` is built from the
+login configuration the prepared environment actually selects (preserving an
+explicit operator-approved session override) with duplicate organization
+scopes deduplicated. Focused tests cover the authority opt-in matrix, the
+bounded budget.approve override rules and the catalog integration. Not
+deployed: the live Velocity install still runs the r10 start binary without a
+budget authority, its delegation trusts lack `budget.approve`, and its
+Simulator state has no scenario catalog.
+
 ### Delivery discipline and completion
 
 - One coordinator owns live changes. Parallel chats may take bounded source-only

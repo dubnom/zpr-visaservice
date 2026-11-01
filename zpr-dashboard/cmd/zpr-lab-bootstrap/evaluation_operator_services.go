@@ -348,10 +348,15 @@ func validateEvaluationDelegationOverride(configured, original operatordelegatio
 		if !slices.Contains(base.Permissions, "approval.self") {
 			permissions = slices.DeleteFunc(permissions, func(permission string) bool { return permission == "approval.self" })
 		}
+		if !slices.Contains(base.Permissions, "budget.approve") {
+			permissions = slices.DeleteFunc(permissions, func(permission string) bool { return permission == "budget.approve" })
+		}
 		if !slices.Equal(permissions, base.Permissions) ||
 			(slices.Contains(grant.Permissions, "approval.self") &&
-				!slices.Contains(base.Permissions, "subject-link.approve") && !slices.Contains(base.Permissions, "approve")) {
-			return errors.New("operator delegation override may add approval.self only to existing named approvers")
+				!slices.Contains(base.Permissions, "subject-link.approve") && !slices.Contains(base.Permissions, "approve")) ||
+			(slices.Contains(grant.Permissions, "budget.approve") &&
+				!slices.Contains(grant.Permissions, "approval.self")) {
+			return errors.New("operator delegation override may add approval.self only to existing named approvers and bounded budget.approve only alongside approval.self")
 		}
 	}
 	return nil

@@ -23,6 +23,14 @@ func TestEvaluationScenarioDemoRequiresExplicitDependencies(t *testing.T) {
 	}
 	config.ScenarioDemo = false
 	inventory.Config = config
+	// Pairing is itself the explicit opt-in: a paired install hosts the
+	// bounded authority so scenario budget approvals have a backend.
+	if !slices.Contains(evaluationEnvironment("/private/evaluation", inventory, "control-service"),
+		"ZPR_BUDGET_AUTHORITY_DB_PATH=/private/evaluation/budget-authority.db") {
+		t.Fatal("paired install did not host the independent authority")
+	}
+	config.SimulatorPort, config.DataPlaneEndpoints = 0, 0
+	inventory.Config = config
 	for _, entry := range evaluationEnvironment("/private/evaluation", inventory, "control-service") {
 		if entry == "ZPR_BUDGET_AUTHORITY_DB_PATH=/private/evaluation/budget-authority.db" {
 			t.Fatal("authority enabled without explicit opt-in")

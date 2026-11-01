@@ -19,7 +19,7 @@ import (
 // contracts at startup and the retained lifecycle verifies the referenced
 // files and containers before any use. The launcher never fabricates,
 // migrates or widens a binding.
-func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationInventory) (json.RawMessage, json.RawMessage, error) {
+func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationInventory, catalogNodeID string) (json.RawMessage, json.RawMessage, error) {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path || strings.ContainsAny(path, ",\"\r\n=") {
 		return nil, nil, errors.New("retained-machine-runtime-file requires a canonical absolute bind-mount-safe path")
 	}
@@ -57,7 +57,12 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 	}
 	expectedContainer := "zpr-evaluation-" + inventory.InstallID + "-data-plane"
 	nodes := evaluationDataPlaneTopology(inventory)
-	if !inventory.Config.DataPlane || len(nodes) != 1 || binding.LogicalNodeID != nodes[0].Name ||
+	// The published profile's node is authoritative: the launcher's own
+	// minimal profile publishes the data-plane node name, and a packaged
+	// catalog profile publishes the organization's original node.
+	nodeMatches := len(nodes) == 1 && binding.LogicalNodeID == nodes[0].Name ||
+		catalogNodeID != "" && binding.LogicalNodeID == catalogNodeID
+	if !inventory.Config.DataPlane || len(nodes) != 1 || !nodeMatches ||
 		binding.NodeContainer != expectedContainer || binding.Network != expectedContainer {
 		return nil, nil, errors.New("retained topology binding requires this install-owned single-node data plane and its published node")
 	}

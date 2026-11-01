@@ -61,7 +61,9 @@ func evaluationEnvironment(state string, inventory evaluationInventory, mode str
 		if config.subjectLinks() {
 			env = append(env, evaluationSubjectEnvironment(state, config, false)...)
 		}
-		if config.ScenarioDemo {
+		if config.ScenarioDemo || config.SimulatorPort != 0 {
+			// Paired installs host the bounded scenario budget authority;
+			// mutations remain gated by the delegation trust grants.
 			env = append(env, "ZPR_BUDGET_AUTHORITY_DB_PATH="+file("budget-authority.db"))
 		}
 		return env

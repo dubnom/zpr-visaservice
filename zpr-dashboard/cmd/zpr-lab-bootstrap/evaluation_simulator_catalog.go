@@ -7,12 +7,31 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"neboagency.com/zpr-dashborad/internal/operatorauth"
 )
 
 var evaluationSimulatorCatalogIDs = []string{"great-lakes", "load-lab", "northstar", "redwood", "velocity"}
+
+// evaluationSimulatorCatalogNodeID reads the packaged catalog profile's
+// published single node for a paired catalog organization.
+func evaluationSimulatorCatalogNodeID(catalog, organization string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(catalog, "organizations", organization+".json"))
+	var profile struct {
+		Runtime struct {
+			Nodes []struct {
+				ID string `json:"id"`
+			} `json:"nodes"`
+		} `json:"runtime"`
+	}
+	if err != nil || json.Unmarshal(data, &profile) != nil || len(profile.Runtime.Nodes) != 1 ||
+		profile.Runtime.Nodes[0].ID == "" {
+		return "", errors.New("the packaged catalog profile must publish exactly one named node for the paired organization")
+	}
+	return profile.Runtime.Nodes[0].ID, nil
+}
 
 func prepareEvaluationSimulatorCatalog(evaluation, state, catalog string, env []string) ([]string, error) {
 	if !filepath.IsAbs(catalog) {
@@ -105,14 +124,27 @@ func prepareEvaluationSimulatorCatalog(evaluation, state, catalog string, env []
 	if err := writeEvaluationOnce(state, "catalog-manifest.json", append(data, '\n')); err != nil {
 		return nil, err
 	}
-	data, err = os.ReadFile(filepath.Join(evaluation, "simulator-oidc.json"))
+	// Build the catalog session from the login configuration the prepared
+	// environment actually selects, so an explicit operator-approved session
+	// override is preserved rather than silently dropped.
+	loginPath := filepath.Join(evaluation, "simulator-oidc.json")
+	for _, entry := range env {
+		if value, ok := strings.CutPrefix(entry, "ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE="); ok && value != "" {
+			loginPath = value
+		}
+	}
+	data, err = os.ReadFile(loginPath)
 	var login operatorauth.Config
 	if err != nil || json.Unmarshal(data, &login) != nil || login.Validate() != nil {
 		return nil, errors.New("paired Simulator login configuration unavailable")
 	}
 	// Scope only the Simulator's local session; production grants stay unchanged.
 	for i := range login.Grants {
-		login.Grants[i].Organizations = append(login.Grants[i].Organizations, evaluationSimulatorCatalogIDs...)
+		for _, id := range evaluationSimulatorCatalogIDs {
+			if !slices.Contains(login.Grants[i].Organizations, id) {
+				login.Grants[i].Organizations = append(login.Grants[i].Organizations, id)
+			}
+		}
 	}
 	if err := login.Validate(); err != nil {
 		return nil, err

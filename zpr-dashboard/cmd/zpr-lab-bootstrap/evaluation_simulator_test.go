@@ -99,7 +99,7 @@ func TestEvaluationSimulatorPreparation(t *testing.T) {
 	}
 	state := filepath.Join(parent, "simulator-state")
 	image := "sha256:" + strings.Repeat("a", 64)
-	env, listen, err := prepareEvaluationSimulator(evaluation, state, binary, image, "")
+	env, listen, err := prepareEvaluationSimulator(evaluation, state, binary, image, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,13 +115,13 @@ func TestEvaluationSimulatorPreparation(t *testing.T) {
 			t.Fatal("unset setup mode was implicitly configured")
 		}
 	}
-	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, ""); err != nil {
+	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, "", ""); err != nil {
 		t.Fatal("same-state restart failed", err)
 	}
 	for _, mode := range []string{"", "legacy-launcher", "ordinary-client"} {
 		t.Run("setup-mode="+mode, func(t *testing.T) {
 			t.Setenv("SIMULATION_SETUP_MODE", mode)
-			prepared, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, "")
+			prepared, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, "", "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -139,7 +139,7 @@ func TestEvaluationSimulatorPreparation(t *testing.T) {
 		t.Run("invalid-setup-mode="+mode, func(t *testing.T) {
 			t.Setenv("SIMULATION_SETUP_MODE", mode)
 			rejectedState := filepath.Join(parent, "rejected-state")
-			if _, _, err := prepareEvaluationSimulator(evaluation, rejectedState, binary, image, ""); err == nil ||
+			if _, _, err := prepareEvaluationSimulator(evaluation, rejectedState, binary, image, "", ""); err == nil ||
 				!strings.Contains(err.Error(), "SIMULATION_SETUP_MODE") {
 				t.Fatalf("invalid setup mode accepted or unclear: %v", err)
 			}
@@ -172,18 +172,18 @@ func TestEvaluationSimulatorPreparation(t *testing.T) {
 		}
 	})
 
-	if _, _, err := prepareEvaluationSimulator(evaluation, filepath.Join(evaluation, "nested"), binary, image, ""); err == nil {
+	if _, _, err := prepareEvaluationSimulator(evaluation, filepath.Join(evaluation, "nested"), binary, image, "", ""); err == nil {
 		t.Fatal("nested Simulator state accepted")
 	}
 	for _, invalid := range []string{"mutable:latest", "sha256:bad"} {
-		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, invalid, ""); err == nil {
+		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, invalid, "", ""); err == nil {
 			t.Fatal("invalid image accepted", invalid)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(state, "manifest.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, ""); err == nil {
+	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, "", ""); err == nil {
 		t.Fatal("changed setup was silently overwritten")
 	}
 }
@@ -281,7 +281,7 @@ func TestEvaluationSimulatorPairedOperatorDirectoryWithoutBootstrapEndpoints(t *
 	}
 	state := filepath.Join(parent, "simulator-state")
 	image := "sha256:" + strings.Repeat("a", 64)
-	_, listen, err := prepareEvaluationSimulator(evaluation, state, binary, image, "")
+	_, listen, err := prepareEvaluationSimulator(evaluation, state, binary, image, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestEvaluationSimulatorLaunchRejectsUnsupportedInstallShapes(t *testing.T) 
 			BaseDN: "dc=example,dc=test", LDIFFiles: []string{writeTestDirectoryLDIF(t, testDirectoryLDIF)},
 		}
 		evaluation, state := prepare(t, "no-subject-links", config)
-		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, ""); err == nil ||
+		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, "", ""); err == nil ||
 			!strings.Contains(err.Error(), "subject links") {
 			t.Fatalf("directory install without seeded health identity accepted: %v", err)
 		}
@@ -355,7 +355,7 @@ func TestEvaluationSimulatorLaunchRejectsUnsupportedInstallShapes(t *testing.T) 
 		config := testEvaluationVisaConfig()
 		config.SimulatorPort = 28793
 		evaluation, state := prepare(t, "no-data-plane", config)
-		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, ""); err == nil ||
+		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, "", ""); err == nil ||
 			!strings.Contains(err.Error(), "data plane") {
 			t.Fatalf("install without any data plane accepted: %v", err)
 		}
@@ -364,7 +364,7 @@ func TestEvaluationSimulatorLaunchRejectsUnsupportedInstallShapes(t *testing.T) 
 	t.Run("unpaired install", func(t *testing.T) {
 		config := testEvaluationDataPlaneConfig()
 		evaluation, state := prepare(t, "unpaired", config)
-		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, ""); err == nil ||
+		if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, "", ""); err == nil ||
 			!strings.Contains(err.Error(), "evaluation-simulator-pairing") {
 			t.Fatalf("unpaired install accepted: %v", err)
 		}

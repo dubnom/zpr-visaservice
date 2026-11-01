@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,7 +75,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer lock.Close()
-	env, listen, err := prepareEvaluationSimulator(*evaluation, *state, *binary, *image, *retainedFile)
+	env, listen, err := prepareEvaluationSimulator(*evaluation, *state, *binary, *image, *retainedFile, *catalog)
 	if err != nil {
 		fmt.Fprintf(stderr, "Simulator setup: %v\n", err)
 		return 1
@@ -200,7 +201,7 @@ func validateEvaluationSimulatorArguments(evaluation, state, binary, image strin
 	return nil
 }
 
-func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile string) ([]string, string, error) {
+func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, catalog string) ([]string, string, error) {
 	setupMode, setupModeSet := os.LookupEnv(setupmode.Environment)
 	if err := validateEvaluationSimulatorArguments(evaluation, state, binary, image); err != nil {
 		return nil, "", err
@@ -368,8 +369,13 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile s
 			return nil, "", err
 		}
 	}
-	if err := write(filepath.Join("organizations", organization+".json"), profile); err != nil {
-		return nil, "", err
+	// When the packaged catalog supplies this organization's original
+	// profile, the launcher never writes its own minimal profile beside it.
+	catalogProfile := catalog != "" && slices.Contains(evaluationSimulatorCatalogIDs, organization)
+	if !catalogProfile {
+		if err := write(filepath.Join("organizations", organization+".json"), profile); err != nil {
+			return nil, "", err
+		}
 	}
 	target := map[string]any{
 		"organization_id":      organization,
@@ -388,7 +394,14 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile s
 	}
 	registryName := "installs.json"
 	if retainedFile != "" {
-		binding, runtime, err := loadEvaluationSimulatorRetainedBindings(retainedFile, inventory)
+		catalogNode := ""
+		if catalogProfile {
+			catalogNode, err = evaluationSimulatorCatalogNodeID(catalog, organization)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+		binding, runtime, err := loadEvaluationSimulatorRetainedBindings(retainedFile, inventory, catalogNode)
 		if err != nil {
 			return nil, "", err
 		}
@@ -427,17 +440,18 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile s
 		values[setupmode.Environment] = setupMode
 	}
 	// Every paired install carries the independent Simulator delegation
-	// signer; authorized operator calls remain gated by the named session
-	// grants and each backend's own delegation trust.
+	// signer and the bounded budget-authority client; authorized operator
+	// calls remain gated by the named session grants and each backend's own
+	// delegation trust.
 	values["ZPR_OPERATOR_DELEGATION_SIGNER_FILE"] = filepath.Join(evaluation, "simulator-delegation-signer.json")
 	values["ZPR_OPERATOR_DELEGATION_KEY_FILE"] = filepath.Join(evaluation, "simulator-delegation-key.pem")
 	values["ZPR_OPERATOR_DELEGATION_AUDIENCE"] = evaluationServiceAudience(inventory.Config)
+	values["ZPR_BUDGET_AUTHORITY_URL"] = fmt.Sprintf("https://localhost:%d", inventory.Config.ServicePort)
+	values["ZPR_BUDGET_AUTHORITY_CLIENT_CERT_FILE"] = filepath.Join(evaluation, "simulator-client-chain.pem")
+	values["ZPR_BUDGET_AUTHORITY_CLIENT_KEY_FILE"] = filepath.Join(evaluation, "simulator-client-key.pem")
+	values["ZPR_BUDGET_AUTHORITY_CA_FILE"] = filepath.Join(evaluation, "ca.pem")
 	if inventory.Config.ScenarioDemo {
 		values["SIMULATOR_DATA_PLANE_WORKLOAD_INTERVAL"] = "off"
-		values["ZPR_BUDGET_AUTHORITY_URL"] = fmt.Sprintf("https://localhost:%d", inventory.Config.ServicePort)
-		values["ZPR_BUDGET_AUTHORITY_CLIENT_CERT_FILE"] = filepath.Join(evaluation, "simulator-client-chain.pem")
-		values["ZPR_BUDGET_AUTHORITY_CLIENT_KEY_FILE"] = filepath.Join(evaluation, "simulator-client-key.pem")
-		values["ZPR_BUDGET_AUTHORITY_CA_FILE"] = filepath.Join(evaluation, "ca.pem")
 	}
 	if inventory.Config.BrowserIP != "" {
 		values["ZPR_SIMULATOR_OPERATOR_DIRECT_IP"] = inventory.Config.BrowserIP
