@@ -402,6 +402,21 @@ endpoint key is generated and no approval is issued by these routes. Focused
 tests assert the exact relayed mutation bodies behind the synthetic mTLS
 relay and the fail-closed paths (missing specific grant, changed operator,
 local mode, invalid references, unknown body fields).
+**Deployed and exercised live on Velocity the same day:** with the explicitly
+user-approved session override `simulator-oidc-enrollment.json`
+(read/create/cancel/budget.approve added to the existing named administrator;
+`approval.self` untouched) and `zpr-simulator-r5`, a real named login
+performed the first live Simulator-signed enrollment mutations: invitation
+create returned HTTP 201 for the new bounded test asset
+`velocity-sim-onboarding-check` (catalog profile/type and preflight gates
+enforced upstream), readiness remained `ready=true` and correctly scoped to
+the required five retained endpoints, and the explicit cancel with the exact
+revision and a bounded reason returned the invitation in state `cancelled`
+with the named decision identity recorded. The five retained approvals were
+untouched and no device claim, key issuance or approval occurred. G2 still
+open: endpoint key generation, device claim/issuance, automatic
+self-approval of a claimed invitation, protected runtime handoff, and
+persisted operation IDs/endpoint identity references.
 
 ### Delivery discipline and completion
 
