@@ -728,11 +728,27 @@ Run live against Northstar: key material generated under
 (dated `.before-evaluation-bas` backup) and restarted serving both BAS
 listeners at 10.0.1.160:20996/20997, adapter scripts emitted, root adapter
 public key `0a66bc2494965ee2af00f72ec02e12f2d742b087af1b024f0c20d90e3246b578`
-recorded. Still open, in order: the self-approved authentication-root
-policy/configuration change through the change-review pipeline, the adapter
-unit start and the `bas-authorized` acceptance; then the approved decision
-also requires migrating Velocity's artisanal BAS scripts to this maintained
-command (adopting its existing key material unchanged).
+recorded. The command additionally emits (`05243cb`) the root adapter SPKI public key
+`root-adapter.pub` and the reviewed compiler-config fragment
+`bas-compiler-config-fragment.toml`, closing a gap found during apply: the
+Velocity authentication root was both a compiler-configuration change (the
+data-plane `dp-policy.zplc` gained the `[bootstrap]` root-adapter pin, the
+`[trusted_services.<org>-enrollment-bas]` validation/2 authority with the
+enrollment attribute mapping, and the `[services.<Org>EnrollmentAuth]` /
+`[services.<org>-enrollment-bas-vs]` service ports) AND a policy-source
+change (the `<Org>EnrollmentAuth` stanza). The maintained apply procedure,
+reverse-engineered from the Velocity `bas-root-r13` evidence, is: (1) merge
+the emitted fragment into the install’s `state/<org>/dp-policy.zplc`
+(the fixed `ZPR_POLICY_STAGE_CONFIG_FILE` the Policy-Service compiles
+against; dated backup); (2) append the emitted policy stanza to the
+organization’s applied data-plane policy record through the Room/Policy
+change-review APIs; (3) stage (compiles against the now-BAS-aware config),
+self-approve the review as the same named operator under the recorded
+self-approval decision, and apply with guarded readback. Still open, in
+order: that self-approved policy/configuration apply on Northstar, the
+adapter unit start and the `bas-authorized` acceptance; then migrating
+Velocity’s artisanal BAS scripts to this maintained command (adopting its
+existing key material unchanged).
 
 **Scenario stack for paired installs (2026-11-01, source only):** four
 changes prepare live scenario selection on the paired retained install.
