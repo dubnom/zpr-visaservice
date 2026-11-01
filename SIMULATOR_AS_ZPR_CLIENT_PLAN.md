@@ -546,10 +546,40 @@ catalog profile's published node, and `catalog-oidc.json` is built from the
 login configuration the prepared environment actually selects (preserving an
 explicit operator-approved session override) with duplicate organization
 scopes deduplicated. Focused tests cover the authority opt-in matrix, the
-bounded budget.approve override rules and the catalog integration. Not
-deployed: the live Velocity install still runs the r10 start binary without a
-budget authority, its delegation trusts lack `budget.approve`, and its
-Simulator state has no scenario catalog.
+bounded budget.approve override rules and the catalog integration. At commit
+time the live Velocity install still ran the r10 start binary without a
+budget authority; the same-day scenario-execution record below supersedes
+that deployment gap.
+
+**Scenario execution completed live on Velocity (2026-11-01, `d86eb2e`):**
+the full authorized scenario chain was proven on the paired retained install.
+Deployed: the install's `bin/zpr-lab-bootstrap.simulator-r11` start binary
+hosts the bounded Control-Service budget authority, both delegation trusts
+carry `budget.approve` for the Simulator key (dated backups retained), the
+packaged scenario catalog is installed, and paired installs run a
+scenario-capable Control Room/Service build
+(`bin/zpr-control-room.scenario-r12`, selected by `organization-runtime.sh`
+only for paired installs) whose budget-approval decoder accepts the bounded
+self-approval request. Source fixes completing the chain: scenario preflight
+and bounded budget self-approval accept the reviewed
+`retained-machine-bas-v1` contract alongside `evaluation-endpoints-v1`; the
+retained path resolves the authoritative policy digest through the paired
+install's guarded Visa Service admin readback (an unavailable readback keeps
+the explicit policy blocker); the paired launcher serves the Simulator
+machine-control listener at the retained binding's declared callback
+upstream with the operator-generated control identity, so retained machine
+controllers connect through the callback proxy; and paired manifests publish
+the install's protected DNS (`fd5a:5052::53`) so scenario service
+publication is read back from production-owned DNS. Live evidence
+(2026-11-01, operator session at 24788): bounded budget self-approval 201
+with persisted evidence, preflight blockers fully drained, plan self-approval
+200, run accepted 202, and `velocity-single-node` completed all 20 steps —
+retained machine containers, controller connections, logins, workload
+start, production-DNS publication of `echo-web.svc.zpr.`, the 100-sample
+HTTP round-trip and 16 MiB download assertions, and clean teardown.
+Still open: scenario launch from the Simulator UI has not been operator-
+verified end to end in the browser, and the remaining G2 UI surface and
+restart-safe reconciliation streams are unchanged.
 
 ### Delivery discipline and completion
 
