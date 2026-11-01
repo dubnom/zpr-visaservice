@@ -284,9 +284,12 @@ discovery 200 with Simulator stopped, Control-Service answering over mTLS,
 Simulator 302 with named operator login configured, and a clean
 Simulator-only restart. Still open for G1: human named UI login on Velocity,
 scenario selection against the retained machine runtime, Audit role-risk
-warnings, and the per-installation operator grant contract. The installed
-package bootstrap still lacks signer support; this deployment used
-source-built binaries from a task-owned directory, and the retained install's
+warnings, and the per-installation operator grant contract. At that
+deployment the installed package bootstrap still lacked signer support and
+this deployment used
+source-built binaries from a task-owned directory; the later
+installed-package qualification record (2026-11-01, `5cfed89`) supersedes
+that gap. The retained install's
 independent downstream trust (Enrollment Service) is unchanged.
 
 **Enrollment Service trust preparation (2026-10-31, source only):** toward G2,
@@ -567,6 +570,34 @@ with no blockers. This completes the G2 automatic-onboarding acceptance for
 the Simulator-side chain; the declared endpoint has no visa or traffic
 grant, and custom-organization launch additionally needs its own paired
 production install.
+
+**Installed-package paired qualification (2026-11-01, `5cfed89`):** the
+packaged Simulator launch (`simulator.sh`) accepts the operator-owned
+paired-operation options (`--simulator-oidc-file`,
+`--retained-machine-runtime-file`, `--enrollment-device-url`,
+`--enrollment-bas-url`, `--enrollment-bas-authority`,
+`--enrollment-bas-ca-file`) and forwards them verbatim to the packaged
+bootstrap, which revalidates every file and contract; operator files must be
+absolute existing paths, enrollment URLs HTTPS, and unrecognized options are
+refused before the bootstrap starts. The maintained packaging test covers
+option forwarding and the fail-closed validations. **Qualified live on
+Velocity:** `package.sh velocity-paired-20261101` built matching ZPR and
+Simulator archives on the workbench from clean source `5cfed89`
+(`source_dirty=false`, user-local Go 1.27.1, live data-plane image
+`c820f183…` pinned); both archives verified against their SHA256SUMS and
+paired build identity; the Simulator then ran purely from the extracted
+package with a fresh private state (`SIMULATION_SETUP_MODE=ordinary-client`,
+`--full-catalog` plus the paired-operation options referencing the
+operator-owned Velocity configuration) and completed the whole authorized
+chain: named login, explicit activation `ready-verified`, scenario catalog
+load (which seeds the published workspace revisions), bounded budget
+self-approval HTTP 201, plan self-approval, run accepted HTTP 202 and
+`velocity-single-node` completed 20/20 against the retained install. Honest
+limits: the archives were built on the same workbench host, not a separate
+clean build host; browser-UI acceptance from the package was not rerun (UI
+verification is deferred); the package retains its
+`status=engineering-unqualified` label, and G5's dev-port deployment,
+rollback record and maintained environment page remain open.
 
 **Scenario stack for paired installs (2026-11-01, source only):** four
 changes prepare live scenario selection on the paired retained install.
