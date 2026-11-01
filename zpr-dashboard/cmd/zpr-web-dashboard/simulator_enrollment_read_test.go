@@ -84,8 +84,11 @@ type simulatorEnrollmentRelayFixture struct {
 	keyPath         string
 	caPath          string
 	relayCalls      atomic.Int32
+	createCalls     atomic.Int32
+	cancelCalls     atomic.Int32
 	invitationsBody string
 	failStatus      int
+	lastMutation    atomic.Value
 }
 
 // newSimulatorEnrollmentRelayFixture stands in for the paired Control-Service
@@ -147,16 +150,10 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 			http.Error(w, "client required", http.StatusForbidden)
 			return
 		}
-		if r.Method != http.MethodGet || r.URL.Path != operatordelegation.Prefix+"invitations" ||
-			r.URL.RawQuery != "organization="+organization {
-			t.Errorf("unexpected relay request %s %s", r.Method, r.URL.RequestURI())
-			http.Error(w, "unexpected request", http.StatusBadRequest)
-			return
-		}
 		body, err := io.ReadAll(r.Body)
-		if err != nil || len(body) != 0 {
-			t.Errorf("enrollment read forwarded a body: %v", err)
-			http.Error(w, "unexpected body", http.StatusBadRequest)
+		if err != nil {
+			t.Errorf("read relay body: %v", err)
+			http.Error(w, "unreadable body", http.StatusBadRequest)
 			return
 		}
 		grant, err := verifier.Verify(r, body, time.Now())
@@ -165,13 +162,50 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 			http.Error(w, "delegation denied", http.StatusForbidden)
 			return
 		}
-		fixture.relayCalls.Add(1)
-		if fixture.failStatus != 0 {
-			http.Error(w, "upstream denied", fixture.failStatus)
-			return
+		mutation := strings.HasPrefix(r.URL.Path, operatordelegation.Prefix+"invitations/") &&
+			strings.HasSuffix(r.URL.Path, "/cancel")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == operatordelegation.Prefix+"invitations" &&
+			r.URL.RawQuery == "organization="+organization:
+			if len(body) != 0 {
+				t.Error("enrollment read forwarded a body")
+				http.Error(w, "unexpected body", http.StatusBadRequest)
+				return
+			}
+			fixture.relayCalls.Add(1)
+			if fixture.failStatus != 0 {
+				http.Error(w, "upstream denied", fixture.failStatus)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(fixture.invitationsBody))
+		case r.Method == http.MethodPost && r.URL.Path == operatordelegation.Prefix+"invitations" && r.URL.RawQuery == "":
+			var request map[string]any
+			if json.Unmarshal(body, &request) != nil || request["organization"] != organization {
+				t.Errorf("create mutation lacks the exact injected organization: %s", body)
+				http.Error(w, "invalid create", http.StatusBadRequest)
+				return
+			}
+			fixture.createCalls.Add(1)
+			fixture.lastMutation.Store(string(body))
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"invitation":{"id":"ABCDEFGHIJKLMNOPQRSTUVWX23","state":"invited","revision":1},"enrollment_code":"synthetic-code"}`))
+		case r.Method == http.MethodPost && mutation && r.URL.RawQuery == "":
+			var request map[string]any
+			if json.Unmarshal(body, &request) != nil || request["organization"] != organization {
+				t.Errorf("cancel mutation lacks the exact injected organization: %s", body)
+				http.Error(w, "invalid cancel", http.StatusBadRequest)
+				return
+			}
+			fixture.cancelCalls.Add(1)
+			fixture.lastMutation.Store(string(body))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"ABCDEFGHIJKLMNOPQRSTUVWX23","state":"cancelled"}`))
+		default:
+			t.Errorf("unexpected relay request %s %s", r.Method, r.URL.RequestURI())
+			http.Error(w, "unexpected request", http.StatusBadRequest)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(fixture.invitationsBody))
 	}))
 	server.TLS = &tls.Config{
 		MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{certificate},

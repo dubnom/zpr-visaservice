@@ -385,6 +385,24 @@ enrollment mutation was performed, and the G2 onboarding mutations
 (key generation, invitation create, automatic self-approval,
 issuance/readback, runtime handoff) remain open.
 
+**Simulator enrollment mutations — invitation create/cancel (2026-10-31,
+source only):** the Simulator web backend now relays exactly one explicit
+operator-bound invitation mutation per request through the paired install's
+ordinary contracts:
+`POST /api/simulator/organizations/{organization}/enrollment/invitations`
+(session `create` grant) and
+`POST .../enrollment/invitations/{id}/cancel` (session `cancel` grant with
+`expected` revision, fingerprints and a bounded reason). The organization is
+always injected from the authorized path scope, bodies are strict JSON,
+invitation references are validated, mutations are bound to the exact
+initiating operator and re-signed per request, and the Enrollment Service
+remains the sole lifecycle authority — the catalog's approved profiles/types,
+preflight gate and idempotent store semantics all still apply upstream. No
+endpoint key is generated and no approval is issued by these routes. Focused
+tests assert the exact relayed mutation bodies behind the synthetic mTLS
+relay and the fail-closed paths (missing specific grant, changed operator,
+local mode, invalid references, unknown body fields).
+
 ### Delivery discipline and completion
 
 - One coordinator owns live changes. Parallel chats may take bounded source-only
