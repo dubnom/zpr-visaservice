@@ -599,6 +599,31 @@ verification is deferred); the package retains its
 `status=engineering-unqualified` label, and G5's dev-port deployment,
 rollback record and maintained environment page remain open.
 
+**Per-organization retained machine inventory (2026-11-01, `d7239a4`):**
+toward G6, the retained machine-runtime binding may declare its exact
+inventory (`control_asset` plus `machines`, each with `machine_id`,
+`controller_asset`, `workload` and `workload_asset`); a binding without an
+explicit inventory keeps the exact reviewed retained Velocity contract, so
+existing deployments are unchanged. The retained lifecycle (container
+identities, control TLS verification, peer teardown, machine recognition),
+the enrollment readiness comparison and the declared-endpoint collision rule
+all use the binding's effective inventory instead of the previously
+hardcoded Velocity list; validation is fail-closed (all-or-nothing
+declaration, complete bounded identities, unique machines and assets, only
+workloads with a maintained runtime configuration), and the launcher
+preserves an explicit inventory in retained bindings while enforcing the
+all-or-nothing shape. Focused tests cover the Velocity default, a declared
+non-Velocity inventory, container-argument derivation and every refusal.
+**No-regression proof:** the package was rebuilt from clean `d7239a4`
+(`velocity-paired-20261101-r2`) and the full authorized chain re-passed live
+from the installed package on the default-inventory path (activation 200,
+catalog 200, budget 201, run 202, `velocity-single-node` completed 20/20).
+This unblocks non-Velocity single-node organizations Simulator-side; still
+open for G6: multi-node retained topology (the binding still requires a
+single-node data plane), per-organization pairing/enrollment/control-TLS
+provisioning for each remaining organization, and the full five-organization
+seventeen-scenario acceptance matrix.
+
 **Scenario stack for paired installs (2026-11-01, source only):** four
 changes prepare live scenario selection on the paired retained install.
 Paired installs (recorded `simulator_port`) now host the bounded
