@@ -221,7 +221,13 @@ func (h *simulatorEnrollmentOnboardingHandler) persist(record simulatorEnrollmen
 	if err != nil {
 		return err
 	}
+	// The canonical per-asset record describes the approved identity; an
+	// attempt that never reached approval (for example a refused duplicate)
+	// is recorded separately and never clobbers an approved record.
 	name := filepath.Join(directory, record.Organization+"-"+record.AssetID+".json")
+	if record.State != "approved" {
+		name = filepath.Join(directory, record.Organization+"-"+record.AssetID+"-attempt.json")
+	}
 	temporary := name + ".tmp"
 	if err := os.WriteFile(temporary, append(data, '\n'), 0o600); err != nil {
 		return err

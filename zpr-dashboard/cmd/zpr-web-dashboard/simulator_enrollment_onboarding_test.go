@@ -59,7 +59,17 @@ func serveSimulatorEnrollmentOnboarding(
 
 func readOnboardingRecord(t *testing.T, workspace, organization, asset string) simulatorEnrollmentOnboardingRecord {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(workspace, "enrollment-onboarding", organization+"-"+asset+".json"))
+	return readOnboardingRecordFile(t, workspace, organization+"-"+asset+".json")
+}
+
+func readOnboardingAttempt(t *testing.T, workspace, organization, asset string) simulatorEnrollmentOnboardingRecord {
+	t.Helper()
+	return readOnboardingRecordFile(t, workspace, organization+"-"+asset+"-attempt.json")
+}
+
+func readOnboardingRecordFile(t *testing.T, workspace, name string) simulatorEnrollmentOnboardingRecord {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(workspace, "enrollment-onboarding", name))
 	if err != nil {
 		t.Fatalf("operation record missing: %v", err)
 	}
@@ -195,7 +205,7 @@ func TestSimulatorEnrollmentOnboardingFailsClosedPerStage(t *testing.T) {
 			!strings.Contains(response.Body.String(), "ABCDEFGHIJKLMNOPQRSTUVWX23") {
 			t.Fatalf("status=%d approve=%d body=%s", response.Code, fixture.approveCalls.Load(), response.Body)
 		}
-		record := readOnboardingRecord(t, workspace, organization, "velocity-sim-onboarded-endpoint")
+		record := readOnboardingAttempt(t, workspace, organization, "velocity-sim-onboarded-endpoint")
 		if record.FailedStage != "device-claim" || record.State != "invited" {
 			t.Fatalf("unexpected failure record: %+v", record)
 		}
@@ -210,7 +220,7 @@ func TestSimulatorEnrollmentOnboardingFailsClosedPerStage(t *testing.T) {
 		if response.Code != http.StatusBadGateway || fixture.approveCalls.Load() != 1 {
 			t.Fatalf("status=%d approve=%d body=%s", response.Code, fixture.approveCalls.Load(), response.Body)
 		}
-		record := readOnboardingRecord(t, workspace, organization, "velocity-sim-onboarded-endpoint")
+		record := readOnboardingAttempt(t, workspace, organization, "velocity-sim-onboarded-endpoint")
 		if record.FailedStage != "self-approval" || record.State != "pending_approval" {
 			t.Fatalf("unexpected failure record: %+v", record)
 		}
@@ -227,7 +237,7 @@ func TestSimulatorEnrollmentOnboardingFailsClosedPerStage(t *testing.T) {
 			!strings.Contains(response.Body.String(), "self-approval") {
 			t.Fatalf("status=%d approve=%d body=%s", response.Code, fixture.approveCalls.Load(), response.Body)
 		}
-		record := readOnboardingRecord(t, workspace, organization, "velocity-sim-onboarded-endpoint")
+		record := readOnboardingAttempt(t, workspace, organization, "velocity-sim-onboarded-endpoint")
 		if record.FailedStage != "self-approval" || record.State != "pending_approval" {
 			t.Fatalf("unexpected failure record: %+v", record)
 		}
