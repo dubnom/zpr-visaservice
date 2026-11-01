@@ -301,7 +301,8 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, 
 	if err := write("manifest.json", map[string]any{
 		"name":            manifestName,
 		"organization_id": organization, "machines": machines,
-		"agents": []any{}, "services": []any{}, "components": []any{},
+		"dns_server": evaluationProtectedDNSAddress,
+		"agents":     []any{}, "services": []any{}, "components": []any{},
 	}); err != nil {
 		return nil, "", err
 	}
@@ -388,11 +389,14 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, 
 	if inventory.Config.DataPlaneEndpoints != 0 {
 		target["data_plane_endpoints_file"] = filepath.Join(evaluation, evaluationDataPlaneEndpointsFile)
 	}
-	if inventory.Config.ScenarioDemo {
+	// Paired installs with a Visa Service expose the guarded policy readback
+	// so scenario preflight can resolve the authoritative policy digest.
+	if inventory.Config.VisaService && inventory.Config.VSAdminPort != 0 {
 		target["visa_admin_url"] = fmt.Sprintf("https://localhost:%d", inventory.Config.VSAdminPort)
 		target["visa_admin_key_file"] = filepath.Join(evaluation, "vs-admin-api.key")
 	}
 	registryName := "installs.json"
+	retainedListener := evaluationSimulatorRetainedControl{}
 	if retainedFile != "" {
 		catalogNode := ""
 		if catalogProfile {
@@ -401,12 +405,13 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, 
 				return nil, "", err
 			}
 		}
-		binding, runtime, err := loadEvaluationSimulatorRetainedBindings(retainedFile, inventory, catalogNode)
+		binding, runtime, retainedControl, err := loadEvaluationSimulatorRetainedBindings(retainedFile, inventory, catalogNode)
 		if err != nil {
 			return nil, "", err
 		}
 		target["retained_topology_binding"] = binding
 		target["retained_machine_runtime"] = runtime
+		retainedListener = retainedControl
 		// The retained-augmented registry is its own frozen artifact so the
 		// original verified registry is never rewritten or silently rebound.
 		registryName = "installs-retained.json"
@@ -450,6 +455,17 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, 
 	values["ZPR_BUDGET_AUTHORITY_CLIENT_CERT_FILE"] = filepath.Join(evaluation, "simulator-client-chain.pem")
 	values["ZPR_BUDGET_AUTHORITY_CLIENT_KEY_FILE"] = filepath.Join(evaluation, "simulator-client-key.pem")
 	values["ZPR_BUDGET_AUTHORITY_CA_FILE"] = filepath.Join(evaluation, "ca.pem")
+	// A retained machine runtime declares the exact callback upstream the
+	// in-container proxy relays to; the Simulator must therefore serve its
+	// mutually authenticated machine-control listener there with the
+	// operator-generated control identity, or retained machine controllers
+	// can never connect.
+	if retainedListener.Listen != "" {
+		values["SIMULATOR_CONTROL_LISTEN"] = retainedListener.Listen
+		values["SIMULATOR_CONTROL_TLS_CERT"] = filepath.Join(retainedListener.TLSDir, "server.crt")
+		values["SIMULATOR_CONTROL_TLS_KEY"] = filepath.Join(retainedListener.TLSDir, "server.key")
+		values["SIMULATOR_CONTROL_CLIENT_CA"] = filepath.Join(retainedListener.TLSDir, "control-ca.crt")
+	}
 	if inventory.Config.ScenarioDemo {
 		values["SIMULATOR_DATA_PLANE_WORKLOAD_INTERVAL"] = "off"
 	}

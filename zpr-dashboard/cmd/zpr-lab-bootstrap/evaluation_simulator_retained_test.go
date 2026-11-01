@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +102,18 @@ func TestEvaluationSimulatorRetainedBindingsSelectFrozenAugmentedRegistry(t *tes
 	if !found {
 		t.Fatalf("environment does not select the retained registry: %v", env)
 	}
+	// The paired launch must also serve the machine-control listener at the
+	// declared callback upstream with the operator-generated identity.
+	for _, expected := range []string{
+		"SIMULATOR_CONTROL_LISTEN=172.26.0.1:24995",
+		"SIMULATOR_CONTROL_TLS_CERT=/private/retained/control/server.crt",
+		"SIMULATOR_CONTROL_TLS_KEY=/private/retained/control/server.key",
+		"SIMULATOR_CONTROL_CLIENT_CA=/private/retained/control/control-ca.crt",
+	} {
+		if !slices.Contains(env, expected) {
+			t.Fatalf("environment lacks retained machine-control listener setting %q: %v", expected, env)
+		}
+	}
 	if _, err := os.Lstat(filepath.Join(state, "installs.json")); !os.IsNotExist(err) {
 		t.Fatal("retained preparation also wrote the base registry")
 	}
@@ -161,21 +174,21 @@ func TestEvaluationSimulatorRetainedBindingsFailClosed(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := write(t, retainedBindingsDocument(t, inventory, test.mutate))
-			if _, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory, ""); err == nil ||
+			if _, _, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory, ""); err == nil ||
 				!strings.Contains(err.Error(), test.message) {
 				t.Fatalf("unsafe retained bindings %q were not refused: %v", test.name, err)
 			}
 		})
 	}
 	t.Run("relative path", func(t *testing.T) {
-		if _, _, err := loadEvaluationSimulatorRetainedBindings("retained.json", inventory, ""); err == nil ||
+		if _, _, _, err := loadEvaluationSimulatorRetainedBindings("retained.json", inventory, ""); err == nil ||
 			!strings.Contains(err.Error(), "canonical absolute") {
 			t.Fatalf("relative retained path was not refused: %v", err)
 		}
 	})
 	t.Run("missing runtime member", func(t *testing.T) {
 		path := write(t, []byte(`{"retained_topology_binding":{"version":1}}`))
-		if _, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory, ""); err == nil ||
+		if _, _, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory, ""); err == nil ||
 			!strings.Contains(err.Error(), "exactly retained_topology_binding and retained_machine_runtime") {
 			t.Fatalf("missing runtime member was not refused: %v", err)
 		}

@@ -110,6 +110,9 @@ func prepareEvaluationSimulatorCatalog(evaluation, state, catalog string, env []
 		return nil, errors.New("paired manifest organization unavailable")
 	}
 	manifest["organization_id"] = pairedManifest.OrganizationID
+	// Scenario service publication on a paired install is read back from the
+	// production install's protected DNS, not a simulated fabric resolver.
+	manifest["dns_server"] = evaluationProtectedDNSAddress
 	data, err = json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return nil, err

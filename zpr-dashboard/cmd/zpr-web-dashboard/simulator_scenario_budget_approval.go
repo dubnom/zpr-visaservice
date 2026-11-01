@@ -34,6 +34,14 @@ func (a simulatorBudgetBoundAuthorizer) Authorize(r *http.Request, organization,
 	return identity, nil
 }
 
+// simulatorScenarioBudgetContractSupported recognizes the reviewed bounded
+// runtime contracts whose scenarios may receive automatic bounded budget
+// self-approval: the evaluation endpoints package and the reviewed retained
+// machine/BAS runtime.
+func simulatorScenarioBudgetContractSupported(status string) bool {
+	return status == "evaluation-endpoints-v1" || status == "retained-machine-bas-v1"
+}
+
 func simulatorScenarioBudgetApproval(auth operatorRequestAuthorizer, signer *operatordelegation.Signer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input simulatorScenarioPlanRequest
@@ -62,7 +70,7 @@ func simulatorScenarioBudgetApproval(auth operatorRequestAuthorizer, signer *ope
 			writeSimulatorScenarioPlanBuildError(w, err)
 			return
 		}
-		if plan.PackageContractStatus != "evaluation-endpoints-v1" || len(withoutSimulatorRuntimeBudgetEvidenceBlockers(plan.Blockers)) != 0 {
+		if !simulatorScenarioBudgetContractSupported(plan.PackageContractStatus) || len(withoutSimulatorRuntimeBudgetEvidenceBlockers(plan.Blockers)) != 0 {
 			http.Error(w, "resolve runtime preflight blockers before approving the bounded scenario authorization", http.StatusConflict)
 			return
 		}

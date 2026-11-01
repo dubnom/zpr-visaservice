@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"neboagency.com/zpr-dashborad/internal/budgetauthority"
+	"neboagency.com/zpr-dashborad/internal/servicehttp"
+	evaluationruntime "neboagency.com/zpr-dashborad/internal/simulator/evaluation"
 )
 
 const simulatorScenarioPlanRequestLimit = 8 << 10
@@ -185,7 +187,7 @@ func writeSimulatorScenarioBudgetEvidenceUnavailable(
 		blockers = append(blockers, blocker)
 	}
 	response := simulatorScenarioBudgetEvidenceUnavailableResponse{
-		BudgetApprovalAvailable: plan.PackageContractStatus == "evaluation-endpoints-v1" &&
+		BudgetApprovalAvailable: simulatorScenarioBudgetContractSupported(plan.PackageContractStatus) &&
 			len(withoutSimulatorRuntimeBudgetEvidenceBlockers(plan.Blockers)) == 0,
 		OrganizationID:           plan.OrganizationID,
 		ScenarioID:               plan.ScenarioID,
@@ -783,6 +785,34 @@ func writeSimulatorScenarioPlanBuildError(w http.ResponseWriter, err error) {
 	writeWorkspaceError(w, http.StatusServiceUnavailable, "scenario plan input is unavailable")
 }
 
+// readRetainedSimulatorPolicyDigest reads the authoritative live policy
+// digest for a retained paired install through its guarded Visa Service
+// admin readback registered in the evaluation install registry.
+func readRetainedSimulatorPolicyDigest(organizationID string) (string, error) {
+	registry := simulatorEvaluationInstallRegistry
+	if registry == nil {
+		return "", errors.New("paired operator service is unavailable")
+	}
+	install, ok := registry.installs[organizationID]
+	if !ok || install.VisaAdminURL == "" || install.VisaAdminKeyFile == "" {
+		return "", errors.New("guarded policy readback is not configured for this installation")
+	}
+	transport, err := servicehttp.MutualTLSClientTransport(install.ClientCertFile, install.ClientKeyFile, install.ServiceCAFile, "")
+	if err != nil {
+		return "", err
+	}
+	defer transport.CloseIdleConnections()
+	key, err := readOperatorFile(install.VisaAdminKeyFile, 4096, true)
+	if err != nil {
+		return "", errors.New("policy readback credential unavailable")
+	}
+	client := &http.Client{Transport: transport, Timeout: 3 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return evaluationruntime.ReadPolicyDigest(ctx, client, install.VisaAdminURL, strings.TrimSpace(string(key)))
+}
+
 func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simulatorRuntimePlan, error) {
 	manifest, err := readSimulatorManifest()
 	if err != nil {
@@ -837,6 +867,13 @@ func buildCurrentSimulatorScenarioPlan(organizationID, scenarioID string) (simul
 		if evaluationRuntimeErr == nil {
 			input.Policy = simulatorRuntimePolicyEvidence{Resolved: true, OrganizationID: organizationID,
 				Digest: organization.EvaluationRuntime.PolicyDigest}
+		}
+	} else if organization.RetainedTopologyBinding != nil {
+		// The retained install resolves policy through the paired install's
+		// guarded live readback; an unavailable readback keeps the explicit
+		// "policy resolution is required" blocker rather than guessing.
+		if digest, err := readRetainedSimulatorPolicyDigest(organizationID); err == nil {
+			input.Policy = simulatorRuntimePolicyEvidence{Resolved: true, OrganizationID: organizationID, Digest: digest}
 		}
 	}
 	scopeDigest, err := simulatorScenarioAuthorizationScopeDigest(input)

@@ -12,6 +12,15 @@ import (
 	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
 
+// evaluationSimulatorRetainedControl carries the operator-declared
+// machine-control listener configuration from the retained runtime binding so
+// the launcher can start the Simulator's mutually authenticated control
+// listener at exactly the upstream the retained callback proxy relays to.
+type evaluationSimulatorRetainedControl struct {
+	TLSDir string
+	Listen string
+}
+
 // loadEvaluationSimulatorRetainedBindings reads an explicit operator-owned
 // retained machine-runtime binding for the paired Simulator launch. The file
 // must contain exactly the retained topology binding and retained machine
@@ -19,13 +28,14 @@ import (
 // contracts at startup and the retained lifecycle verifies the referenced
 // files and containers before any use. The launcher never fabricates,
 // migrates or widens a binding.
-func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationInventory, catalogNodeID string) (json.RawMessage, json.RawMessage, error) {
+func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationInventory, catalogNodeID string) (json.RawMessage, json.RawMessage, evaluationSimulatorRetainedControl, error) {
+	none := evaluationSimulatorRetainedControl{}
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path || strings.ContainsAny(path, ",\"\r\n=") {
-		return nil, nil, errors.New("retained-machine-runtime-file requires a canonical absolute bind-mount-safe path")
+		return nil, nil, none, errors.New("retained-machine-runtime-file requires a canonical absolute bind-mount-safe path")
 	}
 	data, err := servicehttp.ReadOperatorFile(path, 65536, true)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read protected retained machine-runtime bindings: %w", err)
+		return nil, nil, none, fmt.Errorf("read protected retained machine-runtime bindings: %w", err)
 	}
 	var document struct {
 		Binding json.RawMessage `json:"retained_topology_binding"`
@@ -35,7 +45,7 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&document); err != nil || decoder.Decode(new(any)) != io.EOF ||
 		len(document.Binding) == 0 || len(document.Runtime) == 0 {
-		return nil, nil, errors.New("retained machine-runtime bindings require one JSON object with exactly retained_topology_binding and retained_machine_runtime")
+		return nil, nil, none, errors.New("retained machine-runtime bindings require one JSON object with exactly retained_topology_binding and retained_machine_runtime")
 	}
 	var binding struct {
 		Version          int    `json:"version"`
@@ -50,10 +60,10 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 	strict := json.NewDecoder(bytes.NewReader(document.Binding))
 	strict.DisallowUnknownFields()
 	if err := strict.Decode(&binding); err != nil || strict.Decode(new(any)) != io.EOF {
-		return nil, nil, errors.New("retained topology binding must be strict JSON with known fields")
+		return nil, nil, none, errors.New("retained topology binding must be strict JSON with known fields")
 	}
 	if binding.Version != 1 || binding.InstallID != inventory.InstallID {
-		return nil, nil, errors.New("retained topology binding must be version 1 for exactly this installation")
+		return nil, nil, none, errors.New("retained topology binding must be version 1 for exactly this installation")
 	}
 	expectedContainer := "zpr-evaluation-" + inventory.InstallID + "-data-plane"
 	nodes := evaluationDataPlaneTopology(inventory)
@@ -64,7 +74,7 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 		catalogNodeID != "" && binding.LogicalNodeID == catalogNodeID
 	if !inventory.Config.DataPlane || len(nodes) != 1 || !nodeMatches ||
 		binding.NodeContainer != expectedContainer || binding.Network != expectedContainer {
-		return nil, nil, errors.New("retained topology binding requires this install-owned single-node data plane and its published node")
+		return nil, nil, none, errors.New("retained topology binding requires this install-owned single-node data plane and its published node")
 	}
 	var runtime struct {
 		Version          int    `json:"version"`
@@ -79,15 +89,16 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 	strict = json.NewDecoder(bytes.NewReader(document.Runtime))
 	strict.DisallowUnknownFields()
 	if err := strict.Decode(&runtime); err != nil || strict.Decode(new(any)) != io.EOF {
-		return nil, nil, errors.New("retained machine runtime must be strict JSON with known fields")
+		return nil, nil, none, errors.New("retained machine runtime must be strict JSON with known fields")
 	}
 	if runtime.Version != 1 || runtime.CallbackUpstream == "" {
-		return nil, nil, errors.New("retained machine runtime must be version 1 with an explicit callback upstream")
+		return nil, nil, none, errors.New("retained machine runtime must be version 1 with an explicit callback upstream")
 	}
 	for _, reference := range []string{runtime.ControllerFile, runtime.EndpointRoot, runtime.DataPlaneCAFile, runtime.ControlTLSDir} {
 		if !filepath.IsAbs(reference) || filepath.Clean(reference) != reference || strings.ContainsAny(reference, ",:\x00\r\n") {
-			return nil, nil, errors.New("retained machine runtime requires canonical absolute bind paths without commas, colons or line breaks")
+			return nil, nil, none, errors.New("retained machine runtime requires canonical absolute bind paths without commas, colons or line breaks")
 		}
 	}
-	return document.Binding, document.Runtime, nil
+	control := evaluationSimulatorRetainedControl{TLSDir: runtime.ControlTLSDir, Listen: runtime.CallbackUpstream}
+	return document.Binding, document.Runtime, control, nil
 }
