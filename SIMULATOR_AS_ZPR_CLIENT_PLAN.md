@@ -669,7 +669,54 @@ identity, issued runtime credentials (the install has no BAS section;
 admission credential provisioning is unresolved), Northstar control-TLS
 identities and the operator retained-bindings file (callback upstream
 172.28.0.1), and verification that Northstar’s applied policy grants its
-original scenario flows.
+original scenario flows. The eight stranded pre-pairing `pending_approval`
+claims were cancelled the same day through the explicit Simulator-signed
+review path (exact revisions, fingerprints, recorded reason), leaving the
+enrollment inventory clean.
+
+**Maintained BAS provisioning design (approved 2026-11-01, next executable
+phase):** per the recorded decisions, a resumable
+`zpr-lab-bootstrap -evaluation-bas` add-later command replaces the
+per-organization scripts and provisions the evaluation authentication
+authority for an existing install, mirroring the reviewed Velocity artifacts
+exactly:
+1. *Key material* (new `enrollment/<org>/bas/`, 0700/0600): dedicated
+   constrained CA (EC P-256, `CN=<Org> BAS runtime CA`, critical
+   keyUsage digitalSignature+keyCertSign, basicConstraints critical CA:TRUE
+   pathlen:0); `auth.zpr-runtime` TLS server identity (SAN `DNS:auth.zpr`,
+   EKU serverAuth, CA-signed); `<org>-visa-service-runtime` TLS client
+   identity (EKU clientAuth); 48-byte random `token-signing.key`; RSA-3072
+   `root-adapter.key` (the BAS root adapter ZPR identity, public-key SHA-256
+   pinned in the adapter script and recorded).
+2. *Enrollment service `bas` section* (ports from the install inventory,
+   Velocity pattern 24996/24997 -> Northstar 20996/20997): adapter and token
+   listeners with the runtime identity, `claim_sources`
+   asset_id/organization/profile/type, single-store `database_file` =
+   enrollment `registry.sqlite`, `signing_key_file`, `visa_service_ca_file`
+   = the new CA, `visa_service_peers` pinned to the install VS runtime
+   certificate SHA-256; dated backup and Enrollment-Service-only restart.
+3. *BAS root adapter* host script and user unit (per-install container on
+   the install data-plane network, `ph` as adapter CN
+   `<org>-enrollment-bas`, reviewed-image/evidence/ownership checks exactly
+   as `velocity-bas-adapter-host-r12.sh`).
+4. *Authentication-root policy and configuration change*, driven by the
+   Simulator/Control Room named session through the maintained
+   Policy-Service change-review pipeline under the recorded self-approval
+   decision (submit and approve as the same named operator; Audit role-risk
+   warning records it): policy record + revision appending only the
+   `<Org>EnrollmentAuth` trusted-service definition for adapter CN
+   `<org>-enrollment-bas` (never workload access), staged with the updated
+   trusted-services configuration carrying the root adapter public key,
+   applied with guarded readback evidence (Velocity precedent:
+   `operator-inputs/velocity/bas-root-r13` +
+   `policy/velocity/bas-root-r13-evidence`).
+5. *Operator services* gain `visa_service_read_only_files` for the BAS
+   materials the Visa Service reads, mirroring Velocity.
+Acceptance: enrollment-issued runtime credentials for a Northstar endpoint
+complete the live nonce/proof exchange (`bas-authorized`) against the new
+authority, the adapter container joins only the install-owned network, the
+policy diff admits exactly the authentication root, and Velocity remains
+untouched.
 
 **Scenario stack for paired installs (2026-11-01, source only):** four
 changes prepare live scenario selection on the paired retained install.
