@@ -350,6 +350,36 @@ their signer acceptance and grants must be established through those services'
 own contracts. An old override lacking the new key cannot be selected at
 restart because overrides must preserve the paired base keys exactly.
 
+#### Add-later Enrollment Service trust for a paired installation
+
+When the paired operator services include an Enrollment Service relay binding,
+a separate resumable command derives that service's administration delegation
+trust while everything is stopped:
+
+```sh
+go run ./cmd/zpr-lab-bootstrap -evaluation-simulator-enrollment-trust \
+  -state /absolute/existing-private-state \
+  -enrollment-trust-file /absolute/private/enrollment-delegation-trust.json
+```
+
+The input is the protected delegation trust the Enrollment Service
+administration listener currently loads. The command verifies the completed
+pairing and the recorded relay binding, then writes protected
+`simulator-paired-enrollment-trust.json` into the installation state. The
+derived trust preserves the audience, the retained Room key entry and every
+named grant byte for byte and adds only the already-registered independent
+Simulator signing key, pinned to the enrollment relay transport certificate
+that presents forwarded delegations. No permission is added or widened: the
+named operators' existing enrollment grants in the input remain the only
+authority. The operator-owned input file is never modified. Unpaired installs,
+foreign audiences or keys, an existing different target or staging, and an
+input that is the derived output itself fail closed; an exact rerun verifies
+the derived file instead of rewriting it, and an interrupted rename resumes.
+To use it, point the Enrollment Service administration `delegation_trust_file`
+at the derived file and restart only the Enrollment Service. This registers
+signer acceptance only; it performs no enrollment operation and production
+services still never require Simulator.
+
 After pairing, restart the installation with its original flags **plus** the
 same `-simulator-port` and, when applicable, the derived service bindings
 above; the frozen configuration now records the port, and the next verified

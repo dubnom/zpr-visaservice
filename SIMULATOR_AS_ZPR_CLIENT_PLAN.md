@@ -272,6 +272,25 @@ package bootstrap still lacks signer support; this deployment used
 source-built binaries from a task-owned directory, and the retained install's
 independent downstream trust (Enrollment Service) is unchanged.
 
+**Enrollment Service trust preparation (2026-10-31, source only):** toward G2,
+the new resumable add-later command
+`zpr-lab-bootstrap -evaluation-simulator-enrollment-trust` derives
+`simulator-paired-enrollment-trust.json` for the separate Enrollment Service
+administration listener from an existing completed pairing. It adds only the
+already-registered independent Simulator signing key, pinned to the exact
+enrollment relay transport certificate that presents forwarded delegations,
+and preserves the audience, the retained Room key entry and every named grant
+byte for byte; no permission is added or widened. It requires recorded paired
+operator service bindings with an Enrollment Service relay and fails closed on
+unpaired installs, foreign audiences or keys, differing existing targets or
+staging, and inputs that are its own output; the operator-owned input file is
+never modified and an exact rerun verifies instead of rewriting. Focused tests
+cover derivation, resume after an interrupted rename and the refusal cases.
+This prepares, but does not perform, authorized Simulator enrollment calls:
+it is not deployed on Velocity, the Enrollment Service is not restarted onto
+the derived trust, and G2 inventory comparison, endpoint key generation,
+enrollment requests and issuance/readback wiring remain open.
+
 ### Delivery discipline and completion
 
 - One coordinator owns live changes. Parallel chats may take bounded source-only
