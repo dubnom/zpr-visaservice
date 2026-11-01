@@ -744,11 +744,41 @@ against; dated backup); (2) append the emitted policy stanza to the
 organization’s applied data-plane policy record through the Room/Policy
 change-review APIs; (3) stage (compiles against the now-BAS-aware config),
 self-approve the review as the same named operator under the recorded
-self-approval decision, and apply with guarded readback. Still open, in
-order: that self-approved policy/configuration apply on Northstar, the
-adapter unit start and the `bas-authorized` acceptance; then migrating
-Velocity’s artisanal BAS scripts to this maintained command (adopting its
-existing key material unchanged).
+self-approval decision, and apply with guarded readback. All of that completed live the same
+day (`06e717c` and operator transactions):
+- *Northstar authentication root applied through the first fully unattended
+  self-approved policy change*: the operator-owned BAS-aware stage
+  configuration lives beside the frozen verified one
+  (`state/northstar/dp-policy-stage.zplc`; `organization-policy-service.sh`
+  prefers it and the qualified `zplc-validation-companion-r13` compiler,
+  with SUMS updates and dated backups, because the frozen `dp-policy.zplc`
+  refuses edits at startup verification — the transient-swap approach the
+  Velocity r13 evidence implies is replaced by this maintained override).
+  The Room pipeline ran record → revision → stage → submit → self-approve
+  (the recorded AUDIT WARNING path; session and enrollment trusts gained
+  `approval.self` following the exact Velocity convention with dated
+  backups) → apply: operation `LWU5P5HGWCDTTG2NSJ7KFL7ISE` succeeded,
+  candidate `631ecb83…` applied to `northstar-vs` (version 2).
+- *BAS root admitted and accepted*: the emitted adapter unit joined the
+  install-owned network, the dock link became ACTIVE at the reviewed ZPR
+  address, and after explicit activation onboarded the declared probe
+  (`ready-verified`), the live nonce/proof exchange returned
+  `runtime_credential_check: bas-authorized` (HTTP 200) — the full
+  acceptance for the maintained provisioning design.
+- *Cancelled invitations never block genuinely new onboarding* (`06e717c`):
+  found live when a claim stranded by the missing backend `approval.self`
+  grant was cancelled through explicit review but then permanently blocked
+  declared-endpoint onboarding; the readiness comparison now reports a
+  cancelled (explicitly reconciled, terminal) invitation as missing while
+  rejected/pending/expired states keep failing closed.
+- *Velocity migrated to the maintained command*: `-evaluation-bas` adopted
+  Velocity’s existing material byte-for-byte (root `6f1ab5db…`, peer
+  `3ecd72ea…`, configuration untouched), the BAS unit switched from the
+  artisanal `velocity-bas-adapter-host-r12.sh` to the emitted maintained
+  script (unit backup retained), and after a clean install restart the
+  maintained adapter went ACTIVE and `velocity-single-node` completed 20/20
+  from the installed package — retained machine admission authenticating
+  against the maintained BAS stack.
 
 **Scenario stack for paired installs (2026-11-01, source only):** four
 changes prepare live scenario selection on the paired retained install.
