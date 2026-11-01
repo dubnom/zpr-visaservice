@@ -372,8 +372,18 @@ any use. The bindings are written into a separate frozen
 original verified registry is never rewritten; an exact repeat verifies and a
 changed binding is refused rather than silently rebound. Focused tests cover
 the frozen-registry selection, exact repeat, changed-binding refusal and the
-unsafe-input refusals. Until this is deployed, the live Velocity Simulator
-launches without retained bindings.
+unsafe-input refusals. **Deployed and exercised live on Velocity the same
+day:** `zpr-lab-bootstrap-r13` launches the paired Simulator with the
+operator-owned `simulator-retained-machine-runtime.json` derived from the
+reviewed isolated r22 consumer configuration (bound to the paired install's
+published `node`); startup validation accepted both contracts, and after real
+named login the readiness route performed the genuine five-asset live
+comparison: HTTP 200, `ready=true`, every retained endpoint
+`approved-retained`, no missing prerequisites and no container drift. This is
+inventory comparison only — no machine lifecycle operation, scenario run or
+enrollment mutation was performed, and the G2 onboarding mutations
+(key generation, invitation create, automatic self-approval,
+issuance/readback, runtime handoff) remain open.
 
 ### Delivery discipline and completion
 
