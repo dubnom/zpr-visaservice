@@ -86,8 +86,10 @@ type simulatorEnrollmentRelayFixture struct {
 	relayCalls      atomic.Int32
 	createCalls     atomic.Int32
 	cancelCalls     atomic.Int32
+	approveCalls    atomic.Int32
 	invitationsBody string
 	failStatus      int
+	approveStatus   int
 	lastMutation    atomic.Value
 }
 
@@ -164,6 +166,8 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 		}
 		mutation := strings.HasPrefix(r.URL.Path, operatordelegation.Prefix+"invitations/") &&
 			strings.HasSuffix(r.URL.Path, "/cancel")
+		approval := strings.HasPrefix(r.URL.Path, operatordelegation.Prefix+"invitations/") &&
+			strings.HasSuffix(r.URL.Path, "/approve")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == operatordelegation.Prefix+"invitations" &&
 			r.URL.RawQuery == "organization="+organization:
@@ -202,6 +206,22 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 			fixture.lastMutation.Store(string(body))
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"ABCDEFGHIJKLMNOPQRSTUVWX23","state":"cancelled"}`))
+		case r.Method == http.MethodPost && approval && r.URL.RawQuery == "":
+			var request map[string]any
+			if json.Unmarshal(body, &request) != nil || request["organization"] != organization ||
+				request["key_fingerprint"] == "" || request["runtime_key_fingerprint"] == "" || request["reason"] == "" {
+				t.Errorf("approval mutation lacks bound fingerprints and reason: %s", body)
+				http.Error(w, "invalid approval", http.StatusBadRequest)
+				return
+			}
+			fixture.approveCalls.Add(1)
+			fixture.lastMutation.Store(string(body))
+			if fixture.approveStatus != 0 {
+				http.Error(w, "approval denied", fixture.approveStatus)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"ABCDEFGHIJKLMNOPQRSTUVWX23","state":"approved","revision":3}`))
 		default:
 			t.Errorf("unexpected relay request %s %s", r.Method, r.URL.RequestURI())
 			http.Error(w, "unexpected request", http.StatusBadRequest)

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -49,6 +50,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 	catalog := flags.String("catalog", "", "optional packaged five-organization Simulator catalog")
 	oidcOverride := flags.String("simulator-oidc-file", "", "optional protected Simulator OIDC session override that may add only explicit enrollment/budget permissions to the frozen named grants")
 	retainedFile := flags.String("retained-machine-runtime-file", "", "optional protected retained topology/machine-runtime bindings for this installation's paired Simulator launch")
+	enrollmentDeviceURL := flags.String("enrollment-device-url", "", "optional exact HTTPS origin of this installation's Enrollment Service device listener for explicit Simulator onboarding")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -80,6 +82,16 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "Simulator setup: %v\n", err)
 			return 1
 		}
+	}
+	if *enrollmentDeviceURL != "" {
+		origin, err := url.Parse(*enrollmentDeviceURL)
+		if err != nil || origin.Scheme != "https" || origin.Hostname() == "" || origin.User != nil ||
+			*enrollmentDeviceURL != "https://"+origin.Host {
+			fmt.Fprintln(stderr, "Simulator setup: enrollment-device-url must be an exact HTTPS origin")
+			return 1
+		}
+		env = append(env, "SIMULATOR_ENROLLMENT_DEVICE_URL="+*enrollmentDeviceURL,
+			"SIMULATOR_ENROLLMENT_DEVICE_CA_FILE="+filepath.Join(*evaluation, "ca.pem"))
 	}
 	if *catalog != "" {
 		env, err = prepareEvaluationSimulatorCatalog(*evaluation, *state, *catalog, env)

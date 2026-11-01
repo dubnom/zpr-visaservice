@@ -418,6 +418,25 @@ open: endpoint key generation, device claim/issuance, automatic
 self-approval of a claimed invitation, protected runtime handoff, and
 persisted operation IDs/endpoint identity references.
 
+**Simulator new-endpoint onboarding operation (2026-10-31, source only):**
+`POST /api/simulator/organizations/{organization}/enrollment/onboarding`
+performs one explicit authorized workflow through ordinary contracts:
+invitation creation via the authorized relay, fresh endpoint-owned RSA
+enrollment and runtime key generation, the proof-of-possession device claim
+against the separately configured Enrollment Service device listener
+(launcher flag `-enrollment-device-url`, CA pinned to the install), a local
+check that the service recorded exactly the locally generated fingerprints,
+and automatic named self-approval bound to the exact claimed fingerprints and
+revision — the backend independently requires the approve permission and
+`approval.self` for the same named operator and its catalog/preflight gates
+still apply. A persisted operation record (no secret material: the one-time
+code is never returned and private keys exist only in process memory) covers
+success and every failed stage; failures name the stage and the invitation
+reference and are never retried or cleaned up silently. Focused tests cover
+the exact fingerprint/revision binding, per-stage fail-closed behavior and
+the unconfigured device contract. Protected runtime credential handoff and
+issuance readback remain open.
+
 ### Delivery discipline and completion
 
 - One coordinator owns live changes. Parallel chats may take bounded source-only
