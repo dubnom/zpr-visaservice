@@ -913,6 +913,17 @@ func loadSimulatorOrganization(directory, id string) (simulatorOrganization, err
 					if err := validateSimulatorRetainedMachineRuntime(organization); err != nil {
 						return simulatorOrganization{}, err
 					}
+					// Declared endpoints state onboarding requirements only
+					// and never alias the reviewed retained inventory.
+					if runtime := organization.RetainedMachineRuntime; runtime != nil {
+						retained := runtime.requiredAssets()
+						for _, declared := range organization.DeclaredEndpoints {
+							if slices.Contains(retained, declared.AssetID) {
+								return simulatorOrganization{}, fmt.Errorf(
+									"organization %q declared endpoints: %q collides with the retained machine inventory", id, declared.AssetID)
+							}
+						}
+					}
 				}
 			}
 			return organization, nil

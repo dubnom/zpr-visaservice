@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -111,6 +112,14 @@ func loadSimulatorEvaluationInstalls(path, organizationsDirectory string) (*simu
 		organization.RetainedMachineRuntime = install.RetainedMachineRuntime
 		if err := validateSimulatorRetainedMachineRuntime(organization); err != nil {
 			return nil, fmt.Errorf("organization %q retained machine runtime: %w", id, err)
+		}
+		if runtime := organization.RetainedMachineRuntime; runtime != nil {
+			retained := runtime.requiredAssets()
+			for _, declared := range organization.DeclaredEndpoints {
+				if slices.Contains(retained, declared.AssetID) {
+					return nil, fmt.Errorf("organization %q declared endpoint %q collides with the retained machine inventory", id, declared.AssetID)
+				}
+			}
 		}
 		if _, exists := result.installs[id]; exists {
 			return nil, fmt.Errorf("organization %q has more than one evaluation install", id)

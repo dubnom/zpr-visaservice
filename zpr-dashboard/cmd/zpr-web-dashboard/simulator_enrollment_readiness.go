@@ -174,7 +174,7 @@ func (h *simulatorEnrollmentReadinessHandler) serve(auth operatorEnrollmentAutho
 func simulatorEnrollmentRequiredAssetIDs(profile simulatorOrganization) []string {
 	var required []string
 	if profile.RetainedMachineRuntime != nil {
-		required = append(required, simulatorRetainedRequiredAssets...)
+		required = append(required, profile.RetainedMachineRuntime.requiredAssets()...)
 	}
 	for _, declared := range profile.DeclaredEndpoints {
 		required = append(required, declared.AssetID)

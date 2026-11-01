@@ -64,7 +64,7 @@ func validateSimulatorScenarioMachineRuntime(
 			return err
 		}
 		for _, machineID := range machineIDs {
-			if !isSimulatorRetainedMachine(machineID) {
+			if !isSimulatorRetainedMachine(organization.RetainedMachineRuntime, machineID) {
 				return fmt.Errorf("retained machine lifecycle does not support %q", machineID)
 			}
 		}

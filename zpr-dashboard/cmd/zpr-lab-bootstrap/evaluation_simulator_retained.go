@@ -85,6 +85,16 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 		DataPlaneCAFile  string `json:"data_plane_ca_file"`
 		ControlTLSDir    string `json:"control_tls_dir"`
 		CallbackUpstream string `json:"callback_upstream"`
+		// Optional explicit per-organization machine inventory; the
+		// Simulator revalidates the full contract, the launcher only
+		// enforces the all-or-nothing shape.
+		ControlAsset string `json:"control_asset"`
+		Machines     []struct {
+			MachineID       string `json:"machine_id"`
+			ControllerAsset string `json:"controller_asset"`
+			Workload        string `json:"workload"`
+			WorkloadAsset   string `json:"workload_asset"`
+		} `json:"machines"`
 	}
 	strict = json.NewDecoder(bytes.NewReader(document.Runtime))
 	strict.DisallowUnknownFields()
@@ -93,6 +103,14 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 	}
 	if runtime.Version != 1 || runtime.CallbackUpstream == "" {
 		return nil, nil, none, errors.New("retained machine runtime must be version 1 with an explicit callback upstream")
+	}
+	if len(runtime.Machines) == 0 != (runtime.ControlAsset == "") {
+		return nil, nil, none, errors.New("an explicit retained machine inventory requires both its control asset and machines")
+	}
+	for _, machine := range runtime.Machines {
+		if machine.MachineID == "" || machine.ControllerAsset == "" || machine.Workload == "" || machine.WorkloadAsset == "" {
+			return nil, nil, none, errors.New("every retained machine requires complete machine, controller, workload and asset identities")
+		}
 	}
 	for _, reference := range []string{runtime.ControllerFile, runtime.EndpointRoot, runtime.DataPlaneCAFile, runtime.ControlTLSDir} {
 		if !filepath.IsAbs(reference) || filepath.Clean(reference) != reference || strings.ContainsAny(reference, ",:\x00\r\n") {

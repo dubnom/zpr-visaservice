@@ -170,6 +170,17 @@ func TestEvaluationSimulatorRetainedBindingsFailClosed(t *testing.T) {
 		{"unpublished node", func(binding, _ map[string]any) { binding["logical_node_id"] = "velocity-node" }, "install-owned single-node data plane"},
 		{"relative controller", func(_, runtime map[string]any) { runtime["controller_file"] = "controller" }, "canonical absolute bind paths"},
 		{"missing callback", func(_, runtime map[string]any) { delete(runtime, "callback_upstream") }, "explicit callback upstream"},
+		{"machines without control asset", func(_, runtime map[string]any) {
+			runtime["machines"] = []map[string]any{{"machine_id": "machine-01", "controller_asset": "a",
+				"workload": "operations-client", "workload_asset": "b"}}
+		}, "control asset and machines"},
+		{"control asset without machines", func(_, runtime map[string]any) {
+			runtime["control_asset"] = "northstar-simulator-control"
+		}, "control asset and machines"},
+		{"incomplete retained machine", func(_, runtime map[string]any) {
+			runtime["control_asset"] = "northstar-simulator-control"
+			runtime["machines"] = []map[string]any{{"machine_id": "machine-01"}}
+		}, "complete machine, controller, workload and asset identities"},
 		{"unknown binding field", func(binding, _ map[string]any) { binding["extra"] = true }, "strict JSON"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -193,4 +204,26 @@ func TestEvaluationSimulatorRetainedBindingsFailClosed(t *testing.T) {
 			t.Fatalf("missing runtime member was not refused: %v", err)
 		}
 	})
+}
+
+func TestEvaluationSimulatorRetainedBindingsAcceptExplicitInventory(t *testing.T) {
+	parent, _, _, _, inventory := retainedBindingsFixture(t)
+	document := retainedBindingsDocument(t, inventory, func(_, runtime map[string]any) {
+		runtime["control_asset"] = "northstar-simulator-control"
+		runtime["machines"] = []map[string]any{
+			{"machine_id": "machine-01", "controller_asset": "northstar-machine-01-controller",
+				"workload": "operations-client", "workload_asset": "northstar-machine-01-operations-client"},
+		}
+	})
+	path := filepath.Join(parent, "retained-explicit-inventory.json")
+	if err := os.WriteFile(path, document, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, runtime, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory, "")
+	if err != nil {
+		t.Fatalf("explicit retained inventory was refused: %v", err)
+	}
+	if !strings.Contains(string(runtime), "northstar-machine-01-controller") {
+		t.Fatalf("explicit inventory was not preserved: %s", runtime)
+	}
 }

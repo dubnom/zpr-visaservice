@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -242,5 +243,107 @@ func TestRetainedMachineFilesFailClosedWithoutBootstrap(t *testing.T) {
 	organization.RetainedMachineRuntime.ControllerSHA256 = strings.Repeat("f", 64)
 	if err := verifySimulatorRetainedMachineFiles(organization); err == nil {
 		t.Fatal("changed executable accepted")
+	}
+}
+
+func retainedCustomInventoryOrganization(t *testing.T) simulatorOrganization {
+	t.Helper()
+	organization := retainedRuntimeTestOrganization(t)
+	organization.RetainedMachineRuntime.ControlAsset = "northstar-simulator-control"
+	organization.RetainedMachineRuntime.Machines = []simulatorRetainedMachine{
+		{MachineID: "machine-01", ControllerAsset: "northstar-machine-01-controller",
+			Workload: "operations-client", WorkloadAsset: "northstar-machine-01-operations-client"},
+		{MachineID: "machine-02", ControllerAsset: "northstar-machine-02-controller",
+			Workload: "metrics-service", WorkloadAsset: "northstar-machine-02-metrics-service"},
+	}
+	return organization
+}
+
+func TestRetainedInventoryDefaultsToReviewedVelocityContract(t *testing.T) {
+	organization := retainedRuntimeTestOrganization(t)
+	runtime := *organization.RetainedMachineRuntime
+	control, machines := runtime.retainedInventory()
+	if control != "velocity-simulator-control" || len(machines) != 2 ||
+		machines[0].MachineID != "machine-03" || machines[1].MachineID != "machine-05" {
+		t.Fatalf("default inventory is not the reviewed Velocity contract: %q %v", control, machines)
+	}
+	required := runtime.requiredAssets()
+	for _, asset := range simulatorRetainedRequiredAssets {
+		if !slices.Contains(required, asset) {
+			t.Fatalf("default required assets lack %q: %v", asset, required)
+		}
+	}
+	if len(required) != len(simulatorRetainedRequiredAssets) {
+		t.Fatalf("default required assets differ from the reviewed inventory: %v", required)
+	}
+	if !isSimulatorRetainedMachine(&runtime, "machine-03") || isSimulatorRetainedMachine(&runtime, "machine-01") ||
+		isSimulatorRetainedMachine(nil, "machine-03") {
+		t.Fatal("default retained machine recognition is wrong")
+	}
+}
+
+func TestRetainedInventoryDeclaresPerOrganizationMachines(t *testing.T) {
+	organization := retainedCustomInventoryOrganization(t)
+	if err := validateSimulatorRetainedMachineRuntime(organization); err != nil {
+		t.Fatal(err)
+	}
+	runtime := *organization.RetainedMachineRuntime
+	required := runtime.requiredAssets()
+	for _, asset := range []string{"northstar-simulator-control", "northstar-machine-01-controller",
+		"northstar-machine-01-operations-client", "northstar-machine-02-controller", "northstar-machine-02-metrics-service"} {
+		if !slices.Contains(required, asset) {
+			t.Fatalf("declared inventory lacks %q: %v", asset, required)
+		}
+	}
+	if slices.Contains(required, "velocity-simulator-control") {
+		t.Fatal("declared inventory still carries the Velocity default")
+	}
+	if !isSimulatorRetainedMachine(&runtime, "machine-01") || isSimulatorRetainedMachine(&runtime, "machine-03") {
+		t.Fatal("declared machine recognition is wrong")
+	}
+	scope := machineControlScope{OrganizationID: organization.ID, Generation: "generation-one"}
+	args := strings.Join(retainedContainerArguments(organization, "machine-01", scope), "\n")
+	if !strings.Contains(args, "northstar-machine-01-controller") ||
+		!strings.Contains(args, "northstar-machine-01-operations-client") ||
+		!strings.Contains(args, "operations-client") || strings.Contains(args, "velocity-") {
+		t.Fatalf("container arguments do not use the declared inventory: %s", args)
+	}
+	callback := strings.Join(retainedContainerArguments(organization, "callback", scope), "\n")
+	if !strings.Contains(callback, "northstar-simulator-control") || strings.Contains(callback, "velocity-") {
+		t.Fatalf("callback arguments do not use the declared control identity: %s", callback)
+	}
+}
+
+func TestRetainedInventoryValidationFailsClosed(t *testing.T) {
+	for name, mutate := range map[string]func(*simulatorRetainedMachineRuntime){
+		"control asset without machines": func(runtime *simulatorRetainedMachineRuntime) {
+			runtime.Machines = nil
+		},
+		"machines without control asset": func(runtime *simulatorRetainedMachineRuntime) {
+			runtime.ControlAsset = ""
+		},
+		"incomplete machine": func(runtime *simulatorRetainedMachineRuntime) {
+			runtime.Machines[0].WorkloadAsset = ""
+		},
+		"duplicate machine": func(runtime *simulatorRetainedMachineRuntime) {
+			runtime.Machines[1].MachineID = runtime.Machines[0].MachineID
+		},
+		"duplicate asset": func(runtime *simulatorRetainedMachineRuntime) {
+			runtime.Machines[1].ControllerAsset = runtime.Machines[0].ControllerAsset
+		},
+		"asset aliasing the control identity": func(runtime *simulatorRetainedMachineRuntime) {
+			runtime.Machines[0].ControllerAsset = runtime.ControlAsset
+		},
+		"unknown workload": func(runtime *simulatorRetainedMachineRuntime) {
+			runtime.Machines[0].Workload = "unsupported-workload"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			organization := retainedCustomInventoryOrganization(t)
+			mutate(organization.RetainedMachineRuntime)
+			if err := validateSimulatorRetainedMachineRuntime(organization); err == nil {
+				t.Fatal("invalid retained inventory was not refused")
+			}
+		})
 	}
 }

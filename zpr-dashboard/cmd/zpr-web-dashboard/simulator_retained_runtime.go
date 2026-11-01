@@ -33,13 +33,121 @@ type simulatorRetainedMachineRuntime struct {
 	DataPlaneCAFile  string `json:"data_plane_ca_file"`
 	ControlTLSDir    string `json:"control_tls_dir"`
 	CallbackUpstream string `json:"callback_upstream"`
+	// ControlAsset and Machines, when present, declare this organization's
+	// exact retained inventory: the simulator-control callback identity and
+	// each retained machine with its controller identity and single
+	// workload. A binding without an explicit inventory keeps the exact
+	// reviewed retained Velocity contract, so existing deployments are
+	// unchanged.
+	ControlAsset string                     `json:"control_asset,omitempty"`
+	Machines     []simulatorRetainedMachine `json:"machines,omitempty"`
+}
+
+// simulatorRetainedMachine is one operator-declared retained machine: its
+// manifest machine ID, the registry identities for its controller and
+// workload, and the workload it runs.
+type simulatorRetainedMachine struct {
+	MachineID       string `json:"machine_id"`
+	ControllerAsset string `json:"controller_asset"`
+	Workload        string `json:"workload"`
+	WorkloadAsset   string `json:"workload_asset"`
+}
+
+const maxSimulatorRetainedMachines = 8
+
+// retainedInventory returns the effective control identity and machine
+// inventory for this runtime binding.
+func (runtime simulatorRetainedMachineRuntime) retainedInventory() (string, []simulatorRetainedMachine) {
+	if len(runtime.Machines) == 0 {
+		return "velocity-simulator-control", []simulatorRetainedMachine{
+			{MachineID: "machine-03", ControllerAsset: "velocity-machine-03-controller",
+				Workload: "finance-client", WorkloadAsset: "velocity-machine-03-finance-client"},
+			{MachineID: "machine-05", ControllerAsset: "velocity-machine-05-controller",
+				Workload: "echo-service", WorkloadAsset: "velocity-machine-05-echo-service"},
+		}
+	}
+	return runtime.ControlAsset, runtime.Machines
+}
+
+// requiredAssets returns the exact registry identities this runtime binding
+// requires; the retained lifecycle and the enrollment readiness comparison
+// both use this inventory and never infer additional assets.
+func (runtime simulatorRetainedMachineRuntime) requiredAssets() []string {
+	control, machines := runtime.retainedInventory()
+	assets := make([]string, 0, 2*len(machines)+1)
+	for _, machine := range machines {
+		assets = append(assets, machine.ControllerAsset, machine.WorkloadAsset)
+	}
+	return append(assets, control)
+}
+
+func (runtime simulatorRetainedMachineRuntime) retainedMachine(machineID string) (simulatorRetainedMachine, bool) {
+	_, machines := runtime.retainedInventory()
+	for _, machine := range machines {
+		if machine.MachineID == machineID {
+			return machine, true
+		}
+	}
+	return simulatorRetainedMachine{}, false
+}
+
+func (runtime simulatorRetainedMachineRuntime) retainedMachineIDs() []string {
+	_, machines := runtime.retainedInventory()
+	ids := make([]string, 0, len(machines))
+	for _, machine := range machines {
+		ids = append(ids, machine.MachineID)
+	}
+	return ids
+}
+
+// validateSimulatorRetainedInventory enforces the explicit inventory
+// contract: all-or-nothing declaration, complete bounded identities, unique
+// machines and assets, and only workloads with a maintained machine runtime
+// configuration.
+func validateSimulatorRetainedInventory(runtime simulatorRetainedMachineRuntime) error {
+	if len(runtime.Machines) == 0 {
+		if runtime.ControlAsset != "" {
+			return errors.New("a retained control asset requires an explicit machine inventory")
+		}
+		return nil
+	}
+	if runtime.ControlAsset == "" {
+		return errors.New("an explicit retained machine inventory requires its control asset")
+	}
+	if len(runtime.Machines) > maxSimulatorRetainedMachines {
+		return fmt.Errorf("at most %d retained machines are supported", maxSimulatorRetainedMachines)
+	}
+	assets := map[string]struct{}{runtime.ControlAsset: {}}
+	machines := map[string]struct{}{}
+	for _, machine := range runtime.Machines {
+		for _, value := range []string{machine.MachineID, machine.ControllerAsset, machine.Workload, machine.WorkloadAsset} {
+			if !validSimulatorDeclaredEndpointText(value) {
+				return fmt.Errorf("retained machine %q requires complete bounded identities", machine.MachineID)
+			}
+		}
+		if _, exists := machines[machine.MachineID]; exists {
+			return fmt.Errorf("retained machine %q is listed more than once", machine.MachineID)
+		}
+		machines[machine.MachineID] = struct{}{}
+		for _, asset := range []string{machine.ControllerAsset, machine.WorkloadAsset} {
+			if _, exists := assets[asset]; exists {
+				return fmt.Errorf("retained asset %q is bound more than once", asset)
+			}
+			assets[asset] = struct{}{}
+		}
+		if _, configured := machineWorkload(machine.Workload); !configured {
+			return fmt.Errorf("retained machine %q workload %q has no maintained runtime configuration", machine.MachineID, machine.Workload)
+		}
+	}
+	return nil
 }
 
 const retainedCallbackAddress = "fd5a:5052:adda:1:ffff:ffff:ffff:fffe"
 
 // simulatorRetainedRequiredAssets is the exact reviewed retained Velocity
-// machine-runtime endpoint inventory; the retained lifecycle and enrollment
-// readiness comparison both use this list and never infer additional assets.
+// machine-runtime endpoint inventory — the default inventory for bindings
+// without an explicit machine declaration — and its names stay reserved
+// against profile-declared endpoints.
 var simulatorRetainedRequiredAssets = []string{
 	"velocity-machine-03-controller", "velocity-machine-03-finance-client",
 	"velocity-machine-05-controller", "velocity-machine-05-echo-service", "velocity-simulator-control",
@@ -71,7 +179,7 @@ func validateSimulatorRetainedMachineRuntime(organization simulatorOrganization)
 	if err != nil || parseErr != nil || !ip.Is4() || !ip.IsPrivate() || portErr != nil || portNumber < 1024 || portNumber > 65535 {
 		return errors.New("retained callback upstream must be an explicit private IPv4 TLS listener and unprivileged port")
 	}
-	return nil
+	return validateSimulatorRetainedInventory(*runtime)
 }
 
 func retainedEndpointFiles(runtime simulatorRetainedMachineRuntime, asset string) []string {
@@ -111,7 +219,7 @@ func verifySimulatorRetainedMachineFiles(organization simulatorOrganization) err
 	if err != nil || !x509.NewCertPool().AppendCertsFromPEM(ca) {
 		return errors.New("retained data-plane CA is unavailable or invalid")
 	}
-	for _, asset := range simulatorRetainedRequiredAssets {
+	for _, asset := range runtime.requiredAssets() {
 		files := retainedEndpointFiles(runtime, asset)
 		if _, err := machinePHAuthenticationArguments("", files[0]); err != nil {
 			return fmt.Errorf("retained asset %s: %w", asset, err)
@@ -142,7 +250,7 @@ func verifySimulatorRetainedMachineFiles(organization simulatorOrganization) err
 	if !roots.AppendCertsFromPEM(controlCA) {
 		return errors.New("retained machine-control CA is invalid")
 	}
-	for _, machine := range []string{"machine-03", "machine-05"} {
+	for _, machine := range runtime.retainedMachineIDs() {
 		certificate, err := tls.LoadX509KeyPair(filepath.Join(runtime.ControlTLSDir, machine, "client.crt"), filepath.Join(runtime.ControlTLSDir, machine, "client.key"))
 		if err != nil {
 			return fmt.Errorf("load retained %s control identity: %w", machine, err)
@@ -236,14 +344,13 @@ func retainedContainerArguments(organization simulatorOrganization, machine stri
 	}
 	mount(runtime.ControllerFile, "/usr/local/bin/zpr-machine-controller")
 	mount(runtime.DataPlaneCAFile, "/opt/zpr-workloads/ca.crt")
-	assets := []string{"velocity-simulator-control"}
+	controlAsset, _ := runtime.retainedInventory()
+	assets := []string{controlAsset}
 	workload := ""
 	if machine != "callback" {
-		workload = "finance-client"
-		if machine == "machine-05" {
-			workload = "echo-service"
-		}
-		assets = []string{"velocity-" + machine + "-controller", "velocity-" + machine + "-" + workload}
+		retained, _ := runtime.retainedMachine(machine)
+		workload = retained.Workload
+		assets = []string{retained.ControllerAsset, retained.WorkloadAsset}
 		args = append(args, "--label", "zpr.machine.id="+machine)
 		mount(filepath.Join(runtime.ControlTLSDir, "control-ca.crt"), "/run/zpr-machine/control-ca.crt")
 		mount(filepath.Join(runtime.ControlTLSDir, machine, "client.crt"), "/run/zpr-machine/client.crt")
@@ -329,13 +436,17 @@ func waitForRetainedScenarioDNSRecord(ctx context.Context, binding simulatorReta
 	}
 }
 
-func isSimulatorRetainedMachine(machine string) bool {
-	return machine == "machine-03" || machine == "machine-05"
+func isSimulatorRetainedMachine(runtime *simulatorRetainedMachineRuntime, machine string) bool {
+	if runtime == nil {
+		return false
+	}
+	_, retained := runtime.retainedMachine(machine)
+	return retained
 }
 
 func retainedMachineAction(ctx context.Context, organization simulatorOrganization, scope machineControlScope, machine, action string,
 	run func(context.Context, string, ...string) (string, error)) (string, error) {
-	if !isSimulatorRetainedMachine(machine) && machine != "callback" || action != "start" && action != "stop" {
+	if !isSimulatorRetainedMachine(organization.RetainedMachineRuntime, machine) && machine != "callback" || action != "start" && action != "stop" {
 		return "", errors.New("unsupported retained machine lifecycle operation")
 	}
 
@@ -422,7 +533,7 @@ func simulatorRetainedMachineAction(ctx context.Context, manifest simulatorManif
 	if err != nil || action != "stop" {
 		return output, true, err
 	}
-	for _, peer := range []string{"machine-03", "machine-05"} {
+	for _, peer := range organization.RetainedMachineRuntime.retainedMachineIDs() {
 		container, err := retainedInspectContainer(ctx, machineContainerName(peer), scenarioCommand)
 		if err != nil {
 			return output, true, err
