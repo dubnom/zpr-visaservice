@@ -849,6 +849,59 @@ refused HTTP 409, re-approval returned the identical approval identifier,
 and the resumed permit ran `velocity-single-node` to completion (20/20); the
 journal records exactly issued then consumed for the named operator.
 
+**Dynamic machine-control rendezvous through production DNS (2026-11-01,
+`69e0e1b`, source only):** the retained machine-control contract no longer
+assumes any fixed ZPR address (user-approved decision, 2026-11-01,
+superseding the reviewed `fd5a:5052:adda:1:ffff:ffff:ffff:fffe` rendezvous
+and the hard dependency on a Visa Service that honors `--zpr-addr`). The
+callback adapter docks without requesting an address, discovers the address
+the production Visa Service actually granted on its TUN interface, binds the
+control proxy to exactly that address and records it; the host then fails
+closed unless production-owned DNS publishes the control service name at
+that granted address (readback through the node's `zpr-dns` namespace, with
+explicit evidence naming the missing publication instead of a silent
+`wait_controller` timeout). Machine controllers resolve the operator-declared
+name — `control_dns_name` in the retained machine-runtime binding, default
+`simulator-control.svc.zpr`, validated to the production `svc.zpr` zone —
+through the install's protected DNS on every connection (new
+`-control-dns`), so a re-granted address self-heals without restarts. Trust
+in the control channel is unchanged and exclusively its pinned mTLS
+identities (pinned CA, pinned server name, per-machine client certificates);
+the DNS answer is only a dial hint. The retained runtime digest carries a
+rendezvous-contract revision, so containers started under the superseded
+fixed-address arguments are refused until explicitly stopped and recreated.
+Evidence: focused tests for granted-address selection, per-connection
+protected-DNS dialing, publication-readback fail-closed evidence and the
+refused configured listener; full `cmd/zpr-web-dashboard` and
+`cmd/zpr-lab-bootstrap` suites, vet and production build pass. Not yet
+deployed: no install runs this build, no scenario has been rerun, and it is
+unverified whether the applied Velocity/Northstar policies carry
+`provide SimulatorControlService at simulator-control.svc.zpr over TCP 8792`
+(the composed example platform layer does) or whether Northstar's installed
+`9f2cb68c…` data-plane image publishes `svc.zpr` provider records — the
+readback now surfaces that answer explicitly, and the previously recorded
+Northstar image-upgrade blocker is reframed as this open publication
+question. Residual: the legacy simulated-fabric `dashboard-stack.sh`
+single-node path still binds the fixed address and its adapter launches
+still request it as a hint; the multinode path already discovers the granted
+address.
+
+**Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
+none approved as started: a maintained multi-node retained topology (G6,
+required for the great-lakes/redwood scenarios), maintained per-organization
+provisioning commands extending the `-evaluation-bas` pattern (pairing,
+control-TLS, retained bindings, declared-endpoint catalog — today hand-built
+per organization), a maintained data-plane image upgrade path for frozen
+installs, race-free delegation-trust derivation (today the install must be
+stopped to avoid racing the state walk), and fail-fast capability preflight
+that verifies installed-image contract assumptions with explicit evidence
+before scenario execution. Open proposal (user-suggested 2026-11-01, no
+approved requirement yet): retire the retained machine inventory in favor of
+on-the-fly provisioning — onboard at activation and offboard at teardown
+through the existing declared-endpoint chain, class-based policy matching by
+profile/type claims instead of per-asset pins, and per-run control-TLS —
+trading scenario start time for the production-shaped provisioning contract.
+
 ### Delivery discipline and completion
 
 - One coordinator owns live changes. Parallel chats may take bounded source-only
