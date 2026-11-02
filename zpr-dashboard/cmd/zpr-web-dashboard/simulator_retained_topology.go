@@ -15,11 +15,15 @@ import (
 )
 
 // simulatorRetainedTopologyBinding binds a Simulator organization to the
-// exact reviewed data plane of one evaluation install. The original reviewed
-// single-node form keeps its scalar fields unchanged; a multi-node data plane
+// exact reviewed data plane of one evaluation install. The single-node form
+// keeps its scalar fields but pins identity only: single-node installs use
+// dynamic Docker subnets, so the binding declares no substrate address and
+// the dock address is resolved live from the verified container (addresses
+// are dynamic; trust comes from pinned identities). A multi-node data plane
 // (G6, docking node plus additional install nodes) declares `nodes` instead —
 // all or nothing, the first node is always the install's docking data-plane
-// container and additional nodes are its `-node-<name>` containers.
+// container and additional nodes are its `-node-<name>` containers at the
+// install's deterministic addresses (compiled policy embeds them).
 type simulatorRetainedTopologyBinding struct {
 	Version          int                             `json:"version"`
 	InstallID        string                          `json:"install_id"`
@@ -61,9 +65,13 @@ var simulatorRetainedTopologyNodeLabel = regexp.MustCompile(`^[a-z][a-z0-9-]{0,3
 
 func validSimulatorRetainedTopologyAddresses(node simulatorRetainedTopologyNode) bool {
 	substrate, substrateErr := netip.ParseAddr(node.SubstrateAddress)
-	zpr, zprErr := netip.ParseAddr(node.ZPRAddress)
 	return substrateErr == nil && substrate.Is4() && substrate.IsPrivate() &&
-		zprErr == nil && netip.MustParsePrefix("fd5a:5052::/32").Contains(zpr)
+		validSimulatorRetainedTopologyZPRAddress(node)
+}
+
+func validSimulatorRetainedTopologyZPRAddress(node simulatorRetainedTopologyNode) bool {
+	zpr, err := netip.ParseAddr(node.ZPRAddress)
+	return err == nil && netip.MustParsePrefix("fd5a:5052::/32").Contains(zpr)
 }
 
 func validateSimulatorRetainedTopology(organization simulatorOrganization) error {
@@ -83,11 +91,14 @@ func validateSimulatorRetainedTopology(organization simulatorOrganization) error
 		return errors.New("retained topology requires an explicit installation binding without a conflicting package contract")
 	}
 	if len(binding.Nodes) == 0 {
+		// Single-node installs run on dynamic Docker subnets, so the binding
+		// pins identity only and never a substrate address.
 		if organization.Runtime.Topology != "single-node" || len(organization.Runtime.Nodes) != 1 ||
 			organization.Runtime.Nodes[0].ID != binding.LogicalNodeID ||
 			binding.NodeContainer != expectedContainer ||
-			!validSimulatorRetainedTopologyAddresses(binding.dockingNode()) {
-			return errors.New("retained topology requires an explicit single-node installation binding without a conflicting package contract")
+			binding.SubstrateAddress != "" ||
+			!validSimulatorRetainedTopologyZPRAddress(binding.dockingNode()) {
+			return errors.New("retained topology requires an explicit single-node installation binding pinning identity only (no substrate address) without a conflicting package contract")
 		}
 		return nil
 	}
@@ -184,10 +195,14 @@ func verifySimulatorRetainedTopologyNode(
 		return errors.New("retained node inspection must identify exactly one container")
 	}
 	container := containers[0]
+	address := container.NetworkSettings.Networks[binding.Network].IPAddress
+	// A single-node binding pins identity only: the container must be running
+	// on the install's own network, and its dynamic address is resolved live.
+	addressMatches := address != "" && (node.SubstrateAddress == "" || address == node.SubstrateAddress)
 	if container.Name != "/"+node.Container || !container.State.Running ||
 		container.Image != binding.ImageID ||
 		container.Config.Labels["org.zpr.evaluation-install"] != binding.InstallID ||
-		container.NetworkSettings.Networks[binding.Network].IPAddress != node.SubstrateAddress {
+		!addressMatches {
 		return fmt.Errorf("retained node %s ownership, image, network address or running state does not match the binding", node.LogicalNodeID)
 	}
 	output, err = run(ctx, "docker", "exec", node.Container, "ip", "-j", "-6", "addr", "show", "tun0")

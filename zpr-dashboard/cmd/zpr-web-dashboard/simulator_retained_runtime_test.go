@@ -67,7 +67,7 @@ func TestRetainedMachineRuntimeValidationAndExactMounts(t *testing.T) {
 	}
 	scope := machineControlScope{OrganizationID: "velocity", Generation: "generation-one"}
 	for _, machine := range []string{"machine-03", "machine-05", "callback"} {
-		args := retainedContainerArguments(organization, machine, scope, "fd5a:5052::53")
+		args := retainedContainerArguments(organization, machine, scope, "fd5a:5052::53", "192.168.48.2")
 		joined := strings.Join(args, "\n")
 		if strings.Contains(joined, "--privileged") || strings.Contains(joined, "bootstrap") ||
 			strings.Contains(joined, "source="+organization.RetainedMachineRuntime.EndpointRoot+",") {
@@ -150,6 +150,20 @@ func TestRetainedMachineLifecycleOnlyMutatesOwnedContainerIDs(t *testing.T) {
 					}
 					return "abc123", nil
 				case "inspect":
+					if args[len(args)-1] == organization.RetainedTopologyBinding.NodeContainer {
+						binding := organization.RetainedTopologyBinding
+						data, err := json.Marshal([]map[string]any{{
+							"Image": binding.ImageID,
+							"State": map[string]any{"Running": true},
+							"Config": map[string]any{"Labels": map[string]string{
+								"org.zpr.evaluation-install": binding.InstallID,
+							}},
+							"NetworkSettings": map[string]any{"Networks": map[string]any{
+								binding.Network: map[string]string{"IPAddress": "192.168.48.2"},
+							}},
+						}})
+						return string(data), err
+					}
 					data, err := json.Marshal([]retainedContainerState{*container})
 					return string(data), err
 				case "run":
@@ -316,13 +330,13 @@ func TestRetainedInventoryDeclaresPerOrganizationMachines(t *testing.T) {
 		t.Fatal("declared machine recognition is wrong")
 	}
 	scope := machineControlScope{OrganizationID: organization.ID, Generation: "generation-one"}
-	args := strings.Join(retainedContainerArguments(organization, "machine-01", scope, "fd5a:5052::53"), "\n")
+	args := strings.Join(retainedContainerArguments(organization, "machine-01", scope, "fd5a:5052::53", "192.168.48.2"), "\n")
 	if !strings.Contains(args, "northstar-machine-01-controller") ||
 		!strings.Contains(args, "northstar-machine-01-operations-client") ||
 		!strings.Contains(args, "operations-client") || strings.Contains(args, "velocity-") {
 		t.Fatalf("container arguments do not use the declared inventory: %s", args)
 	}
-	callback := strings.Join(retainedContainerArguments(organization, "callback", scope, "fd5a:5052::53"), "\n")
+	callback := strings.Join(retainedContainerArguments(organization, "callback", scope, "fd5a:5052::53", "192.168.48.2"), "\n")
 	if !strings.Contains(callback, "northstar-simulator-control") || strings.Contains(callback, "velocity-") {
 		t.Fatalf("callback arguments do not use the declared control identity: %s", callback)
 	}

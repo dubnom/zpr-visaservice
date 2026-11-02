@@ -18,10 +18,10 @@ func retainedTopologyTestBinding() *simulatorRetainedTopologyBinding {
 	const install = "0422ecb887a5106caea70975"
 	return &simulatorRetainedTopologyBinding{
 		Version: 1, InstallID: install, LogicalNodeID: "velocity-node",
-		NodeContainer:    "zpr-evaluation-" + install + "-data-plane",
-		Network:          "zpr-evaluation-" + install + "-data-plane",
-		ImageID:          "sha256:" + strings.Repeat("a", 64),
-		SubstrateAddress: "172.26.0.2", ZPRAddress: "fd5a:5052::2",
+		NodeContainer: "zpr-evaluation-" + install + "-data-plane",
+		Network:       "zpr-evaluation-" + install + "-data-plane",
+		ImageID:       "sha256:" + strings.Repeat("a", 64),
+		ZPRAddress:    "fd5a:5052::2",
 	}
 }
 
@@ -107,7 +107,7 @@ func TestSimulatorRetainedTopologyInspectsExactLiveOwnership(t *testing.T) {
 						"State":  map[string]any{"Running": failure != "stopped"},
 						"Config": map[string]any{"Labels": map[string]string{"org.zpr.evaluation-install": owner}},
 						"NetworkSettings": map[string]any{"Networks": map[string]any{
-							network: map[string]string{"IPAddress": binding.SubstrateAddress},
+							network: map[string]string{"IPAddress": "192.168.48.2"},
 						}},
 					}})
 					return string(data), err

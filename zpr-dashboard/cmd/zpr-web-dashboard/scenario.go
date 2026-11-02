@@ -286,7 +286,10 @@ func validateSimulatorScenarioTopology(topology simulatorScenarioTopology) error
 	}
 	nodes := make(map[string]struct{}, len(topology.Nodes))
 	for _, node := range topology.Nodes {
-		if !validScenarioID(node.ID) || net.ParseIP(node.ZPRAddress) == nil || net.ParseIP(node.Substrate) == nil {
+		// Substrate addresses are optional: single-node retained bindings pin
+		// identity only and resolve the dynamic address live.
+		if !validScenarioID(node.ID) || net.ParseIP(node.ZPRAddress) == nil ||
+			(node.Substrate != "" && net.ParseIP(node.Substrate) == nil) {
 			return fmt.Errorf("node %q requires a valid id, ZPR address, and substrate IP", node.ID)
 		}
 		if _, exists := nodes[node.ID]; exists {

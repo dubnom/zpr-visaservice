@@ -314,7 +314,7 @@ func retainedRuntimeDigest(organization simulatorOrganization, scope machineCont
 		// containers started with the superseded fixed-address arguments are
 		// refused instead of silently reused.
 		Control string
-	}{organization.RetainedTopologyBinding, organization.RetainedMachineRuntime, scope, "granted-address-dns-v2"})
+	}{organization.RetainedTopologyBinding, organization.RetainedMachineRuntime, scope, "resolved-dock-address-v3"})
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])
 }
@@ -351,7 +351,46 @@ func retainedContainerOwned(container *retainedContainerState, organization simu
 		labels["org.zpr.runtime-digest"] == retainedRuntimeDigest(organization, scope)
 }
 
-func retainedContainerArguments(organization simulatorOrganization, machine string, scope machineControlScope, dnsServer string) []string {
+// resolveRetainedDockAddress returns the docking node's current substrate
+// address for machine and callback containers. Multi-node bindings carry the
+// install's deterministic address (compiled policy embeds it); single-node
+// bindings pin identity only, so the dynamic address is resolved live from
+// the verified docking container on the binding's own network.
+func resolveRetainedDockAddress(
+	ctx context.Context,
+	organization simulatorOrganization,
+	run func(context.Context, string, ...string) (string, error),
+) (string, error) {
+	binding := *organization.RetainedTopologyBinding
+	docking := binding.dockingNode()
+	if docking.SubstrateAddress != "" {
+		return docking.SubstrateAddress, nil
+	}
+	output, err := run(ctx, "docker", "inspect", "--type", "container", docking.Container)
+	if err != nil {
+		return "", fmt.Errorf("resolve retained dock address: %w", err)
+	}
+	var containers []struct {
+		Image           string
+		State           struct{ Running bool }
+		Config          struct{ Labels map[string]string }
+		NetworkSettings struct {
+			Networks map[string]struct{ IPAddress string }
+		}
+	}
+	if json.Unmarshal([]byte(output), &containers) != nil || len(containers) != 1 {
+		return "", errors.New("resolve retained dock address: invalid docking container inspection")
+	}
+	container := containers[0]
+	address := container.NetworkSettings.Networks[binding.Network].IPAddress
+	if !container.State.Running || container.Image != binding.ImageID ||
+		container.Config.Labels["org.zpr.evaluation-install"] != binding.InstallID || address == "" {
+		return "", errors.New("docking container ownership, image or network attachment does not match the binding; refusing to resolve its dock address")
+	}
+	return address, nil
+}
+
+func retainedContainerArguments(organization simulatorOrganization, machine string, scope machineControlScope, dnsServer, dockAddress string) []string {
 	runtime, binding := *organization.RetainedMachineRuntime, *organization.RetainedTopologyBinding
 	component, name := machine, machineContainerName(machine)
 	if machine == "callback" {
@@ -397,7 +436,7 @@ func retainedContainerArguments(organization simulatorOrganization, machine stri
 	args = append(args, "--env", "SIMULATION_RETAINED_ENDPOINT_ROOT="+runtime.EndpointRoot,
 		"--env", "SIMULATION_RETAINED_ASSETS="+strings.Join(assets, " "))
 	if machine == "callback" {
-		args = append(args, "--env", "SIMULATION_RETAINED_CALLBACK_NODE="+binding.dockingNode().SubstrateAddress+":5000")
+		args = append(args, "--env", "SIMULATION_RETAINED_CALLBACK_NODE="+dockAddress+":5000")
 	}
 	args = append(args, "--env", "SIMULATION_MACHINE_AUTHENTICATION_CONFIG="+config,
 		"--entrypoint", "/bin/sh", runtime.ImageID)
@@ -435,7 +474,7 @@ exec /usr/local/bin/zpr-machine-controller "$@"`
 			"-control-dns", dnsServer,
 			"-control-ca", "/run/zpr-machine/control-ca.crt", "-client-cert", "/run/zpr-machine/client.crt",
 			"-client-key", "/run/zpr-machine/client.key", "-zpr-ph", "/opt/zpr-workloads/ph",
-			"-zpr-node-addr", binding.dockingNode().SubstrateAddress+":5000")
+			"-zpr-node-addr", dockAddress+":5000")
 	}
 	return args
 }
@@ -562,7 +601,11 @@ func retainedMachineAction(ctx context.Context, organization simulatorOrganizati
 			return "", err
 		}
 	}
-	output, err := run(ctx, "docker", retainedContainerArguments(organization, machine, scope, dnsServer)...)
+	dockAddress, err := resolveRetainedDockAddress(ctx, organization, run)
+	if err != nil {
+		return "", err
+	}
+	output, err := run(ctx, "docker", retainedContainerArguments(organization, machine, scope, dnsServer, dockAddress)...)
 	if err != nil {
 		return output, err
 	}

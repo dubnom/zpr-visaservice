@@ -82,9 +82,12 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 		// catalog profile publishes the organization's original node.
 		nodeMatches := len(nodes) == 1 && binding.LogicalNodeID == nodes[0].Name ||
 			catalogNodeID != "" && binding.LogicalNodeID == catalogNodeID
+		// Single-node installs run on dynamic Docker subnets: the binding
+		// pins identity only and must not pin a substrate address.
 		if !inventory.Config.DataPlane || len(nodes) != 1 || !nodeMatches ||
-			binding.NodeContainer != expectedContainer || binding.Network != expectedContainer {
-			return nil, nil, none, errors.New("retained topology binding requires this install-owned single-node data plane and its published node")
+			binding.NodeContainer != expectedContainer || binding.Network != expectedContainer ||
+			binding.SubstrateAddress != "" || binding.ZPRAddress != nodes[0].ZPR {
+			return nil, nil, none, errors.New("retained topology binding requires this install-owned single-node data plane and its published node, pinning identity only (no substrate address)")
 		}
 	} else {
 		// Multi-node form: all or nothing — the scalar fields stay empty and

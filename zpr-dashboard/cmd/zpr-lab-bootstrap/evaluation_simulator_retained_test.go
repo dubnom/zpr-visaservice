@@ -53,8 +53,8 @@ func retainedBindingsDocument(t *testing.T, inventory evaluationInventory, mutat
 	binding := map[string]any{
 		"version": 1, "install_id": inventory.InstallID, "logical_node_id": "node",
 		"node_container": container, "network": container,
-		"image_id":          "sha256:" + strings.Repeat("c", 64),
-		"substrate_address": "172.26.0.2", "zpr_address": "fd5a:5052::2",
+		"image_id":    "sha256:" + strings.Repeat("c", 64),
+		"zpr_address": "fd5a:5052::2",
 	}
 	runtime := map[string]any{
 		"version": 1, "image_id": "sha256:" + strings.Repeat("d", 64),
@@ -168,6 +168,8 @@ func TestEvaluationSimulatorRetainedBindingsFailClosed(t *testing.T) {
 		{"legacy version", func(binding, _ map[string]any) { binding["version"] = 2 }, "version 1"},
 		{"foreign container", func(binding, _ map[string]any) { binding["node_container"] = "other-container" }, "install-owned single-node data plane"},
 		{"unpublished node", func(binding, _ map[string]any) { binding["logical_node_id"] = "velocity-node" }, "install-owned single-node data plane"},
+		{"pinned substrate address", func(binding, _ map[string]any) { binding["substrate_address"] = "172.26.0.2" }, "identity only"},
+		{"foreign ZPR address", func(binding, _ map[string]any) { binding["zpr_address"] = "fd5a:5052::9" }, "identity only"},
 		{"relative controller", func(_, runtime map[string]any) { runtime["controller_file"] = "controller" }, "canonical absolute bind paths"},
 		{"missing callback", func(_, runtime map[string]any) { delete(runtime, "callback_upstream") }, "explicit callback upstream"},
 		{"machines without control asset", func(_, runtime map[string]any) {
