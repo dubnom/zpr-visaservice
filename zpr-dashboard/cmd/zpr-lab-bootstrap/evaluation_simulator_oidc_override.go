@@ -30,9 +30,11 @@ var evaluationSimulatorOIDCOverridePermissions = []string{
 }
 
 // applyEvaluationSimulatorOIDCOverride validates an explicit operator-owned
-// Simulator OIDC session override against the frozen verified configuration
-// and points the Simulator at it. The frozen file is never modified and an
-// invalid override fails closed before the Simulator starts.
+// Simulator OIDC session override against the prepared verified configuration
+// the launch environment points at (the frozen per-install login, or the
+// members session rendering derived from it) and points the Simulator at the
+// override. The base file is never modified and an invalid override fails
+// closed before the Simulator starts.
 func applyEvaluationSimulatorOIDCOverride(evaluation, overridePath string, env []string) ([]string, error) {
 	if !filepath.IsAbs(overridePath) || filepath.Clean(overridePath) != overridePath ||
 		strings.ContainsAny(overridePath, ",\"\r\n=") {
@@ -46,13 +48,28 @@ func applyEvaluationSimulatorOIDCOverride(evaluation, overridePath string, env [
 	if err := decodeEvaluationSimulatorOIDC(data, &configured); err != nil {
 		return nil, fmt.Errorf("Simulator OIDC override: %w", err)
 	}
-	base, err := servicehttp.ReadOperatorFile(filepath.Join(evaluation, "simulator-oidc.json"), 65536, true)
+	const prefix = "ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE="
+	basePath := filepath.Join(evaluation, "simulator-oidc.json")
+	replaced := false
+	updated := make([]string, 0, len(env))
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			basePath = strings.TrimPrefix(entry, prefix)
+			entry = prefix + overridePath
+			replaced = true
+		}
+		updated = append(updated, entry)
+	}
+	if !replaced {
+		return nil, errors.New("Simulator OIDC override requires the prepared paired login environment")
+	}
+	base, err := servicehttp.ReadOperatorFile(basePath, 65536, true)
 	if err != nil {
-		return nil, fmt.Errorf("read frozen Simulator OIDC configuration: %w", err)
+		return nil, fmt.Errorf("read prepared Simulator OIDC configuration: %w", err)
 	}
 	var original operatorauth.Config
 	if err := decodeEvaluationSimulatorOIDC(base, &original); err != nil {
-		return nil, fmt.Errorf("frozen Simulator OIDC configuration: %w", err)
+		return nil, fmt.Errorf("prepared Simulator OIDC configuration: %w", err)
 	}
 	grants := configured.Grants
 	configured.Grants = original.Grants
@@ -76,19 +93,6 @@ func applyEvaluationSimulatorOIDCOverride(evaluation, overridePath string, env [
 				return nil, errors.New("Simulator OIDC override may add only explicit enrollment administration and bounded budget approval permissions")
 			}
 		}
-	}
-	const prefix = "ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE="
-	replaced := false
-	updated := make([]string, 0, len(env))
-	for _, entry := range env {
-		if strings.HasPrefix(entry, prefix) {
-			entry = prefix + overridePath
-			replaced = true
-		}
-		updated = append(updated, entry)
-	}
-	if !replaced {
-		return nil, errors.New("Simulator OIDC override requires the prepared paired login environment")
 	}
 	return updated, nil
 }

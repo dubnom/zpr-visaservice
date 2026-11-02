@@ -85,7 +85,7 @@ func TestEvaluationSimulatorRetainedBindingsSelectFrozenAugmentedRegistry(t *tes
 	if err := os.WriteFile(retained, document, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	env, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained, "")
+	env, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained, "", "")
 	if err != nil {
 		t.Fatalf("retained preparation failed: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestEvaluationSimulatorRetainedBindingsSelectFrozenAugmentedRegistry(t *tes
 		t.Fatalf("retained registry lacks the exact supplied bindings: %s (%v)", data, err)
 	}
 	// An exact repeat verifies the frozen registry instead of rewriting it.
-	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained, ""); err != nil {
+	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained, "", ""); err != nil {
 		t.Fatalf("exact retained repeat failed: %v", err)
 	}
 	// A changed binding is refused rather than silently rebound.
@@ -143,7 +143,7 @@ func TestEvaluationSimulatorRetainedBindingsSelectFrozenAugmentedRegistry(t *tes
 	if err := os.WriteFile(retained, changed, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained, ""); err == nil ||
+	if _, _, err := prepareEvaluationSimulator(evaluation, state, binary, image, retained, "", ""); err == nil ||
 		!strings.Contains(err.Error(), "refuse implicit rebind") {
 		t.Fatalf("changed retained bindings were not refused: %v", err)
 	}

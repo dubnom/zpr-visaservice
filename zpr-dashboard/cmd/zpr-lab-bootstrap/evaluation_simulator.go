@@ -51,6 +51,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 	catalog := flags.String("catalog", "", "optional packaged five-organization Simulator catalog")
 	oidcOverride := flags.String("simulator-oidc-file", "", "optional protected Simulator OIDC session override that may add only explicit enrollment/budget permissions to the frozen named grants")
 	retainedFile := flags.String("retained-machine-runtime-file", "", "optional protected retained topology/machine-runtime bindings for this installation's paired Simulator launch")
+	membersFile := flags.String("evaluation-installs-manifest", "", "optional protected manifest of additional paired member evaluation installs composing one multi-organization Simulator registry (requires -catalog; member-set changes need a fresh Simulator state)")
 	enrollmentDeviceURL := flags.String("enrollment-device-url", "", "optional exact HTTPS origin of this installation's Enrollment Service device listener for explicit Simulator onboarding")
 	basURL := flags.String("enrollment-bas-url", "", "optional exact HTTPS dial origin of this installation's enrollment BAS adapter listener for the explicit runtime credential check")
 	basAuthority := flags.String("enrollment-bas-authority", "", "exact host:port authority the BAS adapter listener expects (required with enrollment-bas-url)")
@@ -75,7 +76,7 @@ func runEvaluationSimulator(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer lock.Close()
-	env, listen, err := prepareEvaluationSimulator(*evaluation, *state, *binary, *image, *retainedFile, *catalog)
+	env, listen, err := prepareEvaluationSimulator(*evaluation, *state, *binary, *image, *retainedFile, *catalog, *membersFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "Simulator setup: %v\n", err)
 		return 1
@@ -201,7 +202,7 @@ func validateEvaluationSimulatorArguments(evaluation, state, binary, image strin
 	return nil
 }
 
-func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, catalog string) ([]string, string, error) {
+func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, catalog, membersFile string) ([]string, string, error) {
 	setupMode, setupModeSet := os.LookupEnv(setupmode.Environment)
 	if err := validateEvaluationSimulatorArguments(evaluation, state, binary, image); err != nil {
 		return nil, "", err
@@ -416,8 +417,41 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, 
 		// original verified registry is never rewritten or silently rebound.
 		registryName = "installs-retained.json"
 	}
+	installs := []any{target}
+	loginConfigPath := filepath.Join(evaluation, "simulator-oidc.json")
+	if membersFile != "" {
+		// The home install carries its own per-install credentials so every
+		// composed organization resolves identically from the registry.
+		target["delegation_signer_file"] = filepath.Join(evaluation, "simulator-delegation-signer.json")
+		target["delegation_key_file"] = filepath.Join(evaluation, "simulator-delegation-key.pem")
+		target["delegation_audience"] = evaluationServiceAudience(inventory.Config)
+		target["data_plane_image"] = image
+		if retainedListener.Listen != "" {
+			target["control_listen"] = retainedListener.Listen
+			target["control_tls_cert_file"] = filepath.Join(retainedListener.TLSDir, "server.crt")
+			target["control_tls_key_file"] = filepath.Join(retainedListener.TLSDir, "server.key")
+			target["control_client_ca_file"] = filepath.Join(retainedListener.TLSDir, "control-ca.crt")
+		}
+		memberTargets, memberOrganizations, err := prepareEvaluationSimulatorMembers(membersFile, evaluation, organization, image, catalog)
+		if err != nil {
+			return nil, "", err
+		}
+		installs = append(installs, memberTargets...)
+		// The members-composed registry and session rendering are their own
+		// frozen artifacts in the Simulator state; the original single-install
+		// registries and the frozen per-install login are never rewritten.
+		registryName = "installs-members.json"
+		document, err := renderEvaluationSimulatorMembersLogin(login, organization, memberOrganizations)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := writeEvaluationOnce(state, "simulator-oidc-members.json", document); err != nil {
+			return nil, "", err
+		}
+		loginConfigPath = filepath.Join(state, "simulator-oidc-members.json")
+	}
 	if err := write(registryName, map[string]any{
-		"version": 1, "kind": "zpr-simulator-evaluation-installs", "evaluation_only": true, "installs": []any{target},
+		"version": 1, "kind": "zpr-simulator-evaluation-installs", "evaluation_only": true, "installs": installs,
 	}); err != nil {
 		return nil, "", err
 	}
@@ -437,7 +471,7 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, 
 		"ZPR_SIMULATOR_OPERATOR_CERT_FILE":        filepath.Join(evaluation, "server-chain.pem"),
 		"ZPR_SIMULATOR_OPERATOR_KEY_FILE":         filepath.Join(evaluation, "server-key.pem"),
 		"ZPR_SIMULATOR_OPERATOR_ORIGIN":           inventory.Config.browserOrigin(inventory.Config.SimulatorPort),
-		"ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE": filepath.Join(evaluation, "simulator-oidc.json"),
+		"ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE": loginConfigPath,
 		"ZPR_SIMULATOR_OPERATOR_OIDC_SECRET_FILE": filepath.Join(evaluation, "oidc-simulator-client.secret"),
 		"ZPR_SIMULATOR_OPERATOR_OIDC_CA_FILE":     filepath.Join(evaluation, "ca.pem"),
 	}
@@ -459,8 +493,9 @@ func prepareEvaluationSimulator(evaluation, state, binary, image, retainedFile, 
 	// in-container proxy relays to; the Simulator must therefore serve its
 	// mutually authenticated machine-control listener there with the
 	// operator-generated control identity, or retained machine controllers
-	// can never connect.
-	if retainedListener.Listen != "" {
+	// can never connect. A members launch serves every listener from the
+	// per-install registry entries instead.
+	if retainedListener.Listen != "" && membersFile == "" {
 		values["SIMULATOR_CONTROL_LISTEN"] = retainedListener.Listen
 		values["SIMULATOR_CONTROL_TLS_CERT"] = filepath.Join(retainedListener.TLSDir, "server.crt")
 		values["SIMULATOR_CONTROL_TLS_KEY"] = filepath.Join(retainedListener.TLSDir, "server.key")
