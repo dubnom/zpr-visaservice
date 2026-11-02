@@ -998,6 +998,32 @@ the paired runtime plan — workload declarations, fanout budget approval
 semantics and live qualification — is the next bounded implementation slice;
 it is a reviewed product gate, not a provisioning gap, and was not bypassed.
 
+**Fleet actions qualified and load-lab completed live (2026-11-02, `6488d7e`):**
+the runtime plan now executes `start_service_fleet` and `stress_traffic`
+steps that exactly match the organization's configured load-test profile
+(wrong machines, workloads or out-of-range client counts still fail closed;
+fanout and service counts remain separate budget inputs bound to the
+authorization scope; reworked focused tests pass with the full suite). The
+load-lab Simulator moved to the task-owned launcher r22 with simulator r19
+(built from `6488d7e`). One live blocker was diagnosed on the way: the
+load-lab `vs-adapter` entered the same stale-noise HandshakeError loop seen
+on Velocity the same evening (no egress link to the Visa Service fabric
+address, BAS relay and fleet DNS reconciliation stalled); one install restart
+plus a maintained BAS-adapter restart healed it. Live result: the full
+authorized chain passed (budget 201, preflight no blockers, plan approval,
+run 202) and `load-lab-fanout` **completed all 19 steps** — on-the-fly
+onboarded identities, class-based visas, dynamic control rendezvous,
+controllers connected, the 200-service fleet started on ports 10000-10199 and
+200 randomized stress clients ran the two-minute fan-out with clean teardown
+and verified container cleanup. Three organizations (Velocity, Northstar,
+load-lab) now run live scenarios on the granted-address DNS rendezvous;
+load-lab is additionally the first organization provisioned end to end under
+the approved on-the-fly decision with a fully class-based workload policy.
+Still open: `vs-adapter` stale-noise recovery is manual (an install restart)
+and recurred twice in one evening — a maintained detection/recovery belongs
+on the design backlog; load-lab's subject-link cycle, like Northstar's, has
+not been run; offboard-at-teardown remains the next on-the-fly design piece.
+
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
 required for the great-lakes/redwood scenarios), the maintained
