@@ -63,16 +63,17 @@ type evaluationProvisioningManifest struct {
 // evaluationProvisioningOverrides deviate from the base-tree convention;
 // paths are relative to base, listeners and ports are explicit.
 type evaluationProvisioningOverrides struct {
-	State               string `json:"state,omitempty"`
-	EnrollmentTrustFile string `json:"enrollment_trust_file,omitempty"`
-	EnrollmentConfig    string `json:"enrollment_config,omitempty"`
-	BASDir              string `json:"bas_dir,omitempty"`
-	EndpointsRoot       string `json:"endpoints_root,omitempty"`
-	ControlTLSDir       string `json:"control_tls_dir,omitempty"`
-	MachineRuntimeFile  string `json:"machine_runtime_file,omitempty"`
-	SimulatorPort       int    `json:"simulator_port,omitempty"`
-	BASAdapterListen    string `json:"bas_adapter_listen,omitempty"`
-	BASTokenListen      string `json:"bas_token_listen,omitempty"`
+	State                string `json:"state,omitempty"`
+	OperatorServicesFile string `json:"operator_services_file,omitempty"`
+	EnrollmentTrustFile  string `json:"enrollment_trust_file,omitempty"`
+	EnrollmentConfig     string `json:"enrollment_config,omitempty"`
+	BASDir               string `json:"bas_dir,omitempty"`
+	EndpointsRoot        string `json:"endpoints_root,omitempty"`
+	ControlTLSDir        string `json:"control_tls_dir,omitempty"`
+	MachineRuntimeFile   string `json:"machine_runtime_file,omitempty"`
+	SimulatorPort        int    `json:"simulator_port,omitempty"`
+	BASAdapterListen     string `json:"bas_adapter_listen,omitempty"`
+	BASTokenListen       string `json:"bas_token_listen,omitempty"`
 }
 
 // evaluationProvisioningPlan is the fully resolved per-stage input set.
@@ -80,6 +81,7 @@ type evaluationProvisioningPlan struct {
 	Organization         string
 	State                string
 	SimulatorPort        int
+	OperatorServicesFile string
 	EnrollmentTrustFile  string
 	EnrollmentConfig     string
 	BASDir               string
@@ -152,7 +154,8 @@ func (m evaluationProvisioningManifest) validate() error {
 	}
 	for name, path := range map[string]string{
 		"state": m.Overrides.State, "enrollment_trust_file": m.Overrides.EnrollmentTrustFile,
-		"enrollment_config": m.Overrides.EnrollmentConfig, "bas_dir": m.Overrides.BASDir,
+		"operator_services_file": m.Overrides.OperatorServicesFile,
+		"enrollment_config":      m.Overrides.EnrollmentConfig, "bas_dir": m.Overrides.BASDir,
 		"endpoints_root": m.Overrides.EndpointsRoot, "control_tls_dir": m.Overrides.ControlTLSDir,
 		"machine_runtime_file": m.Overrides.MachineRuntimeFile,
 	} {
@@ -234,6 +237,24 @@ func resolveEvaluationProvisioningPlan(manifest evaluationProvisioningManifest) 
 			plan.EnrollmentConfig = development
 		} else {
 			plan.EnrollmentConfig = filepath.Join(manifest.Base, "enrollment", organization, "service.json")
+		}
+	}
+	if overrides.OperatorServicesFile != "" {
+		plan.OperatorServicesFile = filepath.Join(manifest.Base, overrides.OperatorServicesFile)
+	} else {
+		// Mirror the organization runtime convention: pairing derives the
+		// paired service bindings from the operator-owned services file.
+		for _, conventional := range []string{
+			filepath.Join(manifest.Base, "enrollment", organization, "operator-services.json"),
+			filepath.Join(manifest.Base, "policy", organization, "operator-services.json"),
+		} {
+			if info, err := os.Lstat(conventional); err == nil && info.Mode().IsRegular() {
+				plan.OperatorServicesFile = conventional
+				break
+			}
+		}
+		if plan.OperatorServicesFile == "" {
+			return plan, errors.New("no operator-owned operator-services.json exists for the organization; pairing cannot derive the paired service bindings")
 		}
 	}
 	inventory, err := readEvaluationAdapterInventory(plan.State)
@@ -379,7 +400,8 @@ func evaluateProvisioningStages(plan evaluationProvisioningPlan, manifestPath st
 	}
 
 	execute("simulator-pairing", delegates.pairing,
-		"-state", plan.State, "-simulator-port", strconv.Itoa(plan.SimulatorPort))
+		"-state", plan.State, "-simulator-port", strconv.Itoa(plan.SimulatorPort),
+		"-operator-services-file", plan.OperatorServicesFile)
 	execute("enrollment-trust", delegates.enrollmentTrust,
 		"-state", plan.State, "-enrollment-trust-file", plan.EnrollmentTrustFile)
 	execute("bas", delegates.bas,

@@ -50,7 +50,7 @@ func writeProvisioningBaseTree(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(enrollment, "control"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"delegation-trust-self-approval.json", "service-development.json"} {
+	for _, name := range []string{"delegation-trust-self-approval.json", "service-development.json", "operator-services.json"} {
 		if err := os.WriteFile(filepath.Join(enrollment, name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +212,10 @@ func TestProvisioningPlanHonorsOverridesAndRefusesForeignInstall(t *testing.T) {
 		t.Fatalf("overrides not honored alongside derivation: %+v", plan)
 	}
 	manifest.Organization = "other"
-	manifest.Overrides = &evaluationProvisioningOverrides{State: filepath.Join("state", "org")}
+	manifest.Overrides = &evaluationProvisioningOverrides{
+		State:                filepath.Join("state", "org"),
+		OperatorServicesFile: filepath.Join("enrollment", "org", "operator-services.json"),
+	}
 	if _, err := resolveEvaluationProvisioningPlan(manifest); err == nil ||
 		!strings.Contains(err.Error(), "belongs to organization") {
 		t.Fatalf("foreign install accepted: %v", err)
@@ -229,7 +232,7 @@ func TestProvisioningRunsStagesAndRecordsCompletion(t *testing.T) {
 		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 	}
 	joined := strings.Join(capture.calls, "\n")
-	if !strings.Contains(joined, "pairing -state "+filepath.Join(base, "state", "org")+" -simulator-port 22788") ||
+	if !strings.Contains(joined, "pairing -state "+filepath.Join(base, "state", "org")+" -simulator-port 22788 -operator-services-file "+filepath.Join(base, "enrollment", "org", "operator-services.json")) ||
 		!strings.Contains(joined, "enrollment-trust -state ") ||
 		!strings.Contains(joined, "bas -state ") ||
 		!strings.Contains(joined, "-adapter-listen 10.0.1.160:22996 -token-listen 10.0.1.160:22997 -adapter-image "+provisioningTestImage) {
