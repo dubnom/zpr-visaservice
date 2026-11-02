@@ -958,6 +958,46 @@ scratch; that is exactly the per-organization provisioning that the design
 backlog item below says should become a maintained command before scaling to
 the remaining organizations. `load-lab-fanout` has not run.
 
+**Load-lab completed the on-the-fly way through the authorized chain
+(2026-11-02, evening):** continuing under the approved on-the-fly decision,
+load-lab's five scenario identities (simulator-control service-adapter, two
+machine controllers, two workloads) were onboarded entirely through the
+maintained single-call onboarding endpoint — invitation, endpoint-owned key
+claim, named self-approval and protected bundle handoff, five HTTP 201s — with
+no hand-built key material; endpoint identity directories were assembled
+mechanically from the delivered bundles (CA = the BAS CA). Prerequisites
+found and satisfied through maintained paths: the enrollment administration
+trust must be the pairing-derived
+`state/<org>/simulator-paired-enrollment-trust.json`
+(`-evaluation-simulator-enrollment-trust` against the stopped install — the
+hand-derived trust lacks the Simulator signing key and fails closed 403), and
+invitation creation requires a current organization-scoped enrollment
+readiness preflight attestation (saved through the Room, mirroring the
+recorded Northstar attestation with load-lab's development CA fingerprint;
+absent preflight fails closed 409). The retained bindings use the shared r23
+controller, the granted-address contract and the default
+`simulator-control.svc.zpr` control name; the enrollment catalog gained the
+simulator-control profile and service-adapter type (dated backup); the VS
+gained the `trusted_service_http.load-lab-enrollment-bas` section and both
+operator service bindings the BAS read-only files (dated backups). **The
+first fully class-based workload policy was then applied** (record `176f5749`
+revision 3, self-approved, apply operation `MQOXBMBBPA4XPABSNWJB7G4FA4`
+succeeded, vinst 3): endpoint classes match only BAS-verified
+organization/profile/type claims — no per-asset identity pins anywhere — with
+`SimulatorControlService` provided at `simulator-control.svc.zpr` and 200
+generated fleet provides (`load-service-001..200`, TCP 10000-10199) with the
+matching generated protocol/service compiler-config tables. Live evidence:
+the post-apply visa sweep resolved every BAS-sourced attribute
+(`allowed=14, skipped_unresolved=0`) — the class-based shape works on the
+current image. **Remaining blocker, deliberately fail-closed:** the runtime
+plan refuses `start_service_fleet`/`stress_traffic` ("load-test fanout is not
+executable from a runtime plan", pinned by tests with fanout/service counts
+recorded as separate unapproved budget inputs), and load-lab publishes only
+fanout scenarios, so no load-lab scenario has run. Enabling fleet actions on
+the paired runtime plan — workload declarations, fanout budget approval
+semantics and live qualification — is the next bounded implementation slice;
+it is a reviewed product gate, not a provisioning gap, and was not bypassed.
+
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
 required for the great-lakes/redwood scenarios), the maintained
