@@ -34,7 +34,7 @@ func validateSimulatorRetainedTopology(organization simulatorOrganization) error
 	expectedContainer := "zpr-evaluation-" + binding.InstallID + "-data-plane"
 	if binding.Version != 1 || err != nil || len(install) != 12 ||
 		hex.EncodeToString(install) != binding.InstallID ||
-		organization.ID != "velocity" || organization.SyntheticLabOnly ||
+		organization.SyntheticLabOnly ||
 		organization.EvaluationRuntime != nil || organization.PackagedProvisioning != nil ||
 		organization.Runtime.Driver != "docker-multinode" ||
 		organization.Runtime.Topology != "single-node" || len(organization.Runtime.Nodes) != 1 ||
@@ -43,7 +43,7 @@ func validateSimulatorRetainedTopology(organization simulatorOrganization) error
 		!validSimulatorScenarioAuthorizationScopeDigest(binding.ImageID) ||
 		substrateErr != nil || !substrate.Is4() || !substrate.IsPrivate() ||
 		zprErr != nil || !netip.MustParsePrefix("fd5a:5052::/32").Contains(zpr) {
-		return errors.New("retained topology requires an explicit Velocity single-node installation binding without a conflicting package contract")
+		return errors.New("retained topology requires an explicit single-node installation binding without a conflicting package contract")
 	}
 	return nil
 }

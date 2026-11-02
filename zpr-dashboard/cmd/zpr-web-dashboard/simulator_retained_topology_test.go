@@ -37,10 +37,11 @@ func retainedTopologyTestOrganization(t *testing.T) simulatorOrganization {
 
 func TestSimulatorRetainedTopologyValidation(t *testing.T) {
 	for name, mutate := range map[string]func(*simulatorOrganization){
-		"valid":        func(*simulatorOrganization) {},
+		"valid": func(*simulatorOrganization) {},
+		// Any single-node organization may bind its own install; the binding
+		// stays pinned to that installation's identifiers.
 		"version":      func(o *simulatorOrganization) { o.RetainedTopologyBinding.Version++ },
 		"install":      func(o *simulatorOrganization) { o.RetainedTopologyBinding.InstallID = "../wrong" },
-		"organization": func(o *simulatorOrganization) { o.ID = "northstar" },
 		"logical node": func(o *simulatorOrganization) { o.RetainedTopologyBinding.LogicalNodeID = "another" },
 		"container":    func(o *simulatorOrganization) { o.RetainedTopologyBinding.NodeContainer = "another" },
 		"network":      func(o *simulatorOrganization) { o.RetainedTopologyBinding.Network = "another" },
@@ -62,6 +63,13 @@ func TestSimulatorRetainedTopologyValidation(t *testing.T) {
 			}
 		})
 	}
+	t.Run("any single-node organization", func(t *testing.T) {
+		organization := retainedTopologyTestOrganization(t)
+		organization.ID = "northstar"
+		if err := validateSimulatorRetainedTopology(organization); err != nil {
+			t.Fatalf("non-Velocity single-node binding was refused: %v", err)
+		}
+	})
 }
 
 func TestSimulatorRetainedTopologyInspectsExactLiveOwnership(t *testing.T) {
