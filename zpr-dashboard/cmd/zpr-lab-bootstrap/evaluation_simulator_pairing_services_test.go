@@ -281,3 +281,57 @@ func TestEvaluationSimulatorPairingResumesExactOperatorServicesPlan(t *testing.T
 		t.Fatalf("resumed pairing is not idempotent: %v", err)
 	}
 }
+
+// An install paired without the services flag may add the derived paired
+// bindings later from its registered artifacts: no key is created, rotated or
+// rebound, and the result is exactly what verification re-derives.
+func TestEvaluationSimulatorPairingDerivesServicesForAlreadyPairedInstall(t *testing.T) {
+	f := newPairingServicesFixture(t)
+	port := pairingFreePort(t)
+	if err := pairEvaluationSimulatorWithServices(f.state, port, "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{evaluationSimulatorServicesFile, evaluationSimulatorTrustFile} {
+		if _, err := os.Lstat(filepath.Join(f.state, name)); !os.IsNotExist(err) {
+			t.Fatalf("flagless pairing wrote paired services %s: %v", name, err)
+		}
+	}
+	keyBefore := readSubjectFile(t, f.state, "simulator-delegation-key.pem")
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+		t.Fatalf("post-hoc paired services derivation failed: %v", err)
+	}
+	if !bytes.Equal(keyBefore, readSubjectFile(t, f.state, "simulator-delegation-key.pem")) {
+		t.Fatal("post-hoc derivation rotated the registered Simulator key")
+	}
+	config := f.inventory.Config
+	config.SimulatorPort = port
+	inventory, err := readEvaluation(f.state, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paired, err := loadEvaluationOperatorServices(filepath.Join(f.state, evaluationSimulatorServicesFile), f.state, inventory)
+	if err != nil || paired.OperatorDelegationTrustFile != filepath.Join(f.state, evaluationSimulatorTrustFile) {
+		t.Fatalf("derived paired bindings are unusable: %v", err)
+	}
+	var before, after operatordelegation.Config
+	if json.Unmarshal(f.original, &before) != nil ||
+		json.Unmarshal(readSubjectFile(t, f.state, evaluationSimulatorTrustFile), &after) != nil {
+		t.Fatal("invalid delegation trust")
+	}
+	if !reflect.DeepEqual(before.Grants, after.Grants) || len(after.Keys) != 2 ||
+		after.Keys[1].KeyID != evaluationSimulatorDelegationKeyID {
+		t.Fatal("post-hoc derivation changed grants or did not add only the Simulator key")
+	}
+	// Idempotent: the rerun verifies the exact derived content.
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+		t.Fatalf("verification rerun failed: %v", err)
+	}
+	// Partial presence fails closed for inspection.
+	if err := os.Remove(filepath.Join(f.state, evaluationSimulatorServicesFile)); err != nil {
+		t.Fatal(err)
+	}
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err == nil ||
+		!strings.Contains(err.Error(), "partially present") {
+		t.Fatalf("partial paired services were not refused: %v", err)
+	}
+}

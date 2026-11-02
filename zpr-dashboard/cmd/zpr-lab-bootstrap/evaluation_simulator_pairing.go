@@ -142,7 +142,7 @@ func pairEvaluationSimulatorWithServices(state string, port int, servicesFile st
 	if inventory.Config.SimulatorPort == port {
 		// readEvaluation already verified every registration artifact.
 		if servicesFile != "" {
-			return verifyEvaluationSimulatorServices(state, inventory, servicesFile)
+			return ensureEvaluationSimulatorServices(root, state, inventory, servicesFile)
 		}
 		return nil
 	}
@@ -393,6 +393,83 @@ func renderEvaluationSimulatorServices(state string, original *evaluationOperato
 		evaluationSimulatorServicesFile: append(services, '\n'),
 		evaluationSimulatorTrustFile:    extended,
 	}, nil
+}
+
+// ensureEvaluationSimulatorServices verifies the derived paired service
+// bindings on an already-paired install, deriving them first when the install
+// registered its Simulator client without them. Derivation uses only the
+// registered pairing artifacts — no key is created, rotated or rebound — and
+// writes exactly the content the verification re-derives, through staged
+// private files; partial presence fails closed for inspection.
+func ensureEvaluationSimulatorServices(root *os.Root, state string, inventory evaluationInventory, servicesFile string) error {
+	_, servicesErr := root.Lstat(evaluationSimulatorServicesFile)
+	_, trustErr := root.Lstat(evaluationSimulatorTrustFile)
+	servicesMissing := errors.Is(servicesErr, os.ErrNotExist)
+	trustMissing := errors.Is(trustErr, os.ErrNotExist)
+	if (servicesErr != nil && !servicesMissing) || (trustErr != nil && !trustMissing) {
+		return errors.New("cannot inspect paired operator service targets")
+	}
+	if servicesMissing != trustMissing {
+		return errors.New("paired operator service targets are partially present; inspect them before retrying")
+	}
+	if !servicesMissing {
+		return verifyEvaluationSimulatorServices(state, inventory, servicesFile)
+	}
+	data, err := servicehttp.ReadOperatorFile(servicesFile, 1<<20, true)
+	if err != nil {
+		return fmt.Errorf("read original operator services: %w", err)
+	}
+	var original evaluationOperatorServices
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&original); err != nil || decoder.Decode(new(any)) != io.EOF ||
+		original.OperatorDelegationTrustFile == "" {
+		return errors.New("original operator services are invalid or lack a delegation trust override")
+	}
+	key, err := servicehttp.ReadOperatorFile(filepath.Join(state, "simulator-delegation-key.pem"), 1<<20, true)
+	if err != nil {
+		return fmt.Errorf("read registered Simulator delegation key: %w", err)
+	}
+	chain, err := servicehttp.ReadOperatorFile(filepath.Join(state, "simulator-client-chain.pem"), 1<<20, true)
+	if err != nil {
+		return fmt.Errorf("read registered Simulator client certificate: %w", err)
+	}
+	paired, err := renderEvaluationSimulatorServices(state, &original, inventory.Config, key, chain)
+	if err != nil {
+		return err
+	}
+	baseData, err := servicehttp.ReadOperatorFile(filepath.Join(state, evaluationDelegationTrust), 1<<20, true)
+	if err != nil {
+		return fmt.Errorf("read registered base delegation trust: %w", err)
+	}
+	var base, override operatordelegation.Config
+	if err := decodeEvaluationDelegationTrust(baseData, &base); err != nil {
+		return fmt.Errorf("validate paired base delegation trust: %w", err)
+	}
+	if err := decodeEvaluationDelegationTrust(paired[evaluationSimulatorTrustFile], &override); err != nil {
+		return fmt.Errorf("validate paired delegation override: %w", err)
+	}
+	if err := validateEvaluationDelegationOverride(override, base, original.Organization); err != nil {
+		return fmt.Errorf("validate paired delegation override: %w", err)
+	}
+	names := []string{evaluationSimulatorTrustFile, evaluationSimulatorServicesFile}
+	for _, name := range names {
+		if err := writePrivate(root, name+".services-new", paired[name]); err != nil {
+			return errors.New("paired operator services staging failed; rerun with the same arguments")
+		}
+	}
+	if err := syncRecoveryDirectory(root); err != nil {
+		return err
+	}
+	for _, name := range names {
+		if err := root.Rename(name+".services-new", name); err != nil {
+			return errors.New("paired operator services replacement failed; rerun pairing with the same state and port to complete it")
+		}
+	}
+	if err := syncRecoveryDirectory(root); err != nil {
+		return err
+	}
+	return verifyEvaluationSimulatorServices(state, inventory, servicesFile)
 }
 
 func verifyEvaluationSimulatorServices(state string, inventory evaluationInventory, servicesFile string) error {
