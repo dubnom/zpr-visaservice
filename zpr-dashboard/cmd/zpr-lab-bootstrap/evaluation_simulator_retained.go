@@ -56,6 +56,15 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 		ImageID          string `json:"image_id"`
 		SubstrateAddress string `json:"substrate_address"`
 		ZPRAddress       string `json:"zpr_address"`
+		// Nodes is the multi-node form (G6): the first entry is the docking
+		// data-plane node, additional entries are the install's own
+		// -node-<name> containers at their deterministic addresses.
+		Nodes []struct {
+			LogicalNodeID    string `json:"logical_node_id"`
+			Container        string `json:"container"`
+			SubstrateAddress string `json:"substrate_address"`
+			ZPRAddress       string `json:"zpr_address"`
+		} `json:"nodes"`
 	}
 	strict := json.NewDecoder(bytes.NewReader(document.Binding))
 	strict.DisallowUnknownFields()
@@ -67,14 +76,42 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 	}
 	expectedContainer := "zpr-evaluation-" + inventory.InstallID + "-data-plane"
 	nodes := evaluationDataPlaneTopology(inventory)
-	// The published profile's node is authoritative: the launcher's own
-	// minimal profile publishes the data-plane node name, and a packaged
-	// catalog profile publishes the organization's original node.
-	nodeMatches := len(nodes) == 1 && binding.LogicalNodeID == nodes[0].Name ||
-		catalogNodeID != "" && binding.LogicalNodeID == catalogNodeID
-	if !inventory.Config.DataPlane || len(nodes) != 1 || !nodeMatches ||
-		binding.NodeContainer != expectedContainer || binding.Network != expectedContainer {
-		return nil, nil, none, errors.New("retained topology binding requires this install-owned single-node data plane and its published node")
+	if len(binding.Nodes) == 0 {
+		// The published profile's node is authoritative: the launcher's own
+		// minimal profile publishes the data-plane node name, and a packaged
+		// catalog profile publishes the organization's original node.
+		nodeMatches := len(nodes) == 1 && binding.LogicalNodeID == nodes[0].Name ||
+			catalogNodeID != "" && binding.LogicalNodeID == catalogNodeID
+		if !inventory.Config.DataPlane || len(nodes) != 1 || !nodeMatches ||
+			binding.NodeContainer != expectedContainer || binding.Network != expectedContainer {
+			return nil, nil, none, errors.New("retained topology binding requires this install-owned single-node data plane and its published node")
+		}
+	} else {
+		// Multi-node form: all or nothing — the scalar fields stay empty and
+		// every entry must match this install's own data-plane topology in
+		// order, at its deterministic containers and addresses.
+		if binding.LogicalNodeID != "" || binding.NodeContainer != "" ||
+			binding.SubstrateAddress != "" || binding.ZPRAddress != "" {
+			return nil, nil, none, errors.New("retained multi-node topology binding must declare all nodes in nodes with empty single-node fields")
+		}
+		if !inventory.Config.DataPlane || len(nodes) < 2 || len(binding.Nodes) != len(nodes) ||
+			binding.Network != expectedContainer {
+			return nil, nil, none, errors.New("retained multi-node topology binding requires this install-owned multi-node data plane, one entry per install node")
+		}
+		seenNodeIDs := map[string]bool{}
+		for index, node := range binding.Nodes {
+			dockingMatches := index == 0 && (node.LogicalNodeID == nodes[0].Name ||
+				catalogNodeID != "" && node.LogicalNodeID == catalogNodeID)
+			additionalMatches := index > 0 && node.LogicalNodeID == nodes[index].Name
+			if node.LogicalNodeID == "" || seenNodeIDs[node.LogicalNodeID] ||
+				!(dockingMatches || additionalMatches) ||
+				node.Container != evaluationDataPlaneNodeContainer(inventory, index) ||
+				node.SubstrateAddress != nodes[index].Substrate ||
+				node.ZPRAddress != nodes[index].ZPR {
+				return nil, nil, none, fmt.Errorf("retained multi-node topology entry %d must bind the install's own node %q at its deterministic container and addresses", index, nodes[index].Name)
+			}
+			seenNodeIDs[node.LogicalNodeID] = true
+		}
 	}
 	var runtime struct {
 		Version          int    `json:"version"`

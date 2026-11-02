@@ -1195,16 +1195,39 @@ yet executed, by this command; converting them into executed stages is the
 follow-on increment. A genuinely new organization has not yet been
 provisioned end to end with it.
 
-**Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
-none approved as started: a maintained multi-node retained topology (G6,
-required for the great-lakes/redwood scenarios), the maintained
-per-organization provisioning command (now scoped by the approved on-the-fly
-decision below: it provisions pairing, BAS and declared endpoints, not
-retained inventory), a maintained data-plane image upgrade path for frozen
-installs, race-free delegation-trust derivation (today the install must be
-stopped to avoid racing the state walk), and fail-fast capability preflight
-that verifies installed-image contract assumptions with explicit evidence
-before scenario execution.
+**Multi-node retained topology binding (2026-11-02, G6 increment, source
+only):** the retained topology binding now has an all-or-nothing multi-node
+form: `nodes` declares the docking data-plane container first and then the
+install's own `-node-<name>` containers, each with its logical node ID and
+addresses; the reviewed single-node scalar form is byte-for-byte unchanged,
+so Velocity/Northstar/load-lab bindings keep their exact contracts. The
+Simulator validates the multi-node form against the organization topology
+(ordered logical-node match, unique containers and addresses, docking
+container first, additional containers restricted to the install's node
+naming) and verifies every node container live (ownership label, image,
+network address, running state and tun0 ZPR address per node); retained
+machine containers and the DNS readback dock at the first (docking) node.
+The launcher's strict bindings schema accepts the multi-node form only when
+it binds exactly this install's own data-plane topology at its deterministic
+containers and addresses, and now refuses a single-node binding against a
+multi-node install. Test-pinned on both sides with the full suites, vet and
+both builds passing. Still open for G6: per-machine docking-node selection in
+the retained machine runtime (machines currently dock at the docking node;
+endpoints already choose nodes via `node_host`), live provisioning of
+great-lakes/redwood as paired multi-node organizations (the maintained
+provisioning command is the path), and the five-organization
+seventeen-scenario acceptance matrix.
+
+**Design hardening backlog (recorded 2026-11-01):** recorded for scheduling:
+the multi-node retained topology binding (G6) and the maintained
+per-organization provisioning command are now implemented — see their dated
+records above (the provisioning command provisions pairing, BAS and declared
+endpoints, not retained inventory, per the approved on-the-fly decision
+below). Still unstarted: a maintained data-plane image upgrade path for
+frozen installs, race-free delegation-trust derivation (today the install
+must be stopped to avoid racing the state walk), and fail-fast capability
+preflight that verifies installed-image contract assumptions with explicit
+evidence before scenario execution.
 
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not

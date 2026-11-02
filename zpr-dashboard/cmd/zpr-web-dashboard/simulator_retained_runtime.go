@@ -397,7 +397,7 @@ func retainedContainerArguments(organization simulatorOrganization, machine stri
 	args = append(args, "--env", "SIMULATION_RETAINED_ENDPOINT_ROOT="+runtime.EndpointRoot,
 		"--env", "SIMULATION_RETAINED_ASSETS="+strings.Join(assets, " "))
 	if machine == "callback" {
-		args = append(args, "--env", "SIMULATION_RETAINED_CALLBACK_NODE="+binding.SubstrateAddress+":5000")
+		args = append(args, "--env", "SIMULATION_RETAINED_CALLBACK_NODE="+binding.dockingNode().SubstrateAddress+":5000")
 	}
 	args = append(args, "--env", "SIMULATION_MACHINE_AUTHENTICATION_CONFIG="+config,
 		"--entrypoint", "/bin/sh", runtime.ImageID)
@@ -435,7 +435,7 @@ exec /usr/local/bin/zpr-machine-controller "$@"`
 			"-control-dns", dnsServer,
 			"-control-ca", "/run/zpr-machine/control-ca.crt", "-client-cert", "/run/zpr-machine/client.crt",
 			"-client-key", "/run/zpr-machine/client.key", "-zpr-ph", "/opt/zpr-workloads/ph",
-			"-zpr-node-addr", binding.SubstrateAddress+":5000")
+			"-zpr-node-addr", binding.dockingNode().SubstrateAddress+":5000")
 	}
 	return args
 }
@@ -491,7 +491,7 @@ func waitForRetainedScenarioDNSRecord(ctx context.Context, binding simulatorReta
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		output, err := run(ctx, "docker", "exec", binding.NodeContainer, "ip", "netns", "exec", "zpr-dns",
+		output, err := run(ctx, "docker", "exec", binding.dockingNode().Container, "ip", "netns", "exec", "zpr-dns",
 			"dig", "+tcp", "+time=1", "+tries=1", "+short", "AAAA", "@"+server, name)
 		if err != nil {
 			return fmt.Errorf("read production-owned DNS publication for %s: %w", name, err)

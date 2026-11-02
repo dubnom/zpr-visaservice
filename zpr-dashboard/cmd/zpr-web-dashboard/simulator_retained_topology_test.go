@@ -226,3 +226,147 @@ func TestSimulatorRetainedTopologyLive(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Multi-node form (G6): the binding declares the docking node plus the
+// install's additional -node-<name> containers, all or nothing.
+func retainedMultiNodeTestOrganization(t *testing.T) simulatorOrganization {
+	t.Helper()
+	organization := retainedTopologyTestOrganization(t)
+	install := organization.RetainedTopologyBinding.InstallID
+	container := "zpr-evaluation-" + install + "-data-plane"
+	organization.RetainedTopologyBinding = &simulatorRetainedTopologyBinding{
+		Version: 1, InstallID: install, Network: container,
+		ImageID: "sha256:" + strings.Repeat("a", 64),
+		Nodes: []simulatorRetainedTopologyNode{
+			{LogicalNodeID: "milwaukee-dc", Container: container, SubstrateAddress: "10.201.7.2", ZPRAddress: "fd5a:5052::2"},
+			{LogicalNodeID: "shenzhen-office", Container: container + "-node-shenzhen-office", SubstrateAddress: "10.201.7.3", ZPRAddress: "fd5a:5052::3"},
+			{LogicalNodeID: "tijuana-plant", Container: container + "-node-tijuana-plant", SubstrateAddress: "10.201.7.4", ZPRAddress: "fd5a:5052::4"},
+		},
+	}
+	organization.Runtime.Topology = "multi-node"
+	organization.Runtime.Nodes = []simulatorOrganizationRuntimeNode{
+		{ID: "milwaukee-dc"}, {ID: "shenzhen-office"}, {ID: "tijuana-plant"},
+	}
+	return organization
+}
+
+func TestSimulatorRetainedMultiNodeTopologyValidation(t *testing.T) {
+	for name, mutate := range map[string]func(*simulatorOrganization){
+		"valid": func(*simulatorOrganization) {},
+		"mixed single-node fields": func(o *simulatorOrganization) {
+			o.RetainedTopologyBinding.LogicalNodeID = "milwaukee-dc"
+		},
+		"one node only": func(o *simulatorOrganization) {
+			o.RetainedTopologyBinding.Nodes = o.RetainedTopologyBinding.Nodes[:1]
+			o.Runtime.Nodes = o.Runtime.Nodes[:1]
+		},
+		"single-node organization topology": func(o *simulatorOrganization) {
+			o.Runtime.Topology = "single-node"
+			o.Runtime.Nodes = o.Runtime.Nodes[:1]
+		},
+		"node count mismatch": func(o *simulatorOrganization) {
+			o.Runtime.Nodes = o.Runtime.Nodes[:2]
+		},
+		"order mismatch": func(o *simulatorOrganization) {
+			o.Runtime.Nodes[1], o.Runtime.Nodes[2] = o.Runtime.Nodes[2], o.Runtime.Nodes[1]
+		},
+		"first node not the docking container": func(o *simulatorOrganization) {
+			o.RetainedTopologyBinding.Nodes[0].Container += "-node-extra"
+		},
+		"foreign additional container": func(o *simulatorOrganization) {
+			o.RetainedTopologyBinding.Nodes[1].Container = "another-container"
+		},
+		"endpoint container name": func(o *simulatorOrganization) {
+			o.RetainedTopologyBinding.Nodes[1].Container =
+				o.RetainedTopologyBinding.Nodes[0].Container + "-node-endpoint-01"
+			o.Runtime.Nodes[1].ID = o.RetainedTopologyBinding.Nodes[1].LogicalNodeID
+		},
+		"duplicate addresses": func(o *simulatorOrganization) {
+			o.RetainedTopologyBinding.Nodes[2].ZPRAddress = o.RetainedTopologyBinding.Nodes[1].ZPRAddress
+		},
+		"public substrate": func(o *simulatorOrganization) {
+			o.RetainedTopologyBinding.Nodes[1].SubstrateAddress = "8.8.8.8"
+		},
+		"foreign ZPR prefix": func(o *simulatorOrganization) {
+			o.RetainedTopologyBinding.Nodes[2].ZPRAddress = "fd00::1"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			organization := retainedMultiNodeTestOrganization(t)
+			mutate(&organization)
+			if err := validateSimulatorRetainedTopology(organization); (err == nil) != (name == "valid") {
+				t.Fatalf("validation result: %v", err)
+			}
+		})
+	}
+	t.Run("topology and docking node expose every node", func(t *testing.T) {
+		organization := retainedMultiNodeTestOrganization(t)
+		binding := organization.RetainedTopologyBinding
+		topology := binding.topology()
+		if len(topology.Nodes) != 3 || topology.Nodes[2].ID != "tijuana-plant" ||
+			topology.Nodes[2].ZPRAddress != "fd5a:5052::4" {
+			t.Fatalf("multi-node topology incomplete: %+v", topology)
+		}
+		if docking := binding.dockingNode(); docking.Container != binding.Nodes[0].Container ||
+			docking.SubstrateAddress != "10.201.7.2" {
+			t.Fatalf("docking node is not the first entry: %+v", docking)
+		}
+	})
+}
+
+func TestSimulatorRetainedMultiNodeTopologyInspectsEveryNode(t *testing.T) {
+	for _, failure := range []string{"", "second node stopped", "third node ZPR"} {
+		t.Run(failure, func(t *testing.T) {
+			organization := retainedMultiNodeTestOrganization(t)
+			binding := organization.RetainedTopologyBinding
+			inspected := map[string]bool{}
+			run := func(_ context.Context, name string, args ...string) (string, error) {
+				if name != "docker" {
+					t.Fatalf("unexpected executable %s", name)
+				}
+				if args[0] == "inspect" {
+					container := args[3]
+					inspected[container] = true
+					var node *simulatorRetainedTopologyNode
+					for index := range binding.Nodes {
+						if binding.Nodes[index].Container == container {
+							node = &binding.Nodes[index]
+						}
+					}
+					if node == nil {
+						t.Fatalf("inspection of a container outside the binding: %v", args)
+					}
+					running := !(failure == "second node stopped" && node.LogicalNodeID == "shenzhen-office")
+					data, err := json.Marshal([]any{map[string]any{
+						"Name": "/" + container, "Image": binding.ImageID,
+						"State":  map[string]any{"Running": running},
+						"Config": map[string]any{"Labels": map[string]string{"org.zpr.evaluation-install": binding.InstallID}},
+						"NetworkSettings": map[string]any{"Networks": map[string]any{
+							binding.Network: map[string]string{"IPAddress": node.SubstrateAddress},
+						}},
+					}})
+					return string(data), err
+				}
+				container := args[1]
+				for _, node := range binding.Nodes {
+					if node.Container != container {
+						continue
+					}
+					if failure == "third node ZPR" && node.LogicalNodeID == "tijuana-plant" {
+						return `[{"addr_info":[{"local":"fd5a:5052::ffff"}]}]`, nil
+					}
+					return `[{"addr_info":[{"local":"` + node.ZPRAddress + `"}]}]`, nil
+				}
+				t.Fatalf("ZPR address read outside the binding: %v", args)
+				return "", nil
+			}
+			err := verifySimulatorRetainedTopology(context.Background(), organization, run)
+			if (err == nil) != (failure == "") {
+				t.Fatalf("inspection result for %q: %v", failure, err)
+			}
+			if failure == "" && len(inspected) != 3 {
+				t.Fatalf("not every node container was inspected: %v", inspected)
+			}
+		})
+	}
+}

@@ -234,3 +234,116 @@ func TestEvaluationSimulatorRetainedBindingsAcceptExplicitInventory(t *testing.T
 		t.Fatalf("explicit inventory was not preserved: %s", runtime)
 	}
 }
+
+// Multi-node bindings (G6) must bind exactly this install's own data-plane
+// topology: the docking container first, then the install's -node-<name>
+// containers at their deterministic addresses.
+func retainedMultiNodeFixture(t *testing.T) (string, evaluationInventory) {
+	t.Helper()
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := testEvaluationDataPlaneConfig()
+	config.SimulatorPort = 28788
+	for _, spec := range []string{"shenzhen-office@22.54,114.06", "tijuana-plant@32.53,-117.03"} {
+		node, err := parseEvaluationDataPlaneNode(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		config.DataPlaneNodes = append(config.DataPlaneNodes, node)
+	}
+	inventory, err := prepareEvaluation(filepath.Join(parent, "evaluation"), config, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parent, inventory
+}
+
+func retainedMultiNodeBindingNodes(inventory evaluationInventory) []map[string]any {
+	topology := evaluationDataPlaneTopology(inventory)
+	nodes := make([]map[string]any, 0, len(topology))
+	for index, node := range topology {
+		logical := node.Name
+		nodes = append(nodes, map[string]any{
+			"logical_node_id":   logical,
+			"container":         evaluationDataPlaneNodeContainer(inventory, index),
+			"substrate_address": node.Substrate,
+			"zpr_address":       node.ZPR,
+		})
+	}
+	return nodes
+}
+
+func TestEvaluationSimulatorRetainedMultiNodeBindingContract(t *testing.T) {
+	parent, inventory := retainedMultiNodeFixture(t)
+	write := func(t *testing.T, mutate func(map[string]any)) (json.RawMessage, json.RawMessage, error) {
+		t.Helper()
+		document := retainedBindingsDocument(t, inventory, func(binding, _ map[string]any) {
+			for _, key := range []string{"logical_node_id", "node_container", "substrate_address", "zpr_address"} {
+				delete(binding, key)
+			}
+			binding["nodes"] = retainedMultiNodeBindingNodes(inventory)
+			if mutate != nil {
+				mutate(binding)
+			}
+		})
+		path := filepath.Join(t.TempDir(), "retained-machine-runtime.json")
+		if err := os.WriteFile(path, document, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		binding, runtime, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory, "")
+		return binding, runtime, err
+	}
+	t.Run("valid multi-node binding is accepted verbatim", func(t *testing.T) {
+		binding, runtime, err := write(t, nil)
+		if err != nil || len(binding) == 0 || len(runtime) == 0 {
+			t.Fatalf("valid multi-node binding refused: %v", err)
+		}
+	})
+	for name, mutate := range map[string]func(map[string]any){
+		"mixed single-node fields": func(binding map[string]any) {
+			binding["logical_node_id"] = "node"
+		},
+		"missing node entry": func(binding map[string]any) {
+			binding["nodes"] = binding["nodes"].([]map[string]any)[:2]
+		},
+		"swapped order": func(binding map[string]any) {
+			nodes := binding["nodes"].([]map[string]any)
+			nodes[1], nodes[2] = nodes[2], nodes[1]
+		},
+		"foreign container": func(binding map[string]any) {
+			binding["nodes"].([]map[string]any)[1]["container"] = "another-container"
+		},
+		"wrong substrate address": func(binding map[string]any) {
+			binding["nodes"].([]map[string]any)[1]["substrate_address"] = "10.9.9.9"
+		},
+		"wrong zpr address": func(binding map[string]any) {
+			binding["nodes"].([]map[string]any)[2]["zpr_address"] = "fd5a:5052::9"
+		},
+		"duplicate logical ids": func(binding map[string]any) {
+			nodes := binding["nodes"].([]map[string]any)
+			nodes[2]["logical_node_id"] = nodes[1]["logical_node_id"]
+		},
+		"empty logical id": func(binding map[string]any) {
+			binding["nodes"].([]map[string]any)[0]["logical_node_id"] = ""
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := write(t, mutate); err == nil {
+				t.Fatalf("unsafe multi-node binding accepted: %s", name)
+			}
+		})
+	}
+	t.Run("single-node binding refuses a multi-node install", func(t *testing.T) {
+		document := retainedBindingsDocument(t, inventory, nil)
+		path := filepath.Join(t.TempDir(), "retained-machine-runtime.json")
+		if err := os.WriteFile(path, document, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, err := loadEvaluationSimulatorRetainedBindings(path, inventory, ""); err == nil {
+			t.Fatal("single-node binding accepted against a multi-node install")
+		}
+	})
+	_ = parent
+}
