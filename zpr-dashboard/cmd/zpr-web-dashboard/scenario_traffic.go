@@ -152,6 +152,11 @@ func waitForScenarioPolicyDenial(
 	for {
 		entries, err := readDenials(evidenceContext)
 		if err != nil {
+			// When the bounded evidence window expired mid-read, report the
+			// missing-evidence outcome, not the aborted read.
+			if evidenceContext.Err() != nil {
+				return deny{}, fmt.Errorf("traffic failed without fresh matching Visa Service policy-denial evidence: %w", evidenceContext.Err())
+			}
 			return deny{}, fmt.Errorf("read Visa Service policy-denial evidence: %w", err)
 		}
 		if evidence, ok := findFreshScenarioPolicyDenial(entries, source, destination, since); ok {
