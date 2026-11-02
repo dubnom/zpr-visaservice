@@ -873,18 +873,44 @@ fixed-address arguments are refused until explicitly stopped and recreated.
 Evidence: focused tests for granted-address selection, per-connection
 protected-DNS dialing, publication-readback fail-closed evidence and the
 refused configured listener; full `cmd/zpr-web-dashboard` and
-`cmd/zpr-lab-bootstrap` suites, vet and production build pass. Not yet
-deployed: no install runs this build, no scenario has been rerun, and it is
-unverified whether the applied Velocity/Northstar policies carry
-`provide SimulatorControlService at simulator-control.svc.zpr over TCP 8792`
-(the composed example platform layer does) or whether Northstar's installed
-`9f2cb68c…` data-plane image publishes `svc.zpr` provider records — the
-readback now surfaces that answer explicitly, and the previously recorded
-Northstar image-upgrade blocker is reframed as this open publication
-question. Residual: the legacy simulated-fabric `dashboard-stack.sh`
-single-node path still binds the fixed address and its adapter launches
-still request it as a hint; the multinode path already discovers the granted
-address.
+`cmd/zpr-lab-bootstrap` suites, vet and production build pass. The launcher's
+strict retained-bindings schema accepts the optional `control_dns_name` field
+(`ab1db7a`). Both applied Velocity and Northstar policies already carried
+`provide SimulatorControlService at simulator-control.svc.zpr over TCP 8792`.
+Residual: the legacy simulated-fabric `dashboard-stack.sh` single-node path
+still binds the fixed address and its adapter launches still request it as a
+hint; the multinode path already discovers the granted address.
+
+**Northstar client-service completed live on the dynamic rendezvous
+(2026-11-02):** deployed to the Northstar dev install (launcher r22,
+simulator r18 from `ab1db7a`; Simulator state rotated to
+`simulator-state-northstar-dns3` preserving `workspace/`). The readback
+immediately surfaced, with explicit evidence, that the installed `9f2cb68c…`
+image's Visa Service never published the service alias and — after policy
+vinst 5 removed the superseded vinst-4 address pin (record `fbde61ce`
+revision 3, self-approved review `JD7XE72V7MJOPCUHTV7O2QPP56`, apply
+operation `LSNMC5SIDCBZGB4EKL3UHS2GOH` succeeded) — that the same image
+denied controller flows outright (`eval denied (no match)`), because it
+cannot evaluate the BAS-sourced attribute policy; the old image did publish
+per-adapter identity records (`<asset>.adapters.svc.zpr`), so Northstar's
+retained bindings declare `control_dns_name
+northstar-simulator-control.adapters.svc.zpr`. The data plane was then
+upgraded to `c820f183…` through the maintained `organization-runtime.sh`
+image pin (SHA256SUMS updated, dated backups; binding `image_id` updated;
+BAS adapter re-docked). Live result at 01:47Z: controllers resolved the
+production-published control name to the dynamically granted callback
+address per connection and `client-service` completed all 23 steps —
+onboarded identities, BAS-authorized controllers, machine-control
+heartbeats over ZPR, workloads, publication, traffic and verified clean
+teardown. Velocity's Visa Service DNS publication had been failing since
+23:51Z (stale noise session on its `vs-adapter`, `tun0` NO-CARRIER,
+predating this work); one install restart plus a maintained BAS-adapter
+restart restored publication (zero reconcile failures, records resolving).
+Still open: the Northstar VS subject-snapshot checkpoint is uninitialized
+(the subject-link publication cycle was never run for this install;
+periodic fetch errors are logged and did not gate the machine scenario);
+packages and the Velocity packaged simulator still build from pre-rendezvous
+source and need rebuild/requalification; browser-UI work remains deferred.
 
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
