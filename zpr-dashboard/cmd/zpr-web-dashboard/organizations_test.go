@@ -860,8 +860,8 @@ func TestRedwoodScenarioUsesOrganizationPeopleAndMachineOwners(t *testing.T) {
 	if len(scenarios) != 2 || scenarios[0].ID != "redwood-dispatch-login" || scenarios[1].ID != "redwood-regional-operations" {
 		t.Fatalf("Redwood scenario catalog = %#v", scenarios)
 	}
-	if scenarios[0].Topology == nil || len(scenarios[0].Topology.Nodes) != 2 || len(scenarios[0].Topology.Links) != 1 {
-		t.Fatalf("Redwood topology = %#v, want two nodes and one link", scenarios[0].Topology)
+	if scenarios[0].Topology != nil || scenarios[1].Topology != nil {
+		t.Fatalf("Redwood topology = %#v, want none declared so the retained binding is adopted", scenarios[0].Topology)
 	}
 	organization, err := loadSimulatorOrganization(filepath.Join("examples", "organizations"), "redwood")
 	if err != nil {
