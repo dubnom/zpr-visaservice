@@ -1142,6 +1142,27 @@ endpoint (would offboard all five identities; deferred to an explicit
 deactivation occasion). The 20261102 Velocity/Northstar packages still
 predate these commits.
 
+**Maintained vs-adapter wedge detection/recovery built and used live
+(2026-11-02, `2f4472b`):** `zpr-lab-bootstrap -evaluation-adapter-health`
+replaces the manual stale-noise remedy. Detection is evidence-first from the
+install's node-container log window with a test-pinned contract: only a
+sustained, current loop of the recorded signature (flow_mgmt "no egress
+link" visa-matching errors, noise `HandshakeError` retries) on a
+long-running container is the wedge — startup transients and stale lines are
+explicitly classified as not-the-wedge. Detection alone exits 3 with bounded
+evidence and the proven remedy; `-recover` with explicit install and
+BAS-adapter unit names performs exactly that remedy (install restart, settle,
+signature-free current readback, BAS adapter restart to active), refuses
+blind restarts of a healthy install, and fails closed with defect evidence
+when the wedge persists. **First live use on its first run:** the command
+detected a real recurrence on Northstar (190+ egress-loss lines and 8
+HandshakeErrors sustained 04:58–05:03Z while every unit showed active) and
+`-recover` healed it end to end; post-recovery all Northstar units are
+active, the Room answers 200 and the detector reports no current signature.
+Velocity and load-lab checked healthy. This closes the interim-remedy
+backlog item only: the recurrence itself remains an open data-plane defect
+(DP-K03 class) owned by the data plane.
+
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
 required for the great-lakes/redwood scenarios), the maintained
