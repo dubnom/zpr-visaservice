@@ -27,7 +27,7 @@ func enrollmentTrustFixtureInput(t *testing.T, f pairingServicesFixture) string 
 func TestEvaluationSimulatorEnrollmentTrustDerivesPairedTrust(t *testing.T) {
 	f := newPairingServicesFixture(t)
 	port := pairingFreePort(t)
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	input := enrollmentTrustFixtureInput(t, f)
@@ -88,7 +88,7 @@ func TestEvaluationSimulatorEnrollmentTrustDerivesPairedTrust(t *testing.T) {
 func TestEvaluationSimulatorEnrollmentTrustResumesInterruptedRename(t *testing.T) {
 	f := newPairingServicesFixture(t)
 	port := pairingFreePort(t)
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	input := enrollmentTrustFixtureInput(t, f)
@@ -153,7 +153,7 @@ func TestEvaluationSimulatorEnrollmentTrustRefusesUnsafeInputs(t *testing.T) {
 	paired := func(t *testing.T) (pairingServicesFixture, string) {
 		t.Helper()
 		f := newPairingServicesFixture(t)
-		if err := pairEvaluationSimulatorWithServices(f.state, pairingFreePort(t), f.services, time.Now()); err != nil {
+		if err := pairEvaluationSimulatorWithServices(f.state, pairingFreePort(t), f.services, "", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		return f, enrollmentTrustFixtureInput(t, f)

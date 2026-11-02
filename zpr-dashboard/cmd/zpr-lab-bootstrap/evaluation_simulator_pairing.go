@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"neboagency.com/zpr-dashborad/internal/operatorauth"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
@@ -42,6 +43,7 @@ type evaluationSimulatorPairingPlan struct {
 	Version              int               `json:"version"`
 	SimulatorPort        int               `json:"simulator_port"`
 	OperatorServicesFile string            `json:"operator_services_file"`
+	SessionGrantsFile    string            `json:"session_grants_file,omitempty"`
 	Files                map[string]string `json:"files"`
 	OriginalFiles        map[string]string `json:"original_files"`
 	OperatorInputs       map[string]string `json:"operator_inputs,omitempty"`
@@ -61,6 +63,7 @@ func runEvaluationSimulatorPairing(args []string, stdout, stderr io.Writer) int 
 	state := flags.String("state", "", "existing stopped protected evaluation install directory (required)")
 	port := flags.Int("simulator-port", 0, "separate Simulator HTTPS callback port to register (required)")
 	services := flags.String("operator-services-file", "", "existing protected operator service bindings with a delegation trust override")
+	sessionGrants := flags.String("session-grants-file", "", "optional protected composed Simulator session configuration whose named identities gain this installation's organization grant in the derived paired trust only (requires -operator-services-file)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -77,7 +80,7 @@ func runEvaluationSimulatorPairing(args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, "Invalid local state path.")
 		return 1
 	}
-	if err := pairEvaluationSimulatorWithServices(absolute, *port, *services, time.Now().UTC()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(absolute, *port, *services, *sessionGrants, time.Now().UTC()); err != nil {
 		fmt.Fprintf(stderr, "Simulator pairing: %v\n", err)
 		return 1
 	}
@@ -92,16 +95,25 @@ func runEvaluationSimulatorPairing(args []string, stdout, stderr io.Writer) int 
 // The replacement is staged, recorded in a pending plan and then committed
 // with atomic renames, so an interrupted run resumes instead of reseeding.
 func pairEvaluationSimulator(state string, port int, now time.Time) error {
-	return pairEvaluationSimulatorWithServices(state, port, "", now)
+	return pairEvaluationSimulatorWithServices(state, port, "", "", now)
 }
 
-func pairEvaluationSimulatorWithServices(state string, port int, servicesFile string, now time.Time) error {
+func pairEvaluationSimulatorWithServices(state string, port int, servicesFile, sessionFile string, now time.Time) error {
 	if port == 0 {
 		return errors.New("simulator-port is required for pairing")
 	}
 	if servicesFile != "" && (!filepath.IsAbs(servicesFile) || filepath.Clean(servicesFile) != servicesFile ||
 		strings.ContainsAny(servicesFile, ",\"\r\n=")) {
 		return errors.New("operator-services-file requires a canonical absolute bind-mount-safe path")
+	}
+	if sessionFile != "" {
+		if servicesFile == "" {
+			return errors.New("session-grants-file extends only the derived paired trust; it requires -operator-services-file")
+		}
+		if !filepath.IsAbs(sessionFile) || filepath.Clean(sessionFile) != sessionFile ||
+			strings.ContainsAny(sessionFile, ",\"\r\n=") {
+			return errors.New("session-grants-file requires a canonical absolute bind-mount-safe path")
+		}
 	}
 	lock, err := lockEvaluation(state)
 	if err != nil {
@@ -119,12 +131,12 @@ func pairEvaluationSimulatorWithServices(state string, port int, servicesFile st
 	}
 	defer root.Close()
 	if _, err := root.Lstat(evaluationSimulatorPairingPending); err == nil {
-		return resumeEvaluationSimulatorPairing(root, port, servicesFile)
+		return resumeEvaluationSimulatorPairing(root, port, servicesFile, sessionFile)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return errors.New("cannot inspect pending pairing plan")
 	}
 	if _, err := root.Lstat(evaluationSimulatorPairingPreparing); err == nil {
-		if err := recoverEvaluationSimulatorPreparation(root, port, servicesFile); err != nil {
+		if err := recoverEvaluationSimulatorPreparation(root, port, servicesFile, sessionFile); err != nil {
 			return err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -142,7 +154,7 @@ func pairEvaluationSimulatorWithServices(state string, port int, servicesFile st
 	if inventory.Config.SimulatorPort == port {
 		// readEvaluation already verified every registration artifact.
 		if servicesFile != "" {
-			return ensureEvaluationSimulatorServices(root, state, inventory, servicesFile)
+			return ensureEvaluationSimulatorServices(root, state, inventory, servicesFile, sessionFile)
 		}
 		return nil
 	}
@@ -176,6 +188,10 @@ func pairEvaluationSimulatorWithServices(state string, port int, servicesFile st
 		if services.OperatorDelegationTrustFile == "" {
 			return errors.New("operator services have no delegation trust override; omit -operator-services-file")
 		}
+		sessionGrants, err := loadEvaluationSimulatorSessionGrants(sessionFile, services.Organization)
+		if err != nil {
+			return err
+		}
 		for _, name := range []string{evaluationSimulatorServicesFile, evaluationSimulatorTrustFile} {
 			if _, err := root.Lstat(name); err == nil {
 				return fmt.Errorf("paired operator services target %s already exists; inspect it before pairing", name)
@@ -184,7 +200,7 @@ func pairEvaluationSimulatorWithServices(state string, port int, servicesFile st
 			}
 		}
 		paired, err := renderEvaluationSimulatorServices(state, services,
-			updated, files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"])
+			updated, files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"], sessionGrants)
 		if err != nil {
 			return err
 		}
@@ -222,7 +238,7 @@ func pairEvaluationSimulatorWithServices(state string, port int, servicesFile st
 		return err
 	}
 	plan := evaluationSimulatorPairingPlan{
-		Version: 2, SimulatorPort: port, OperatorServicesFile: servicesFile,
+		Version: 2, SimulatorPort: port, OperatorServicesFile: servicesFile, SessionGrantsFile: sessionFile,
 		Files: digests, OriginalFiles: original, OperatorInputs: operatorInputs,
 	}
 	marker, err := evaluationJSON(plan)
@@ -373,13 +389,14 @@ func captureEvaluationSimulatorPairingTargets(root *os.Root, names []string) (ma
 }
 
 // renderEvaluationSimulatorServices snapshots the explicitly supplied
-// operator-owned bindings without changing their source files or grants.
-func renderEvaluationSimulatorServices(state string, original *evaluationOperatorServices, config evaluationConfig, simulatorKey, simulatorChain []byte) (map[string][]byte, error) {
+// operator-owned bindings without changing their source files or grants; the
+// optional composed-session grants exist only in the derived paired trust.
+func renderEvaluationSimulatorServices(state string, original *evaluationOperatorServices, config evaluationConfig, simulatorKey, simulatorChain []byte, sessionGrants []operatorauth.Grant) (map[string][]byte, error) {
 	trust, err := servicehttp.ReadOperatorFile(original.OperatorDelegationTrustFile, 1<<20, true)
 	if err != nil {
 		return nil, fmt.Errorf("read operator delegation override for pairing: %w", err)
 	}
-	extended, err := extendEvaluationDelegationTrust(trust, config, simulatorKey, simulatorChain)
+	extended, err := extendEvaluationDelegationTrust(trust, config, simulatorKey, simulatorChain, sessionGrants)
 	if err != nil {
 		return nil, fmt.Errorf("extend operator delegation override: %w", err)
 	}
@@ -401,7 +418,7 @@ func renderEvaluationSimulatorServices(state string, original *evaluationOperato
 // registered pairing artifacts — no key is created, rotated or rebound — and
 // writes exactly the content the verification re-derives, through staged
 // private files; partial presence fails closed for inspection.
-func ensureEvaluationSimulatorServices(root *os.Root, state string, inventory evaluationInventory, servicesFile string) error {
+func ensureEvaluationSimulatorServices(root *os.Root, state string, inventory evaluationInventory, servicesFile, sessionFile string) error {
 	_, servicesErr := root.Lstat(evaluationSimulatorServicesFile)
 	_, trustErr := root.Lstat(evaluationSimulatorTrustFile)
 	servicesMissing := errors.Is(servicesErr, os.ErrNotExist)
@@ -413,7 +430,7 @@ func ensureEvaluationSimulatorServices(root *os.Root, state string, inventory ev
 		return errors.New("paired operator service targets are partially present; inspect them before retrying")
 	}
 	if !servicesMissing {
-		return verifyEvaluationSimulatorServices(state, inventory, servicesFile)
+		return verifyEvaluationSimulatorServices(state, inventory, servicesFile, sessionFile)
 	}
 	data, err := servicehttp.ReadOperatorFile(servicesFile, 1<<20, true)
 	if err != nil {
@@ -434,7 +451,11 @@ func ensureEvaluationSimulatorServices(root *os.Root, state string, inventory ev
 	if err != nil {
 		return fmt.Errorf("read registered Simulator client certificate: %w", err)
 	}
-	paired, err := renderEvaluationSimulatorServices(state, &original, inventory.Config, key, chain)
+	sessionGrants, err := loadEvaluationSimulatorSessionGrants(sessionFile, original.Organization)
+	if err != nil {
+		return err
+	}
+	paired, err := renderEvaluationSimulatorServices(state, &original, inventory.Config, key, chain, sessionGrants)
 	if err != nil {
 		return err
 	}
@@ -469,10 +490,10 @@ func ensureEvaluationSimulatorServices(root *os.Root, state string, inventory ev
 	if err := syncRecoveryDirectory(root); err != nil {
 		return err
 	}
-	return verifyEvaluationSimulatorServices(state, inventory, servicesFile)
+	return verifyEvaluationSimulatorServices(state, inventory, servicesFile, sessionFile)
 }
 
-func verifyEvaluationSimulatorServices(state string, inventory evaluationInventory, servicesFile string) error {
+func verifyEvaluationSimulatorServices(state string, inventory evaluationInventory, servicesFile, sessionFile string) error {
 	pairedPath := filepath.Join(state, evaluationSimulatorServicesFile)
 	paired, err := loadEvaluationOperatorServices(pairedPath, state, inventory)
 	if err != nil {
@@ -500,7 +521,11 @@ func verifyEvaluationSimulatorServices(state string, inventory evaluationInvento
 	if err != nil {
 		return fmt.Errorf("read paired Simulator client certificate: %w", err)
 	}
-	expected, err := renderEvaluationSimulatorServices(state, &original, inventory.Config, key, chain)
+	sessionGrants, err := loadEvaluationSimulatorSessionGrants(sessionFile, original.Organization)
+	if err != nil {
+		return err
+	}
+	expected, err := renderEvaluationSimulatorServices(state, &original, inventory.Config, key, chain, sessionGrants)
 	if err != nil {
 		return err
 	}
@@ -583,7 +608,7 @@ func planEvaluationSimulatorPairing(state string, inventory evaluationInventory,
 	trustData, err := os.ReadFile(filepath.Join(state, evaluationDelegationTrust))
 	if err == nil {
 		extended, err := extendEvaluationDelegationTrust(trustData, updated,
-			files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"])
+			files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"], nil)
 		if err != nil {
 			return nil, err
 		}
@@ -635,8 +660,10 @@ func generateEvaluationSimulatorSigner(files map[string][]byte, config evaluatio
 
 // extendEvaluationDelegationTrust appends the independent Simulator key to an
 // existing runtime-written trust document while preserving the retained
-// audience, Room key and exact named grants byte for byte.
-func extendEvaluationDelegationTrust(trustData []byte, config evaluationConfig, simulatorKey, simulatorChain []byte) ([]byte, error) {
+// audience, Room key and exact named grants byte for byte. Optional
+// composed-session grants are appended after the retained grants; they never
+// replace or reorder a retained identity.
+func extendEvaluationDelegationTrust(trustData []byte, config evaluationConfig, simulatorKey, simulatorChain []byte, sessionGrants []operatorauth.Grant) ([]byte, error) {
 	var document map[string]json.RawMessage
 	decoder := json.NewDecoder(bytes.NewReader(trustData))
 	if err := decoder.Decode(&document); err != nil || decoder.Decode(new(any)) != io.EOF {
@@ -658,6 +685,34 @@ func extendEvaluationDelegationTrust(trustData []byte, config evaluationConfig, 
 	if document["keys"], err = json.Marshal(keys); err != nil {
 		return nil, err
 	}
+	if len(sessionGrants) != 0 {
+		var grants []json.RawMessage
+		if json.Unmarshal(document["grants"], &grants) != nil || len(grants) == 0 {
+			return nil, errors.New("operator delegation trust must contain its retained named grants")
+		}
+		retained := map[string]bool{}
+		for _, raw := range grants {
+			var grant operatorauth.Grant
+			if json.Unmarshal(raw, &grant) != nil || grant.Issuer == "" || grant.Subject == "" {
+				return nil, errors.New("operator delegation trust contains an invalid retained grant")
+			}
+			retained[grant.Issuer+"\x00"+grant.Subject] = true
+		}
+		for _, grant := range sessionGrants {
+			if retained[grant.Issuer+"\x00"+grant.Subject] {
+				return nil, errors.New("composed session identity already holds a retained named grant; refuse the ambiguous extension")
+			}
+			retained[grant.Issuer+"\x00"+grant.Subject] = true
+			rendered, err := json.Marshal(grant)
+			if err != nil {
+				return nil, err
+			}
+			grants = append(grants, rendered)
+		}
+		if document["grants"], err = json.Marshal(grants); err != nil {
+			return nil, err
+		}
+	}
 	rendered, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {
 		return nil, err
@@ -665,7 +720,42 @@ func extendEvaluationDelegationTrust(trustData []byte, config evaluationConfig, 
 	return append(rendered, '\n'), nil
 }
 
-func readEvaluationSimulatorPairingPlan(root *os.Root, name string, port int, servicesFile string) (evaluationSimulatorPairingPlan, error) {
+// loadEvaluationSimulatorSessionGrants derives the delegation-trust grants a
+// composed multi-organization Simulator session needs on this installation:
+// each named identity in the verified session configuration is granted
+// exactly this installation's organization with its session permissions.
+// The grants exist only in the derived paired trust; the installation's own
+// runtime-written trust and frozen identities never change, and the load-time
+// override validation independently bounds the added permissions.
+func loadEvaluationSimulatorSessionGrants(path, organization string) ([]operatorauth.Grant, error) {
+	if path == "" {
+		return nil, nil
+	}
+	data, err := servicehttp.ReadOperatorFile(path, 65536, true)
+	if err != nil {
+		return nil, fmt.Errorf("read protected composed session configuration: %w", err)
+	}
+	var config operatorauth.Config
+	if err := decodeEvaluationSimulatorOIDC(data, &config); err != nil {
+		return nil, fmt.Errorf("composed session configuration: %w", err)
+	}
+	if organization == "" {
+		return nil, errors.New("composed session grants require the operator services organization")
+	}
+	grants := make([]operatorauth.Grant, 0, len(config.Grants))
+	for _, grant := range config.Grants {
+		if !slices.Contains(grant.Organizations, organization) {
+			return nil, fmt.Errorf("composed session grant for %q does not span organization %q; compose the members session first", grant.Subject, organization)
+		}
+		grants = append(grants, operatorauth.Grant{
+			Issuer: grant.Issuer, Subject: grant.Subject,
+			Organizations: []string{organization}, Permissions: slices.Clone(grant.Permissions),
+		})
+	}
+	return grants, nil
+}
+
+func readEvaluationSimulatorPairingPlan(root *os.Root, name string, port int, servicesFile, sessionFile string) (evaluationSimulatorPairingPlan, error) {
 	var marker evaluationSimulatorPairingPlan
 	data, err := root.ReadFile(name)
 	if err != nil {
@@ -682,6 +772,9 @@ func readEvaluationSimulatorPairingPlan(root *os.Root, name string, port int, se
 	}
 	if marker.OperatorServicesFile != servicesFile {
 		return marker, errors.New("pending pairing records a different operator-services-file; rerun with the original flag or restore the offline backup")
+	}
+	if marker.SessionGrantsFile != sessionFile {
+		return marker, errors.New("pending pairing records a different session-grants-file; rerun with the original flag or restore the offline backup")
 	}
 	allowed := append([]string{"dex.json", "evaluation.json", evaluationDelegationTrust}, evaluationSimulatorPairingFiles...)
 	required := append([]string{"dex.json", "evaluation.json"}, evaluationSimulatorPairingFiles...)
@@ -772,8 +865,8 @@ func verifyEvaluationSimulatorPairingTargets(root *os.Root, plan evaluationSimul
 	return nil
 }
 
-func recoverEvaluationSimulatorPreparation(root *os.Root, port int, servicesFile string) error {
-	plan, err := readEvaluationSimulatorPairingPlan(root, evaluationSimulatorPairingPreparing, port, servicesFile)
+func recoverEvaluationSimulatorPreparation(root *os.Root, port int, servicesFile, sessionFile string) error {
+	plan, err := readEvaluationSimulatorPairingPlan(root, evaluationSimulatorPairingPreparing, port, servicesFile, sessionFile)
 	if err != nil {
 		return err
 	}
@@ -893,8 +986,8 @@ func validateEvaluationSimulatorPairingCommit(root *os.Root, plan evaluationSimu
 }
 
 // resumeEvaluationSimulatorPairing finishes only the recorded, validated plan.
-func resumeEvaluationSimulatorPairing(root *os.Root, port int, servicesFile string) error {
-	plan, err := readEvaluationSimulatorPairingPlan(root, evaluationSimulatorPairingPending, port, servicesFile)
+func resumeEvaluationSimulatorPairing(root *os.Root, port int, servicesFile, sessionFile string) error {
+	plan, err := readEvaluationSimulatorPairingPlan(root, evaluationSimulatorPairingPending, port, servicesFile, sessionFile)
 	if err != nil {
 		return err
 	}

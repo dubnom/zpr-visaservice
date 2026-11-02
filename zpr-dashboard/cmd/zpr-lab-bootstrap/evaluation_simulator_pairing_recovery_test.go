@@ -206,7 +206,7 @@ func TestSimulatorPairingResumeRejectsChangedOperatorInputs(t *testing.T) {
 				t.Fatal(err)
 			}
 			paired, err := renderEvaluationSimulatorServices(f.state, services, updated,
-				files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"])
+				files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"], nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -241,7 +241,7 @@ func TestSimulatorPairingResumeRejectsChangedOperatorInputs(t *testing.T) {
 			if err := os.WriteFile(path, replacement, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err == nil {
+			if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err == nil {
 				t.Fatal("resume accepted changed operator inputs")
 			}
 			if _, err := os.Stat(filepath.Join(f.state, evaluationSimulatorPairingPending)); err != nil {
@@ -250,7 +250,7 @@ func TestSimulatorPairingResumeRejectsChangedOperatorInputs(t *testing.T) {
 			if err := os.WriteFile(path, original, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+			if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 				t.Fatalf("resume after restoring operator input: %v", err)
 			}
 			if _, err := readEvaluation(f.state, updated); err != nil {
@@ -373,7 +373,7 @@ func TestSimulatorPairingPreparationRefusesChangedOperatorInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	paired, err := renderEvaluationSimulatorServices(f.state, services, updated,
-		files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"])
+		files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"], nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +384,7 @@ func TestSimulatorPairingPreparationRefusesChangedOperatorInputs(t *testing.T) {
 	if err := os.WriteFile(f.trust, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err == nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err == nil {
 		t.Fatal("preparation recovery accepted changed operator inputs")
 	}
 	if got, err := os.ReadFile(filepath.Join(f.state, names[0]+evaluationSimulatorPairingSuffix)); err != nil || !bytes.Equal(got, files[names[0]]) {
@@ -393,7 +393,7 @@ func TestSimulatorPairingPreparationRefusesChangedOperatorInputs(t *testing.T) {
 	if err := os.WriteFile(f.trust, f.original, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatalf("preparation recovery after restoring inputs: %v", err)
 	}
 	if _, err := readEvaluation(f.state, updated); err != nil {
@@ -464,7 +464,7 @@ func TestSimulatorPairingRefusesOperatorInputThatWouldBeReplaced(t *testing.T) {
 	if err := os.WriteFile(f.services, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := pairEvaluationSimulatorWithServices(f.state, pairingFreePort(t), f.services, time.Now()); err == nil ||
+	if err := pairEvaluationSimulatorWithServices(f.state, pairingFreePort(t), f.services, "", time.Now()); err == nil ||
 		!strings.Contains(err.Error(), "also a pairing output") {
 		t.Fatalf("pairing must not overwrite an original operator input: %v", err)
 	}

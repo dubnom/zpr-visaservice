@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"neboagency.com/zpr-dashborad/internal/operatorauth"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
 
@@ -106,7 +107,7 @@ func TestEvaluationSimulatorPairingCLIForwardsOperatorServices(t *testing.T) {
 func TestEvaluationSimulatorPairingPreservesOperatorServicesOverride(t *testing.T) {
 	f := newPairingServicesFixture(t)
 	port := pairingFreePort(t)
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	config := f.inventory.Config
@@ -151,20 +152,20 @@ func TestEvaluationSimulatorPairingPreservesOperatorServicesOverride(t *testing.
 	if _, err := loadEvaluationOperatorServices(f.services, f.state, inventory); err == nil {
 		t.Fatal("stale original trust must not be accepted against the paired base trust")
 	}
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatalf("exact pairing retry failed: %v", err)
 	}
 	pairedBefore := readSubjectFile(t, f.state, evaluationSimulatorTrustFile)
 	if err := os.WriteFile(f.trust, append(f.original, []byte(" ")...), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatalf("format-only original trust change changed the bindings: %v", err)
 	}
 	if err := os.WriteFile(f.trust, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err == nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err == nil {
 		t.Fatal("changed original trust was silently accepted on retry")
 	}
 	if !bytes.Equal(readSubjectFile(t, f.state, evaluationSimulatorTrustFile), pairedBefore) {
@@ -215,7 +216,7 @@ func TestEvaluationSimulatorPairingRejectsUnsafeOperatorServices(t *testing.T) {
 			case "relative-path":
 				path = "relative-services.json"
 			}
-			if err := pairEvaluationSimulatorWithServices(f.state, pairingFreePort(t), path, time.Now()); err == nil {
+			if err := pairEvaluationSimulatorWithServices(f.state, pairingFreePort(t), path, "", time.Now()); err == nil {
 				t.Fatal("unsafe operator services were accepted")
 			}
 			if !bytes.Equal(readSubjectFile(t, f.state, "dex.json"), beforeDex) ||
@@ -247,7 +248,7 @@ func TestEvaluationSimulatorPairingResumesExactOperatorServicesPlan(t *testing.T
 		t.Fatal(err)
 	}
 	paired, err := renderEvaluationSimulatorServices(f.state, services, updated,
-		files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"])
+		files["simulator-delegation-key.pem"], files["simulator-client-chain.pem"], nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +260,7 @@ func TestEvaluationSimulatorPairingResumesExactOperatorServicesPlan(t *testing.T
 		t.Fatal(err)
 	}
 	for _, wrong := range []string{"", filepath.Join(filepath.Dir(f.services), "other.json")} {
-		err := pairEvaluationSimulatorWithServices(f.state, port, wrong, time.Now())
+		err := pairEvaluationSimulatorWithServices(f.state, port, wrong, "", time.Now())
 		if err == nil || !strings.Contains(err.Error(), "different operator-services-file") {
 			t.Fatalf("resume accepted different operator bindings: %v", err)
 		}
@@ -267,7 +268,7 @@ func TestEvaluationSimulatorPairingResumesExactOperatorServicesPlan(t *testing.T
 	if _, err := readEvaluation(f.state, updated); err == nil {
 		t.Fatal("interrupted pairing must prevent startup")
 	}
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatalf("resuming exact pairing failed: %v", err)
 	}
 	inventory, err := readEvaluation(f.state, updated)
@@ -277,7 +278,7 @@ func TestEvaluationSimulatorPairingResumesExactOperatorServicesPlan(t *testing.T
 	if _, err := loadEvaluationOperatorServices(filepath.Join(f.state, evaluationSimulatorServicesFile), f.state, inventory); err != nil {
 		t.Fatalf("resumed bindings failed validation: %v", err)
 	}
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatalf("resumed pairing is not idempotent: %v", err)
 	}
 }
@@ -288,7 +289,7 @@ func TestEvaluationSimulatorPairingResumesExactOperatorServicesPlan(t *testing.T
 func TestEvaluationSimulatorPairingDerivesServicesForAlreadyPairedInstall(t *testing.T) {
 	f := newPairingServicesFixture(t)
 	port := pairingFreePort(t)
-	if err := pairEvaluationSimulatorWithServices(f.state, port, "", time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, "", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{evaluationSimulatorServicesFile, evaluationSimulatorTrustFile} {
@@ -297,7 +298,7 @@ func TestEvaluationSimulatorPairingDerivesServicesForAlreadyPairedInstall(t *tes
 		}
 	}
 	keyBefore := readSubjectFile(t, f.state, "simulator-delegation-key.pem")
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatalf("post-hoc paired services derivation failed: %v", err)
 	}
 	if !bytes.Equal(keyBefore, readSubjectFile(t, f.state, "simulator-delegation-key.pem")) {
@@ -323,15 +324,116 @@ func TestEvaluationSimulatorPairingDerivesServicesForAlreadyPairedInstall(t *tes
 		t.Fatal("post-hoc derivation changed grants or did not add only the Simulator key")
 	}
 	// Idempotent: the rerun verifies the exact derived content.
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err != nil {
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err != nil {
 		t.Fatalf("verification rerun failed: %v", err)
 	}
 	// Partial presence fails closed for inspection.
 	if err := os.Remove(filepath.Join(f.state, evaluationSimulatorServicesFile)); err != nil {
 		t.Fatal(err)
 	}
-	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, time.Now()); err == nil ||
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err == nil ||
 		!strings.Contains(err.Error(), "partially present") {
 		t.Fatalf("partial paired services were not refused: %v", err)
+	}
+}
+
+func writeTestComposedSessionConfig(t *testing.T, issuer, subject string, organizations, permissions []string) string {
+	t.Helper()
+	config := operatorauth.Config{
+		Version: 1, Issuer: issuer, ClientID: "zpr-simulator",
+		RedirectURL: issuer + "/auth/operator/callback", SessionLifetimeSeconds: 3600,
+		Grants: []operatorauth.Grant{{Issuer: issuer, Subject: subject, Organizations: organizations, Permissions: permissions}},
+	}
+	if err := config.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(recoveryTempDir(t), "composed-session.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestEvaluationSimulatorPairingComposedSessionGrants proves the one-button
+// activation trust contract: pairing with -session-grants-file adds the
+// composed home-session identity to the DERIVED paired trust only, scoped to
+// exactly this organization, while the retained named grants, the original
+// operator inputs and the install's own trust stay byte-identical.
+func TestEvaluationSimulatorPairingComposedSessionGrants(t *testing.T) {
+	f := newPairingServicesFixture(t)
+	port := pairingFreePort(t)
+	permissions := evaluationSimulatorOperatorPermissions(true)
+	session := writeTestComposedSessionConfig(t, "https://home.invalid:15556", "home-admin",
+		[]string{"home-org", "velocity"}, permissions)
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, session, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	config := f.inventory.Config
+	config.SimulatorPort = port
+	inventory, err := readEvaluation(f.state, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairedPath := filepath.Join(f.state, evaluationSimulatorServicesFile)
+	if _, err := loadEvaluationOperatorServices(pairedPath, f.state, inventory); err != nil {
+		t.Fatalf("paired services with the composed session grant cannot start: %v", err)
+	}
+	var before, trust operatordelegation.Config
+	if json.Unmarshal(f.original, &before) != nil ||
+		json.Unmarshal(readSubjectFile(t, f.state, evaluationSimulatorTrustFile), &trust) != nil {
+		t.Fatal("invalid delegation trust")
+	}
+	if len(trust.Grants) != len(before.Grants)+1 ||
+		!reflect.DeepEqual(trust.Grants[:len(before.Grants)], before.Grants) {
+		t.Fatalf("retained grants changed: %+v", trust.Grants)
+	}
+	composed := trust.Grants[len(trust.Grants)-1]
+	if composed.Issuer != "https://home.invalid:15556" || composed.Subject != "home-admin" ||
+		!slices.Equal(composed.Organizations, []string{"velocity"}) ||
+		!slices.Equal(composed.Permissions, permissions) {
+		t.Fatalf("composed session grant = %+v", composed)
+	}
+	var base operatordelegation.Config
+	if json.Unmarshal(readSubjectFile(t, f.state, evaluationDelegationTrust), &base) != nil ||
+		slices.ContainsFunc(base.Grants, func(grant operatorauth.Grant) bool { return grant.Subject == "home-admin" }) {
+		t.Fatal("the install's own trust must never gain composed session identities")
+	}
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, session, time.Now()); err != nil {
+		t.Fatalf("exact composed pairing retry failed: %v", err)
+	}
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, "", time.Now()); err == nil {
+		t.Fatal("derived composed trust verified without its declared session grants")
+	}
+}
+
+func TestEvaluationSimulatorPairingComposedSessionFailsClosed(t *testing.T) {
+	f := newPairingServicesFixture(t)
+	port := pairingFreePort(t)
+	issuer := "https://home.invalid:15556"
+	permissions := evaluationSimulatorOperatorPermissions(true)
+	if err := pairEvaluationSimulatorWithServices(f.state, port, "",
+		writeTestComposedSessionConfig(t, issuer, "home-admin", []string{"velocity"}, permissions),
+		time.Now()); err == nil || !strings.Contains(err.Error(), "operator-services-file") {
+		t.Fatalf("session grants without operator services accepted: %v", err)
+	}
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services,
+		writeTestComposedSessionConfig(t, issuer, "home-admin", []string{"home-org"}, permissions),
+		time.Now()); err == nil || !strings.Contains(err.Error(), "does not span") {
+		t.Fatalf("session not spanning the organization accepted: %v", err)
+	}
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services,
+		writeTestComposedSessionConfig(t, issuer, "home-admin", []string{"velocity"}, []string{"monitor.read"}),
+		time.Now()); err == nil || !strings.Contains(err.Error(), "bounded to the Simulator session permissions") {
+		t.Fatalf("session permissions outside the Simulator bound accepted: %v", err)
+	}
+	memberIssuer := f.inventory.Config.browserOrigin(f.inventory.Config.OIDCPort)
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services,
+		writeTestComposedSessionConfig(t, memberIssuer, "named-admin", []string{"velocity"}, permissions),
+		time.Now()); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("session grant shadowing a retained identity accepted: %v", err)
 	}
 }

@@ -332,12 +332,27 @@ func decodeEvaluationDelegationTrust(data []byte, config *operatordelegation.Con
 	return config.Validate()
 }
 
+// evaluationComposedSessionPermissions bounds the additional named grants a
+// derived paired delegation trust may carry for a composed multi-organization
+// Simulator session: exactly the Simulator session permission universe (the
+// frozen Simulator grant plus its explicit override additions), never the
+// Room operator or subject-link administration contracts.
+func evaluationComposedSessionPermissions() []string {
+	permissions := slices.Clone(evaluationSimulatorOperatorPermissions(true))
+	for _, permission := range evaluationSimulatorOIDCOverridePermissions {
+		if !slices.Contains(permissions, permission) {
+			permissions = append(permissions, permission)
+		}
+	}
+	return permissions
+}
+
 func validateEvaluationDelegationOverride(configured, original operatordelegation.Config, organization string) error {
 	if configured.Version != original.Version || configured.Audience != original.Audience ||
-		!reflect.DeepEqual(configured.Keys, original.Keys) || len(configured.Grants) != len(original.Grants) {
+		!reflect.DeepEqual(configured.Keys, original.Keys) || len(configured.Grants) < len(original.Grants) {
 		return errors.New("operator delegation override must preserve retained audience, keys and named identities")
 	}
-	for i, grant := range configured.Grants {
+	for i, grant := range configured.Grants[:len(original.Grants)] {
 		base := original.Grants[i]
 		if grant.Issuer != base.Issuer || grant.Subject != base.Subject ||
 			!slices.Equal(grant.Organizations, base.Organizations) ||
@@ -357,6 +372,25 @@ func validateEvaluationDelegationOverride(configured, original operatordelegatio
 			(slices.Contains(grant.Permissions, "budget.approve") &&
 				!slices.Contains(grant.Permissions, "approval.self")) {
 			return errors.New("operator delegation override may add approval.self only to existing named approvers and bounded budget.approve only alongside approval.self")
+		}
+	}
+	// Additional grants are the composed multi-organization Simulator session
+	// identities: scoped to exactly this organization, distinct from every
+	// retained identity, and bounded to the Simulator session permissions.
+	composed := evaluationComposedSessionPermissions()
+	for _, grant := range configured.Grants[len(original.Grants):] {
+		if !slices.Equal(grant.Organizations, []string{organization}) {
+			return errors.New("composed session grants must be scoped to exactly this organization")
+		}
+		if slices.ContainsFunc(original.Grants, func(base operatorauth.Grant) bool {
+			return base.Issuer == grant.Issuer && base.Subject == grant.Subject
+		}) {
+			return errors.New("composed session grants must not shadow retained named identities")
+		}
+		for _, permission := range grant.Permissions {
+			if !slices.Contains(composed, permission) {
+				return errors.New("composed session grants are bounded to the Simulator session permissions")
+			}
 		}
 	}
 	return nil
