@@ -1043,13 +1043,20 @@ phase):** a maintained single-call offboarding endpoint mirrors onboarding —
 `POST /api/simulator/organizations/{organization}/enrollment/offboarding`
 with the asset ID and an explicit reason — and executes fail-closed recorded
 stages: resolve the asset's enrollment record through the authorized relay
-(exact revision and key fingerprints), cancel it through the existing
-explicit Simulator-signed review path (the proven mechanism from the
-Northstar stranded-claim cleanup), then remove the Simulator workspace
-bundle only after the registry cancellation succeeds; operator-owned
-endpoint identity directories are reported for explicit operator removal,
-never deleted by the Simulator; a partial failure persists the operation
-record and stops. Acceptance: an offboarded asset can no longer
+(exact revision and key fingerprints), revoke it in the registry, then remove
+the Simulator workspace bundle only after the registry revocation succeeds;
+operator-owned endpoint identity directories are reported for explicit
+operator removal, never deleted by the Simulator; a partial failure persists
+the operation record and stops. **Verified design constraint (2026-11-02):**
+the Enrollment Service has no revocation path for approved enrollments —
+`Cancel` accepts only `invited`/`pending_approval` and decisions are only
+approved/rejected — so offboarding requires a new explicit, audited
+registry operation (approved → revoked) before the Simulator endpoint can
+exist: its authorization (reuse `approve` or a distinct `revoke` permission)
+is an open decision, BAS token issuance must refuse revoked assets (the
+300-second token lifetime bounds residual validity), and the Northstar
+stranded-claim cancel path is NOT sufficient for approved assets.
+Acceptance: an offboarded asset can no longer
 BAS-authenticate or re-dock, its flows lose visas at the next sweep, and the
 enrollment inventory and workspace are verifiably clean. Scope decision for
 review (not yet approved): "teardown" is proposed to mean explicit
