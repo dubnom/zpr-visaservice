@@ -1214,8 +1214,8 @@ multi-node install. Test-pinned on both sides with the full suites, vet and
 both builds passing. Live status is in the great-lakes record below; still
 open for G6: per-machine docking-node selection in the retained machine
 runtime (machines currently dock at the docking node; endpoints already
-choose nodes via `node_host`), redwood, and the five-organization
-seventeen-scenario acceptance matrix.
+choose nodes via `node_host`) and the five-organization seventeen-scenario
+acceptance matrix (redwood bring-up itself is done — see its record below).
 
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling:
 the multi-node retained topology binding (G6) and the maintained
@@ -1264,7 +1264,38 @@ authorized chain (budget 201, preflight zero blockers, approve, run 202) with
 addresses and a fully active mesh" — the first multi-node scenario on the
 paired on-the-fly model. All four organizations are healthy at session end.
 Open: great-lakes' business scenarios need their 13-machine identity set and
-workload policy (not tonight's scope), redwood, and the acceptance matrix.
+workload policy (not tonight's scope) and the acceptance matrix; redwood
+followed the same night (record below).
+
+**Redwood provisioned as the fifth paired organization — the maintained
+command is now repeatable (2026-11-02, through `ed5dbe3`):** redwood came up
+on the same approved on-the-fly model with a two-node retained topology
+(docking `north-hub` plus `regional-yard` at the install's deterministic
+addresses) and, unlike great-lakes, required **zero new provisioning-command
+fixes**: all eight stages of `-evaluation-provision-organization` completed
+on the completion run (exit 0) using the contracts proven the first time.
+Same maintained-path sequence with dated backups: image pin to the current
+`c820f183…` data-plane image; the self-approval derivations; the enrollment
+catalog gaining the simulator-control/echo-service profiles and
+service-adapter/workload endpoint types redwood's declared assets need;
+pairing and derived trusts at the 23xxx block; BAS at 23996/23997 with the
+class-based policy applied through the self-approved pipeline (record
+`a1a75a16…` revision 2, apply `2VO7WMEJ2H5C2PSGHSJ4BYGFQD`, vinst 2); BAS
+adapter docked; preflight saved through the Room; three on-the-fly assets
+(redwood-simulator-control, machine-01 controller and echo-service) onboarded
+via the single-call endpoint (3×201), assembled, each `bas-authorized`;
+control-TLS and the two-node bindings; both node containers verified with an
+active substrate mesh (`10.205.202.2↔.3:5000 Active`). One generic gap was
+found live and fixed in the repo: `prepare-retained-machine-control.sh`
+hardcoded machine-03/machine-05 while redwood's inventory uses machine-01 —
+the script now takes machine identities as arguments and issues missing
+machine certificates additively from the existing control CA without
+touching existing identities (`ed5dbe3`); after the additive machine-01
+issuance the scenario preflight's machine-runtime check passed. Redwood's
+own scenarios still declare the legacy demo topology and have no approved
+budget evidence, so no scenario was run — that is acceptance-matrix scope.
+All five organizations (velocity, northstar, load-lab, great-lakes, redwood)
+are healthy at session end.
 
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
