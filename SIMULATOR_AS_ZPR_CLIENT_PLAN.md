@@ -960,19 +960,35 @@ the remaining organizations. `load-lab-fanout` has not run.
 
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
-required for the great-lakes/redwood scenarios), maintained per-organization
-provisioning commands extending the `-evaluation-bas` pattern (pairing,
-control-TLS, retained bindings, declared-endpoint catalog — today hand-built
-per organization), a maintained data-plane image upgrade path for frozen
+required for the great-lakes/redwood scenarios), the maintained
+per-organization provisioning command (now scoped by the approved on-the-fly
+decision below: it provisions pairing, BAS and declared endpoints, not
+retained inventory), a maintained data-plane image upgrade path for frozen
 installs, race-free delegation-trust derivation (today the install must be
 stopped to avoid racing the state walk), and fail-fast capability preflight
 that verifies installed-image contract assumptions with explicit evidence
-before scenario execution. Open proposal (user-suggested 2026-11-01, no
-approved requirement yet): retire the retained machine inventory in favor of
-on-the-fly provisioning — onboard at activation and offboard at teardown
-through the existing declared-endpoint chain, class-based policy matching by
-profile/type claims instead of per-asset pins, and per-run control-TLS —
-trading scenario start time for the production-shaped provisioning contract.
+before scenario execution.
+
+**Approved decision — on-the-fly provisioning replaces retained inventory for
+new organizations (user-approved 2026-11-01):** new organizations are not
+provisioned with a pre-enrolled retained machine inventory. Instead the
+scenario's endpoints are declared in the organization catalog, onboarded at
+explicit activation through the existing proven declared-endpoint chain
+(invitation, device claim, named self-approval, bundle handoff), used by the
+run, and offboarded at teardown; policy matches endpoint classes by
+BAS-sourced `profile`/`type` claims instead of per-asset identity pins, and
+control-TLS is issued per activation. The accepted trade is slower scenario
+starts for the production-shaped provisioning contract with near-zero per-org
+pre-provisioning. Velocity and Northstar are grandfathered on their reviewed
+retained contracts until explicitly migrated; their retained records above
+remain the authority for those installs. Load-lab is finished the new way,
+not by hand-building retained inventory. Open design work before
+implementation: the offboard-at-teardown contract (revocation/cancellation so
+the enrollment registry stays bounded, fail-closed on partial teardown), the
+class-based workload policy shape replacing per-asset defines, and per-run or
+per-activation control-TLS issuance. The dynamic machine-control rendezvous
+(granted addresses, production DNS names, mTLS-only trust) is a prerequisite
+and is already live.
 
 ### Delivery discipline and completion
 
