@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -29,7 +30,9 @@ import (
 // pairing-derived enrollment administration trust, BAS provisioning). Stages
 // whose outcomes are observable files are verified with explicit evidence
 // (onboarded endpoint identity bundles, control-TLS material, the
-// machine-runtime contract including the pinned controller digest). Stages
+// machine-runtime contract including the pinned controller digest, and the
+// Visa Service's operator-configured trusted-service HTTPS wiring to BAS —
+// without it endpoint admission fails only at the first machine scenario). Stages
 // that live inside running services (the organization enrollment readiness
 // preflight and the class-based workload policy applied through the
 // self-approved pipeline) are never inferred: the manifest must carry the
@@ -410,6 +413,7 @@ func evaluateProvisioningStages(plan evaluationProvisioningPlan, manifestPath st
 		"-token-listen", plan.BASTokenListen, "-adapter-image", plan.BASAdapterImage)
 
 	if blocked {
+		add(evaluationProvisioningStage{Name: "visa-bas-trust", Kind: "verified"})
 		add(evaluationProvisioningStage{Name: "enrollment-preflight", Kind: "attested"})
 		add(evaluationProvisioningStage{Name: "endpoint-onboarding", Kind: "verified"})
 		add(evaluationProvisioningStage{Name: "control-tls", Kind: "verified"})
@@ -417,6 +421,8 @@ func evaluateProvisioningStages(plan evaluationProvisioningPlan, manifestPath st
 		add(evaluationProvisioningStage{Name: "workload-policy", Kind: "attested"})
 		return record
 	}
+
+	add(verifyProvisioningVisaBASTrust(plan))
 
 	if plan.PreflightAttestation == "" {
 		add(evaluationProvisioningStage{Name: "enrollment-preflight", Kind: "attested", Status: "blocked",
@@ -468,6 +474,107 @@ func verifyProvisioningOnboarding(plan evaluationProvisioningPlan) evaluationPro
 	stage.Status = "verified"
 	stage.Evidence = fmt.Sprintf("%d declared assets have complete identity bundles under %s", len(plan.DeclaredAssets), plan.EndpointsRoot)
 	return stage
+}
+
+// provisioningVisaBASFiles are the BAS-issued files the Visa Service needs to
+// validate on-the-fly endpoint admissions over HTTPS, relative to the BAS dir.
+func provisioningVisaBASFiles(plan evaluationProvisioningPlan) []string {
+	return []string{
+		filepath.Join(plan.BASDir, "bas-ca.pem"),
+		filepath.Join(plan.BASDir, plan.Organization+"-visa-service-runtime.pem"),
+		filepath.Join(plan.BASDir, plan.Organization+"-visa-service-runtime.key"),
+		filepath.Join(plan.BASDir, "token-signing.key"),
+	}
+}
+
+// verifyProvisioningVisaBASTrust verifies the operator Visa Service
+// configuration wires the organization's BAS as an HTTPS trusted service:
+// without [trusted_service_http.<org>-enrollment-bas] and the BAS runtime
+// files mounted read-only, VS authorize_connect fails only at the first
+// machine scenario ("missing HTTPS and token-key configuration").
+func verifyProvisioningVisaBASTrust(plan evaluationProvisioningPlan) evaluationProvisioningStage {
+	stage := evaluationProvisioningStage{Name: "visa-bas-trust", Kind: "verified"}
+	blockedWith := func(format string, args ...any) evaluationProvisioningStage {
+		stage.Status = "blocked"
+		stage.Evidence = fmt.Sprintf(format, args...)
+		return stage
+	}
+	serviceID := plan.Organization + "-enrollment-bas"
+	data, err := os.ReadFile(plan.OperatorServicesFile)
+	if err != nil {
+		return blockedWith("operator services file %s is unreadable", plan.OperatorServicesFile)
+	}
+	var services struct {
+		VisaServiceConfigFile    string   `json:"visa_service_config_file"`
+		VisaServiceReadOnlyFiles []string `json:"visa_service_read_only_files"`
+	}
+	if json.Unmarshal(data, &services) != nil || services.VisaServiceConfigFile == "" {
+		return blockedWith("operator services file %s must name the operator Visa configuration in visa_service_config_file", plan.OperatorServicesFile)
+	}
+	required := provisioningVisaBASFiles(plan)
+	for _, name := range required {
+		info, err := os.Lstat(name)
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+			return blockedWith("BAS Visa Service runtime file %s is missing; the BAS stage emits it next to the adapter material", name)
+		}
+		if !slices.Contains(services.VisaServiceReadOnlyFiles, name) {
+			return blockedWith("operator services visa_service_read_only_files must mount %s into the data plane for the Visa Service", name)
+		}
+	}
+	table, err := provisioningTOMLTable(services.VisaServiceConfigFile, "trusted_service_http."+serviceID)
+	if err != nil {
+		return blockedWith("operator Visa configuration %s: %v", services.VisaServiceConfigFile, err)
+	}
+	_, tokenPort, err := net.SplitHostPort(plan.BASTokenListen)
+	if err != nil {
+		return blockedWith("BAS token listener %q is not an IP:port", plan.BASTokenListen)
+	}
+	expected := map[string]string{
+		"url":                         "https://auth.zpr:" + tokenPort,
+		"ca_cert":                     required[0],
+		"client_cert":                 required[1],
+		"client_key":                  required[2],
+		"token_verification_key_file": required[3],
+	}
+	for key, value := range expected {
+		if table[key] != value {
+			return blockedWith("operator Visa configuration %s: [trusted_service_http.%s] must set %s = %q so endpoint admission can validate against this organization's BAS", services.VisaServiceConfigFile, serviceID, key, value)
+		}
+	}
+	stage.Status = "verified"
+	stage.Evidence = fmt.Sprintf("operator Visa configuration wires %s over HTTPS at auth.zpr:%s with its BAS runtime files mounted read-only", serviceID, tokenPort)
+	return stage
+}
+
+// provisioningTOMLTable extracts the string keys of one named TOML table with
+// a strict minimal scan; it exists to verify operator-owned wiring, not to be
+// a general TOML parser.
+func provisioningTOMLTable(path, name string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, errors.New("configuration file is unreadable")
+	}
+	table := map[string]string{}
+	inTable := false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			inTable = line == "["+name+"]"
+			continue
+		}
+		if !inTable || line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		table[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"`)
+	}
+	if len(table) == 0 {
+		return nil, fmt.Errorf("missing the [%s] table", name)
+	}
+	return table, nil
 }
 
 func verifyProvisioningControlTLS(plan evaluationProvisioningPlan) evaluationProvisioningStage {

@@ -50,10 +50,48 @@ func writeProvisioningBaseTree(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(enrollment, "control"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"delegation-trust-self-approval.json", "service-development.json", "operator-services.json"} {
+	for _, name := range []string{"delegation-trust-self-approval.json", "service-development.json"} {
 		if err := os.WriteFile(filepath.Join(enrollment, name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	bas := filepath.Join(enrollment, "bas")
+	if err := os.MkdirAll(bas, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	basFiles := []string{"bas-ca.pem", "org-visa-service-runtime.pem", "org-visa-service-runtime.key", "token-signing.key"}
+	for _, name := range basFiles {
+		if err := os.WriteFile(filepath.Join(bas, name), []byte("synthetic"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	policy := filepath.Join(base, "policy", "org")
+	if err := os.MkdirAll(policy, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	visaConfig := filepath.Join(policy, "guarded-vs.toml")
+	visaTable := "[identity]\nname = \"vs\"\n\n[trusted_service_http.org-enrollment-bas]\n" +
+		"url = \"https://auth.zpr:22997\"\n" +
+		"ca_cert = \"" + filepath.Join(bas, "bas-ca.pem") + "\"\n" +
+		"client_cert = \"" + filepath.Join(bas, "org-visa-service-runtime.pem") + "\"\n" +
+		"client_key = \"" + filepath.Join(bas, "org-visa-service-runtime.key") + "\"\n" +
+		"token_verification_key_file = \"" + filepath.Join(bas, "token-signing.key") + "\"\n"
+	if err := os.WriteFile(visaConfig, []byte(visaTable), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	services := map[string]any{
+		"visa_service_config_file": visaConfig,
+		"visa_service_read_only_files": []string{
+			filepath.Join(bas, "bas-ca.pem"), filepath.Join(bas, "org-visa-service-runtime.pem"),
+			filepath.Join(bas, "org-visa-service-runtime.key"), filepath.Join(bas, "token-signing.key"),
+		},
+	}
+	encoded, err := json.Marshal(services)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(enrollment, "operator-services.json"), encoded, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	for _, name := range []string{"control-ca.crt", "server.crt", "server.key"} {
 		if err := os.WriteFile(filepath.Join(enrollment, "control", name), []byte("synthetic"), 0o600); err != nil {
@@ -243,7 +281,7 @@ func TestProvisioningRunsStagesAndRecordsCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	var record evaluationProvisioningRecord
-	if err := json.Unmarshal(data, &record); err != nil || !record.Complete || len(record.Stages) != 8 {
+	if err := json.Unmarshal(data, &record); err != nil || !record.Complete || len(record.Stages) != 9 {
 		t.Fatalf("provisioning record invalid: %s (%v)", data, err)
 	}
 	for _, stage := range record.Stages {
@@ -332,6 +370,65 @@ func TestProvisioningMachineRuntimeContractFailsClosed(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			code := runEvaluationProvisionOrganizationWith([]string{"-manifest", path}, &stdout, &stderr, capture.delegates())
 			if code != 3 || !strings.Contains(stdout.String(), "machine-runtime") {
+				t.Fatalf("%s accepted: code=%d output=%s", name, code, stdout.String())
+			}
+		})
+	}
+}
+
+func TestProvisioningVisaBASTrustFailsClosed(t *testing.T) {
+	for name, mutate := range map[string]func(t *testing.T, base string){
+		"missing trusted-service table": func(t *testing.T, base string) {
+			path := filepath.Join(base, "policy", "org", "guarded-vs.toml")
+			if err := os.WriteFile(path, []byte("[identity]\nname = \"vs\"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"wrong BAS url": func(t *testing.T, base string) {
+			path := filepath.Join(base, "policy", "org", "guarded-vs.toml")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mutated := strings.Replace(string(data), "https://auth.zpr:22997", "https://auth.zpr:31997", 1)
+			if err := os.WriteFile(path, []byte(mutated), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"runtime files not mounted": func(t *testing.T, base string) {
+			path := filepath.Join(base, "enrollment", "org", "operator-services.json")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var services map[string]any
+			if err := json.Unmarshal(data, &services); err != nil {
+				t.Fatal(err)
+			}
+			delete(services, "visa_service_read_only_files")
+			mutated, err := json.Marshal(services)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, mutated, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"missing BAS runtime file": func(t *testing.T, base string) {
+			if err := os.Remove(filepath.Join(base, "enrollment", "org", "bas", "token-signing.key")); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			base := writeProvisioningBaseTree(t)
+			mutate(t, base)
+			path := provisioningTestManifest(t, base, true)
+			capture := &provisioningStageCapture{}
+			var stdout, stderr bytes.Buffer
+			code := runEvaluationProvisionOrganizationWith([]string{"-manifest", path}, &stdout, &stderr, capture.delegates())
+			if code != 3 || !strings.Contains(stdout.String(), "visa-bas-trust") ||
+				!strings.Contains(stdout.String(), "blocked") {
 				t.Fatalf("%s accepted: code=%d output=%s", name, code, stdout.String())
 			}
 		})
