@@ -129,6 +129,8 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 			return "create", organization, true
 		case len(parts) == 6 && parts[4] == "enrollment" && parts[5] == "onboarding" && method == http.MethodPost:
 			return "create", organization, true
+		case len(parts) == 6 && parts[4] == "enrollment" && parts[5] == "offboarding" && method == http.MethodPost:
+			return "revoke", organization, true
 		case len(parts) == 6 && parts[4] == "enrollment" && parts[5] == "credential-check" && method == http.MethodPost:
 			return "device.lifecycle", organization, true
 		case len(parts) == 8 && parts[4] == "enrollment" && parts[5] == "invitations" && parts[6] != "" && parts[7] == "cancel" && method == http.MethodPost:

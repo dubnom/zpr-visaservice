@@ -1052,20 +1052,50 @@ the Enrollment Service has no revocation path for approved enrollments —
 `Cancel` accepts only `invited`/`pending_approval` and decisions are only
 approved/rejected — so offboarding requires a new explicit, audited
 registry operation (approved → revoked) before the Simulator endpoint can
-exist: its authorization (reuse `approve` or a distinct `revoke` permission)
-is an open decision, BAS token issuance must refuse revoked assets (the
+exist, BAS token issuance must refuse revoked assets (the
 300-second token lifetime bounds residual validity), and the Northstar
 stranded-claim cancel path is NOT sufficient for approved assets.
 Acceptance: an offboarded asset can no longer
 BAS-authenticate or re-dock, its flows lose visas at the next sweep, and the
-enrollment inventory and workspace are verifiably clean. Scope decision for
-review (not yet approved): "teardown" is proposed to mean explicit
-organization deactivation/reset — identities persist across scenario runs
-and the bounded registry comes from deactivation-time offboarding — rather
-than per-run teardown, which would additionally require automatic per-run
-onboarding and runtime bundle wiring before it could hold. Per-run
-offboarding remains the eventual full on-the-fly contract once activation
-onboarding feeds the machine runtime directly.
+enrollment inventory and workspace are verifiably clean.
+**Approved decisions (user, 2026-11-02):** revocation is gated by a new
+distinct `revoke` permission (not a reuse of `approve`), and "teardown" means
+explicit organization deactivation/reset — identities persist across scenario
+runs and the bounded registry comes from deactivation-time offboarding.
+Per-run offboarding remains the eventual full on-the-fly contract once
+activation onboarding feeds the machine runtime directly, and would
+additionally require automatic per-run onboarding and runtime bundle wiring
+before it could hold.
+
+**Registry revocation and the Simulator offboarding endpoint implemented in
+source (2026-11-02):** the audited approved → revoked registry operation and
+the single-call offboarding endpoint above exist in source with the full
+suite, vet and dev/production builds passing; nothing has been exercised
+live. The Enrollment Service store gained `Revoke` — the only exit from the
+approved state, bound to the exact reviewed revision and both recorded key
+fingerprints, revision-bumping and audited as `revoked` — exposed as
+`POST /api/enrollment/v1/invitations/{id}/revoke` and gated everywhere
+(enrollment principal configuration, operator-delegation grants, the
+Control-Service relay proxy) by the approved distinct `revoke` permission.
+A revoked asset leaves the active-asset uniqueness set, so a genuinely new
+invitation can be created later, and Simulator enrollment readiness treats
+`revoked` like `cancelled`: terminal, never blocking new onboarding. BAS
+refusal is inherent and now test-pinned: every exchange stage re-reads the
+registry requiring the approved state and the revocation revision bump
+invalidates outstanding nonces and codes, leaving only already-issued tokens
+for their bounded 300-second lifetime. The Simulator endpoint
+(`POST /api/simulator/organizations/{organization}/enrollment/offboarding`,
+session permission `revoke`) executes the fail-closed recorded stages exactly
+as designed: inventory-read resolves the single approved record,
+registry-revoke relays the bound revocation, and only then is the
+Simulator-owned workspace bundle (key bundle plus canonical onboarding
+record) removed; operator-owned identity directories are reported for
+explicit operator removal, and every partial failure persists an attempt
+record and stops. Still open: wiring offboarding into explicit organization
+deactivation/reset, granting `revoke` in live operator-delegation trust
+files, a package rebuild carrying the change, and the live acceptance run
+(revoked asset refused by BAS on an install, visas lost at the next sweep,
+inventory and workspace verifiably clean).
 
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,

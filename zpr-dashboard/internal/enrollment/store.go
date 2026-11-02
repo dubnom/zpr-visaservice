@@ -607,6 +607,53 @@ func (s *Store) CancelReviewedWithRuntimeKey(ctx context.Context, organization, 
 	return i, nil
 }
 
+// Revoke performs the explicit audited approved → revoked registry operation
+// used for asset offboarding. It binds to the exact reviewed record: the
+// current revision and both recorded key fingerprints. Revocation is the only
+// exit from the approved state; a revoked asset leaves the active uniqueness
+// set, so a genuinely new invitation may be created for the asset later.
+func (s *Store) Revoke(ctx context.Context, organization, id, principal, reason, fingerprint, runtimeFingerprint string, revision int, now time.Time) (Invitation, error) {
+	if !validText(principal) || !validText(reason) || revision < 1 || now.IsZero() {
+		return Invitation{}, ErrInvalid
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Invitation{}, err
+	}
+	defer tx.Rollback()
+	i, err := readInvitation(ctx, tx, organization, id, now)
+	if err != nil {
+		return Invitation{}, err
+	}
+	if i.Revision != revision {
+		return Invitation{}, ErrRevision
+	}
+	if i.KeyFingerprint != fingerprint || i.RuntimeKeyFingerprint != runtimeFingerprint {
+		return Invitation{}, ErrInvalid
+	}
+	if i.State != "approved" {
+		return Invitation{}, ErrUnavailable
+	}
+	decided := now.UTC()
+	i.State, i.DecisionBy, i.DecisionReason = "revoked", principal, reason
+	i.DecidedAt, i.Revision = &decided, i.Revision+1
+	if _, err := tx.ExecContext(ctx, `UPDATE invitations SET state=? WHERE id=? AND organization=?`,
+		i.State, id, organization); err != nil {
+		return Invitation{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE invitation_reviews SET revision=?,decision_by=?,decision_reason=?,decided_at=? WHERE invitation_id=?`,
+		i.Revision, principal, reason, now.UnixNano(), id); err != nil {
+		return Invitation{}, err
+	}
+	if err := audit(ctx, tx, i, principal, "revoked", now); err != nil {
+		return Invitation{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Invitation{}, err
+	}
+	return i, nil
+}
+
 func (s *Store) transition(ctx context.Context, organization, id, codeHash, fingerprint, principal, action string, now, approvalExpires time.Time) (Invitation, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

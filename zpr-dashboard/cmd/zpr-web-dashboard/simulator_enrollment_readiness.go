@@ -149,10 +149,10 @@ func (h *simulatorEnrollmentReadinessHandler) serve(auth operatorEnrollmentAutho
 				case invitation.State == "approved" && status != "approved-retained":
 					status = "approval-expired"
 					prerequisite = fmt.Sprintf("endpoint %s approval expired at %s", asset, invitation.ApprovalExpiresAt.UTC().Format(time.RFC3339))
-				case invitation.State == "cancelled":
-					// A cancelled invitation is the explicit terminal
-					// reconciliation and leaves no identity; it never blocks
-					// genuinely new onboarding for the asset.
+				case invitation.State == "cancelled" || invitation.State == "revoked":
+					// A cancelled or revoked invitation is the explicit
+					// terminal reconciliation and leaves no active identity;
+					// it never blocks genuinely new onboarding for the asset.
 				case status == "missing":
 					status = "not-approved"
 					prerequisite = fmt.Sprintf("endpoint %s enrollment is not approved (state: %s)", asset, invitation.State)

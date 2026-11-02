@@ -173,7 +173,7 @@ func operatorEnrollmentProxy(auth operatorEnrollmentAuthorizer, signer *operator
 		case r.Method == "POST" && path == "invitation-batches/approve":
 			permission = "approve"
 		case r.Method == "POST" && len(parts) == 3 && parts[0] == "invitations" && parts[1] != "" &&
-			slices.Contains([]string{"cancel", "approve", "reject"}, parts[2]):
+			slices.Contains([]string{"cancel", "approve", "reject", "revoke"}, parts[2]):
 			permission = parts[2]
 		default:
 			deny(http.StatusNotFound, "Unknown enrollment operation.")

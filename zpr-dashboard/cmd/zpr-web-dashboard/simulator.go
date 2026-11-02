@@ -264,6 +264,7 @@ func runSimulator(listen string) (runErr error) {
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/enrollment/invitations", simulatorEnrollmentInvitationCreate(security.auth, signer))
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/enrollment/invitations/{id}/cancel", simulatorEnrollmentInvitationCancel(security.auth, signer))
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/enrollment/onboarding", newSimulatorEnrollmentOnboardingHandler().serve(security.auth, signer))
+	mux.HandleFunc("POST /api/simulator/organizations/{organization}/enrollment/offboarding", newSimulatorEnrollmentOffboardingHandler().serve(security.auth, signer))
 	mux.HandleFunc("POST /api/simulator/organizations/{organization}/enrollment/credential-check", newSimulatorEnrollmentCredentialCheckHandler().serve(security.auth, signer))
 	mux.HandleFunc("GET /simulator-navigation.json", handleSimulatorNavigationConfig)
 	mux.HandleFunc("GET /api/simulator/network", handleSimulatorNetworkMetadata)

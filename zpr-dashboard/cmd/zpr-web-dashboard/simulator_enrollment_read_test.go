@@ -87,6 +87,7 @@ type simulatorEnrollmentRelayFixture struct {
 	createCalls     atomic.Int32
 	cancelCalls     atomic.Int32
 	approveCalls    atomic.Int32
+	revokeCalls     atomic.Int32
 	invitationsBody string
 	// approvedInvitationsBody, when set, is returned by the invitations read
 	// after at least one approval mutation, modeling the authorized readback
@@ -94,6 +95,7 @@ type simulatorEnrollmentRelayFixture struct {
 	approvedInvitationsBody string
 	failStatus              int
 	approveStatus           int
+	revokeStatus            int
 	lastMutation            atomic.Value
 }
 
@@ -134,7 +136,7 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 		}},
 		Grants: []operatorauth.Grant{{
 			Issuer: identity.Issuer, Subject: identity.Subject,
-			Organizations: identity.Organizations, Permissions: []string{"read", "create", "cancel", "approve", "reject"},
+			Organizations: identity.Organizations, Permissions: []string{"read", "create", "cancel", "approve", "reject", "revoke"},
 		}},
 	}, &simulatorEnrollmentTestReplayStore{})
 	if err != nil {
@@ -172,6 +174,8 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 			strings.HasSuffix(r.URL.Path, "/cancel")
 		approval := strings.HasPrefix(r.URL.Path, operatordelegation.Prefix+"invitations/") &&
 			strings.HasSuffix(r.URL.Path, "/approve")
+		revocation := strings.HasPrefix(r.URL.Path, operatordelegation.Prefix+"invitations/") &&
+			strings.HasSuffix(r.URL.Path, "/revoke")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == operatordelegation.Prefix+"invitations" &&
 			r.URL.RawQuery == "organization="+organization:
@@ -230,6 +234,22 @@ func newSimulatorEnrollmentRelayFixture(t *testing.T, organization string) *simu
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":"ABCDEFGHIJKLMNOPQRSTUVWX23","state":"approved","revision":3}`))
+		case r.Method == http.MethodPost && revocation && r.URL.RawQuery == "":
+			var request map[string]any
+			if json.Unmarshal(body, &request) != nil || request["organization"] != organization ||
+				request["key_fingerprint"] == "" || request["runtime_key_fingerprint"] == "" || request["reason"] == "" {
+				t.Errorf("revocation mutation lacks bound fingerprints and reason: %s", body)
+				http.Error(w, "invalid revocation", http.StatusBadRequest)
+				return
+			}
+			fixture.revokeCalls.Add(1)
+			fixture.lastMutation.Store(string(body))
+			if fixture.revokeStatus != 0 {
+				http.Error(w, "revocation denied", fixture.revokeStatus)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"ABCDEFGHIJKLMNOPQRSTUVWX23","state":"revoked","revision":5}`))
 		default:
 			t.Errorf("unexpected relay request %s %s", r.Method, r.URL.RequestURI())
 			http.Error(w, "unexpected request", http.StatusBadRequest)

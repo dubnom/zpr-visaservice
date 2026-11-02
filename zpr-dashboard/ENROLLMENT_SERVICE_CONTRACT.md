@@ -22,7 +22,11 @@ and fingerprint alongside the enrollment proof key. Claim and status proofs
 must be signed by both private keys, and operator review/cancellation binds
 both displayed fingerprints and the invitation revision. This binding alone
 does not deliver runtime credentials or implement the approved, one-time
-Keychain-to-root handoff.
+Keychain-to-root handoff. The current invitation store also implements an
+audited invitation-level approved → revoked operation
+(`POST /api/enrollment/v1/invitations/{id}/revoke`, gated by the distinct
+organization-scoped `revoke` permission, refused by BAS issuance); this is
+not the proposed device-identity revocation/propagation contract below.
 
 The separate [private BAS command](./cmd/zpr-enrollment-bas/main.go) now
 implements durable one-time nonce/code exchanges and HS384 access tokens for

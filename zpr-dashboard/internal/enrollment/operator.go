@@ -172,6 +172,8 @@ func operatorMutationEvent(r *http.Request, body []byte, grant operatorauth.Gran
 			action, permission = "enrollment.invitation.approve", "approve"
 		case "reject":
 			action, permission = "enrollment.invitation.reject", "reject"
+		case "revoke":
+			action, permission = "enrollment.invitation.revoke", "revoke"
 		default:
 			return auditcontract.Event{}, false, nil
 		}

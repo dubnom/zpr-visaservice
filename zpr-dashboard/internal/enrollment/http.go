@@ -87,7 +87,7 @@ func (c Config) validate(requirePrincipals bool) error {
 			}
 		}
 		for _, permission := range principal.Permissions {
-			if !slices.Contains([]string{"read", "create", "cancel", "approve", "reject", "approval.self"}, permission) {
+			if !slices.Contains([]string{"read", "create", "cancel", "approve", "reject", "revoke", "approval.self"}, permission) {
 				return errors.New("unknown enrollment permission")
 			}
 			if (permission == "approve" || permission == "reject") && c.ApprovalLifetimeSeconds == 0 {
@@ -150,6 +150,7 @@ func newAdminHandler(store *Store, config Config, operator bool) (http.Handler, 
 	mux.HandleFunc("POST "+APIPrefix+"invitations/{id}/cancel", api.cancel)
 	mux.HandleFunc("POST "+APIPrefix+"invitations/{id}/approve", api.decide)
 	mux.HandleFunc("POST "+APIPrefix+"invitations/{id}/reject", api.decide)
+	mux.HandleFunc("POST "+APIPrefix+"invitations/{id}/revoke", api.revoke)
 	mux.HandleFunc("POST "+APIPrefix+"invitation-batches/review", api.reviewBatch)
 	mux.HandleFunc("POST "+APIPrefix+"invitation-batches/approve", api.approveBatch)
 	mux.HandleFunc("GET "+APIPrefix+"invitation-batches/{digest}", api.getBatchApproval)
@@ -489,6 +490,33 @@ func (api *adminAPI) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := api.store.DecideWithRuntimeKey(r.Context(), input.Organization, r.PathValue("id"), principal.Name,
 		decision, input.Reason, input.KeyFingerprint, input.RuntimeKeyFingerprint, input.Revision, api.now())
+	if err != nil {
+		storeError(w, err)
+		return
+	}
+	apiJSON(w, http.StatusOK, item)
+}
+
+// revoke is the explicit audited approved → revoked registry operation for
+// asset offboarding. It requires the distinct revoke permission and binds to
+// the exact reviewed revision and recorded key fingerprints.
+func (api *adminAPI) revoke(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Organization          string `json:"organization"`
+		Revision              int    `json:"revision"`
+		KeyFingerprint        string `json:"key_fingerprint"`
+		RuntimeKeyFingerprint string `json:"runtime_key_fingerprint"`
+		Reason                string `json:"reason"`
+	}
+	if !readBody(w, r, &input) {
+		return
+	}
+	principal, ok := api.authorize(w, r, input.Organization, "revoke")
+	if !ok {
+		return
+	}
+	item, err := api.store.Revoke(r.Context(), input.Organization, r.PathValue("id"), principal.Name,
+		input.Reason, input.KeyFingerprint, input.RuntimeKeyFingerprint, input.Revision, api.now())
 	if err != nil {
 		storeError(w, err)
 		return
