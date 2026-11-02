@@ -22,7 +22,7 @@ import (
 // organizations and every retained permission are preserved exactly, and
 // approval.self follows its own earlier explicit mechanism, never this one.
 var evaluationSimulatorOIDCOverridePermissions = []string{
-	"read", "create", "cancel", "approve", "reject", "budget.approve",
+	"read", "create", "cancel", "approve", "reject", "revoke", "budget.approve",
 }
 
 // applyEvaluationSimulatorOIDCOverride validates an explicit operator-owned

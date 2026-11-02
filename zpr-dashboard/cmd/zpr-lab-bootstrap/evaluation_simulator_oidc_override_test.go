@@ -58,7 +58,7 @@ func TestEvaluationSimulatorOIDCOverrideAddsOnlyExplicitPermissions(t *testing.T
 	evaluation, env, base := simulatorOIDCOverrideFixture(t)
 	override := base
 	override.Grants = []operatorauth.Grant{base.Grants[0]}
-	override.Grants[0].Permissions = append(slices.Clone(base.Grants[0].Permissions), "read", "budget.approve")
+	override.Grants[0].Permissions = append(slices.Clone(base.Grants[0].Permissions), "read", "revoke", "budget.approve")
 	path := writeSimulatorOIDCOverride(t, override)
 	updated, err := applyEvaluationSimulatorOIDCOverride(evaluation, path, env)
 	if err != nil {
