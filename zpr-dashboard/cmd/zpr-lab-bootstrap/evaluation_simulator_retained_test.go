@@ -182,6 +182,12 @@ func TestEvaluationSimulatorRetainedBindingsFailClosed(t *testing.T) {
 			runtime["machines"] = []map[string]any{{"machine_id": "machine-01"}}
 		}, "complete machine, controller, workload and asset identities"},
 		{"unknown binding field", func(binding, _ map[string]any) { binding["extra"] = true }, "strict JSON"},
+		{"control name outside the production zone", func(_, runtime map[string]any) {
+			runtime["control_dns_name"] = "control.example.com"
+		}, "production svc.zpr zone"},
+		{"unbounded control name", func(_, runtime map[string]any) {
+			runtime["control_dns_name"] = "bad name.svc.zpr"
+		}, "production svc.zpr zone"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := write(t, retainedBindingsDocument(t, inventory, test.mutate))
@@ -210,6 +216,7 @@ func TestEvaluationSimulatorRetainedBindingsAcceptExplicitInventory(t *testing.T
 	parent, _, _, _, inventory := retainedBindingsFixture(t)
 	document := retainedBindingsDocument(t, inventory, func(_, runtime map[string]any) {
 		runtime["control_asset"] = "northstar-simulator-control"
+		runtime["control_dns_name"] = "northstar-simulator-control.adapters.svc.zpr"
 		runtime["machines"] = []map[string]any{
 			{"machine_id": "machine-01", "controller_asset": "northstar-machine-01-controller",
 				"workload": "operations-client", "workload_asset": "northstar-machine-01-operations-client"},

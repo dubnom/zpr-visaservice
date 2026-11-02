@@ -85,6 +85,10 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 		DataPlaneCAFile  string `json:"data_plane_ca_file"`
 		ControlTLSDir    string `json:"control_tls_dir"`
 		CallbackUpstream string `json:"callback_upstream"`
+		// Optional production DNS name controllers resolve for the
+		// machine-control callback; the Simulator revalidates the full
+		// contract, the launcher only enforces the bounded zone shape.
+		ControlDNSName string `json:"control_dns_name"`
 		// Optional explicit per-organization machine inventory; the
 		// Simulator revalidates the full contract, the launcher only
 		// enforces the all-or-nothing shape.
@@ -103,6 +107,10 @@ func loadEvaluationSimulatorRetainedBindings(path string, inventory evaluationIn
 	}
 	if runtime.Version != 1 || runtime.CallbackUpstream == "" {
 		return nil, nil, none, errors.New("retained machine runtime must be version 1 with an explicit callback upstream")
+	}
+	if name := runtime.ControlDNSName; name != "" &&
+		(len(name) > 253 || !strings.HasSuffix(name, ".svc.zpr") || strings.Trim(name, "abcdefghijklmnopqrstuvwxyz0123456789.-") != "") {
+		return nil, nil, none, errors.New("retained control DNS name must be a bounded name in the production svc.zpr zone")
 	}
 	if len(runtime.Machines) == 0 != (runtime.ControlAsset == "") {
 		return nil, nil, none, errors.New("an explicit retained machine inventory requires both its control asset and machines")
