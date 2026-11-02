@@ -1479,6 +1479,30 @@ never-pin-addresses principle, now in scenario data) joins `default-deny`
 as the named legacy-address porting item; it also covers those scenarios'
 remaining deny steps on every organization.
 
+**Organization switching characterized: scenario.reset granted, reset
+subsystem unwired (2026-11-02, `0659450`):** activating an organization in
+the workbench dev environment (fresh full-catalog install) exposed two
+layers. First, the generated Simulator operator grant omitted
+`scenario.reset`, which the audited reset-organization flow's
+status/intent/confirm routes require — new installs now include it, existing
+installs keep their exact frozen identity (the launcher accepts the exact
+known superseded grant rendering instead of refusing to start after an
+upgrade, the first such accepted migration), and the explicit Simulator OIDC
+override allow-list gained `scenario.reset` for existing organizations.
+Second, and still open: the reset-organization subsystem is configured in no
+packaged environment (`SIMULATOR_RESET_ORGANIZATION`/`SIMULATOR_RESET_DB_PATH`
+are set by nothing in packaging or the launcher) and its reviewed contract is
+single-organization, so multi-organization switching through activation has
+never been functional in a full-catalog environment. This is the concrete
+blocker behind G6's "organization switching" criterion: it needs
+per-organization reset scoping and launcher/packaging wiring, recorded here
+as the named open design item. The workbench dev environment was reinstalled
+on `dev-20261102-r10` (clean `0659450`) with the corrected baseline grant;
+the retained prior dev state could not be resumed because the protected
+inventory contract grew without a migration path — the same frozen-install
+upgrade gap already in the design-hardening backlog, now twice-bitten in one
+day.
+
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
 provisioned with a pre-enrolled retained machine inventory. Instead the
