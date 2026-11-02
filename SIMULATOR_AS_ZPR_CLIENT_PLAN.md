@@ -1503,6 +1503,30 @@ inventory contract grew without a migration path — the same frozen-install
 upgrade gap already in the design-hardening backlog, now twice-bitten in one
 day.
 
+**Approved requirement — one-button organization activation (user-stated
+2026-11-02):** an operator in one Simulator must activate any catalog
+organization with a single action; today activation requires that
+organization's own evaluation install registered in the simulator's installs
+file, so switching works only inside each per-organization simulator.
+Grounded gap analysis for implementation: (1) the launcher composes
+`installs-retained.json` with exactly one install from its single
+`-evaluation-state`; it must compose a multi-install registry from several
+installs. (2) Several per-install Simulator credentials are currently
+singular process environment and must move into per-install registry
+entries resolved by the active organization: the Simulator delegation
+signer/key, the budget-authority target and client credentials, the
+machine-control listener/TLS material, the data-plane image pin and the
+callback upstream. (3) The operator session authenticates against one
+install's OIDC issuer; a multi-organization session needs its grant to span
+the registered organizations (or explicit per-organization sessions) with
+each backend still authorizing against its own delegation trust. (4) The
+activation flow on the registry path must switch the active organization,
+onboard the declared endpoints on the fly, and report progress without the
+unwired reset-organization subsystem. Until delivered, one-button
+activation is satisfied per organization by its own paired simulator; the
+estate's five simulators each activate their organization's install
+directly.
+
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
 provisioned with a pre-enrolled retained machine inventory. Instead the
