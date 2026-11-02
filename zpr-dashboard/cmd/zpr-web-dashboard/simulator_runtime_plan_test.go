@@ -257,11 +257,12 @@ func TestSimulatorRuntimePlanPreservesMachineCapAndBlocksFanout(t *testing.T) {
 	}}
 	input.Budget = nil
 	plan = buildSimulatorRuntimePlan(input)
-	if !hasSimulatorRuntimePlanBlocker(plan, "load-test fanout is not executable") {
-		t.Fatalf("fanout blocker missing: %v", plan.Blockers)
+	if hasSimulatorRuntimePlanBlocker(plan, "load-test fanout is not executable") ||
+		hasSimulatorRuntimePlanBlocker(plan, "stress traffic must match") {
+		t.Fatalf("consistent fanout steps must be executable from a runtime plan: %v", plan.Blockers)
 	}
 	if len(plan.Workloads) != 0 {
-		t.Fatalf("fanout produced executable workload declarations: %+v", plan.Workloads)
+		t.Fatalf("fanout steps alone declared workloads: %+v", plan.Workloads)
 	}
 	if len(plan.MachineIDs) != 1 || plan.MachineIDs[0] != "machine-03" {
 		t.Fatalf("load-test profile expanded explicit machine refs: %v", plan.MachineIDs)
@@ -269,7 +270,20 @@ func TestSimulatorRuntimePlanPreservesMachineCapAndBlocksFanout(t *testing.T) {
 	if plan.BudgetStatus != simulatorRuntimeBudgetAbsent || len(plan.BudgetInputs) != 1 ||
 		plan.BudgetInputs[0].FanoutCount == nil || *plan.BudgetInputs[0].FanoutCount != 200 ||
 		plan.BudgetInputs[0].ServiceCount == nil || *plan.BudgetInputs[0].ServiceCount != 100 {
-		t.Fatalf("fanout/service counts are not separate unapproved budget inputs: %+v", plan)
+		t.Fatalf("fanout/service counts are not separate budget inputs: %+v", plan)
+	}
+
+	mismatched := simulatorRuntimePlanTestInput()
+	mismatched.Organization.PackagedProvisioning.Machines = []string{"machine-01", "machine-03", "machine-05"}
+	mismatched.Organization.LoadTest = input.Organization.LoadTest
+	mismatched.Scenario.Steps = []simulatorScenarioStep{{
+		Action: "stress_traffic", Machine: "machine-01", Component: "finance-client",
+		Target: "echo-service",
+	}}
+	mismatched.Budget = nil
+	plan = buildSimulatorRuntimePlan(mismatched)
+	if !hasSimulatorRuntimePlanBlocker(plan, "stress traffic must match the configured client and service workloads") {
+		t.Fatalf("mismatched stress client machine was not blocked: %v", plan.Blockers)
 	}
 }
 
@@ -291,7 +305,7 @@ func TestSimulatorRuntimePlanIncludesCleanupWorkloadDeclarations(t *testing.T) {
 	}
 }
 
-func TestSimulatorRuntimePlanBlocksLoadLabFleetCleanup(t *testing.T) {
+func TestSimulatorRuntimePlanIncludesLoadLabFleetCleanup(t *testing.T) {
 	input := simulatorRuntimePlanTestInput()
 	input.OrganizationID = "load-lab"
 	input.Organization.ID = "load-lab"
@@ -315,8 +329,9 @@ func TestSimulatorRuntimePlanBlocksLoadLabFleetCleanup(t *testing.T) {
 	}
 
 	plan := buildSimulatorRuntimePlan(input)
-	if !hasSimulatorRuntimePlanBlocker(plan, "load-test fanout is not executable") {
-		t.Fatalf("LoadLab fleet cleanup was not blocked: %v", plan.Blockers)
+	if hasSimulatorRuntimePlanBlocker(plan, "load-test fanout is not executable") ||
+		hasSimulatorRuntimePlanBlocker(plan, "service-fleet action must use") {
+		t.Fatalf("LoadLab fleet cleanup on the configured service machine was blocked: %v", plan.Blockers)
 	}
 	if len(plan.MachineIDs) != 1 || plan.MachineIDs[0] != "machine-05" {
 		t.Fatalf("LoadLab cleanup machine refs = %v", plan.MachineIDs)
@@ -325,6 +340,11 @@ func TestSimulatorRuntimePlanBlocksLoadLabFleetCleanup(t *testing.T) {
 		plan.BudgetInputs[0].Action != "stop_service_fleet" ||
 		plan.BudgetInputs[0].ServiceCount == nil || *plan.BudgetInputs[0].ServiceCount != 100 {
 		t.Fatalf("LoadLab cleanup service count input = %+v", plan.BudgetInputs)
+	}
+	input.Scenario.Cleanup[0].Machine = "machine-01"
+	plan = buildSimulatorRuntimePlan(input)
+	if !hasSimulatorRuntimePlanBlocker(plan, "service-fleet action must use the configured service machine") {
+		t.Fatalf("fleet cleanup on the wrong machine was not blocked: %v", plan.Blockers)
 	}
 }
 

@@ -373,13 +373,11 @@ func validateSimulatorRuntimePlanActions(input simulatorRuntimePlanInput, addBlo
 					addBlocker(fmt.Sprintf("%s delay timeout must be between 1 and 30 seconds", stepLabel))
 				}
 			case "start_service_fleet", "stop_service_fleet":
-				addBlocker("load-test fanout is not executable from a runtime plan")
 				profile := input.Organization.LoadTest
 				if profile == nil || step.Machine == "" || step.Machine != profile.ServiceMachine {
 					addBlocker(fmt.Sprintf("%s service-fleet action must use the configured service machine", stepLabel))
 				}
 			case "stress_traffic":
-				addBlocker("load-test fanout is not executable from a runtime plan")
 				profile := input.Organization.LoadTest
 				if profile == nil || step.Machine == "" || step.Machine != profile.ClientMachine ||
 					step.Component != profile.ClientWorkload || step.Target != profile.ServiceWorkload {
