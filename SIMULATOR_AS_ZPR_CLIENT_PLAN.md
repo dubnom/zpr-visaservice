@@ -909,8 +909,24 @@ restart restored publication (zero reconcile failures, records resolving).
 Still open: the Northstar VS subject-snapshot checkpoint is uninitialized
 (the subject-link publication cycle was never run for this install;
 periodic fetch errors are logged and did not gate the machine scenario);
-packages and the Velocity packaged simulator still build from pre-rendezvous
-source and need rebuild/requalification; browser-UI work remains deferred.
+browser-UI work remains deferred.
+
+**Packages rebuilt and Velocity requalified on the dynamic rendezvous
+(2026-11-02):** matching `velocity-paired-20261102` ZPR and Simulator
+archives were built on the workbench from clean `d1336b3` (user-local Go
+toolchain, live `c820f183…` data-plane image pinned, both archives verified
+against their SHA256SUMS), installed beside the retained r2 packages, and
+the Velocity transient unit switched to the new installed Simulator with its
+retained bindings moved to the shared r23 controller (dated backup) and the
+default production control name `simulator-control.svc.zpr`; private
+Simulator state rotated to `simulator-state-r4` preserving `workspace/`.
+Live result: the full authorized chain passed and `velocity-single-node`
+completed all 20 steps from the installed 20261102 package with verified
+container cleanup — both paired organizations now run the dynamic
+rendezvous from package-built binaries of current main, closing the
+mixed-version gap. The 20261102 archives keep the engineering-unqualified
+label: they were built on the same workbench host, not a separate clean
+build host, and browser-UI package acceptance was not rerun.
 
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
