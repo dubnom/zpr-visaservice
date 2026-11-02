@@ -1405,7 +1405,8 @@ pinned binding substrate addresses because single-node installs use dynamic
 Docker subnets (bindings updated with dated backups; their frozen states —
 which digest the binding file — rotated to `simulator-state-r6` and
 `simulator-state-northstar-dns4` preserving `workspace/`), recording a
-durable-fix backlog item: single-node retained bindings pin an inherently
+durable-fix backlog item (closed the same day — see the identity-only
+binding record below): single-node retained bindings pin an inherently
 dynamic substrate address and should verify container identity while
 resolving the address live, or single-node installs should gain the
 deterministic subnet multi-node installs already have; and the first one or
@@ -1413,6 +1414,34 @@ two scenario runs immediately after an install restart can fail on the
 control-callback rendezvous before the stack settles (both such failures
 completed on retry; recurrence under a settled stack remains defect
 evidence). All five organizations healthy at session end.
+
+**Single-node retained bindings pin identity only; dock address resolved
+live (user-approved direction, 2026-11-02, `e0f848d`; estate on
+`velocity-paired-20261102-r4`):** acting on the approved addressing design
+(addresses are dynamic and never pinned; trust comes from pinned
+identities), the single-node retained topology binding no longer declares a
+substrate address — the launcher and the Simulator both refuse one
+fail-closed — and verification pins identity (container name, ownership
+label, image digest, running state, attachment to the install's own network
+and the tun0 ZPR address) while the machine and control-callback dock
+address is resolved live from the verified docking container at start. The
+multi-node form keeps the install's deterministic addresses because
+compiled policy embeds them. Scenario topology nodes may omit the substrate
+(set values are still validated); the retained runtime digest revision was
+bumped (`resolved-dock-address-v3`) so containers started under the
+superseded fixed-address contract are refused. Test-pinned on both sides
+with full suites green. Rolled out estate-wide: packages rebuilt at
+`e0f848d` as `velocity-paired-20261102-r4` and redeployed through the
+maintained swap, the three single-node bindings (velocity, northstar,
+load-lab) migrated to identity-only with dated backups, and their frozen
+states — which digest the binding file — rotated to `simulator-state-r7`,
+`simulator-state-northstar-dns5` and `simulator-state-load-lab-r3`
+preserving `workspace/`. **Proof on the new contract, all first-try:**
+`velocity-single-node` 20/20 (live-resolved dock address end to end),
+`load-lab-fanout` 19/19, and `redwood-regional-operations` (multi-node
+unchanged). Network recreation can no longer strand single-node bindings;
+this closes the substrate-drift class found during the acceptance-matrix
+baseline. All five organizations healthy at session end.
 
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
