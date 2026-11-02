@@ -19,6 +19,11 @@ syntax and explain the effect of each change.
   than inventing a setting or a working endpoint.
 - Explain operational prerequisites and uncertainty, especially for trusted
   providers, resolver settings, node addresses, and protocol/service changes.
+- Do not hard-code a service's or endpoint's dynamic ZPR address: adapters
+  receive Visa-Service-granted addresses and are reached by their published
+  `*.svc.zpr` names, so a trusted provider is keyed by its authenticated
+  adapter identity, not an address. Pin a fixed address only for genuine
+  below-discovery bootstrap infrastructure such as the protected DNS node.
 - Do not insert real credentials. Describe server-side protected secret
   configuration without requesting the secret itself.
 
