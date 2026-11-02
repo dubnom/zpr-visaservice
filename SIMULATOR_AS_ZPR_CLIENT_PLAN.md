@@ -1102,7 +1102,9 @@ workflow (retained inventory is never in the set), assets without an approved
 record are reported already-clean, and the active-organization selection is
 cleared only after every declared endpoint is offboarded. Live status is in
 the acceptance record below: load-lab carries the `revoke` grants and passed
-the acceptance; the qualified package archives still predate these commits.
+the acceptance; the qualified package archives initially predated these
+commits (closed by the 2026-11-02 `velocity-paired-20261102-r2` rebuild
+recorded below).
 
 **Revocation and offboarding accepted live on load-lab (2026-11-02,
 `8355ecb`):** the upgraded load-lab stack ran the full acceptance from
@@ -1139,8 +1141,9 @@ from the upgraded stack with verified container cleanup. Not separately
 exercised: the visas-lost-at-next-sweep clause (the asset had no active
 flows; no scenario was running during revocation) and the live `deactivate`
 endpoint (would offboard all five identities; deferred to an explicit
-deactivation occasion). The 20261102 Velocity/Northstar packages still
-predate these commits.
+deactivation occasion). The 20261102 Velocity/Northstar packages initially
+predated these commits (closed by the `velocity-paired-20261102-r2` rebuild
+recorded below).
 
 **Maintained vs-adapter wedge detection/recovery built and used live
 (2026-11-02, `2f4472b`):** `zpr-lab-bootstrap -evaluation-adapter-health`
@@ -1296,6 +1299,34 @@ own scenarios still declare the legacy demo topology and have no approved
 budget evidence, so no scenario was run — that is acceptance-matrix scope.
 All five organizations (velocity, northstar, load-lab, great-lakes, redwood)
 are healthy at session end.
+
+**Estate consolidated on a single package rebuild (2026-11-02,
+`velocity-paired-20261102-r2` from `01b6d1e`):** the mixed-version live
+stack (operator-tree binaries from the r8–r13 era, hand-deployed
+r18/r20/r21/r22/r23 simulator and launcher builds, and an installed package
+from a pre-revocation revision) was collapsed onto one engineering package
+pair built by the maintained `packaging/evaluation/package.sh` at `01b6d1e`
+(`source_dirty=false`), carrying the estate's pinned `c820f183…` data-plane
+image. Source qualification before the build: the authoritative workstation
+suite (build, vet, full tests) and the offline packaging-script test both
+passed at `01b6d1e`. Deployment kept every existing operator contract: the
+archives were checksum-verified and extracted next to the prior installs;
+the operator tree's binaries — including the pinned paired-install role
+names `zpr-lab-bootstrap.simulator-r11` and `zpr-control-room.scenario-r12`,
+which organization-runtime.sh still requires by name — were repointed to the
+package build with dated `.before-20261102-package` backups and refreshed
+`SHA256SUMS` entries (strict check passing); velocity's simulator now runs
+from the new package's own `simulator.sh`, and the other four simulators run
+the package launcher and simulator binary with their existing states,
+catalogs and arguments. Catalog staging inputs were verified byte-identical
+since the prior package revision, so no frozen simulator state needed
+rotation and none objected on restart. **Result:** all 25 units (five per
+organization) active, Room 200/Simulator 302 on every organization, redwood's
+multi-node mesh active, and no error or freeze lines in any simulator
+journal. `zplc`/`zpr-policy-service` come from a different source tree and
+were not part of this rebuild. The package remains engineering-grade
+(`status=engineering-unqualified`); clean-host qualification is unchanged
+separate work.
 
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
