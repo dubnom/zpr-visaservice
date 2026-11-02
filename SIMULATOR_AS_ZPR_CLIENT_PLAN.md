@@ -1163,6 +1163,38 @@ Velocity and load-lab checked healthy. This closes the interim-remedy
 backlog item only: the recurrence itself remains an open data-plane defect
 (DP-K03 class) owned by the data plane.
 
+**Maintained per-organization provisioning command (2026-11-02, `503f731`,
+verified live):** `zpr-lab-bootstrap -evaluation-provision-organization`
+wraps the proven load-lab sequence behind one resumable fail-closed entry
+point driven by a small operator-owned manifest: the base operator tree, the
+organization, its single pinned data-plane image and the declared on-the-fly
+assets. BAS is part of the minimum ZPR stack, so nothing BAS-specific is
+declared — the adapter runs the pinned image and its listeners derive from
+the install's own recorded browser IP and port block, exactly as every path
+derives from the base-tree convention (explicit overrides exist for
+deviating estates). Stage model: pairing, the pairing-derived enrollment
+administration trust and BAS execute in-process through their existing
+resume-or-verify semantics; onboarded endpoint identity bundles, control-TLS
+material and the machine-runtime contract (pinned controller digest,
+declared-assets-only references) are verified as file evidence; the
+enrollment readiness preflight and the applied class-based workload policy
+are never inferred and require explicit operator attestation pointers in the
+manifest. Each run writes a stage record beside the manifest; incomplete
+runs exit 3 naming the exact bounded next action, and retained inventory is
+never provisioned. **Live verification:** against the stopped, already
+provisioned load-lab install the command completed all eight stages
+(maintained stages resumed and verified, five identity bundles, control-TLS
+and the controller digest verified, both attestations recorded) and exited
+0 with a complete record; the restarted stack came back healthy (Room 200,
+BAS nonce issuance 200, Simulator up) and the adapter-health detector
+correctly classified the restart's three egress-loss lines as startup
+transients. Remaining scope, not regression: the running-service stages
+(preflight save, the onboarding loop, control-TLS generation, bindings
+emission, class-based policy generation/apply) are verified or attested, not
+yet executed, by this command; converting them into executed stages is the
+follow-on increment. A genuinely new organization has not yet been
+provisioned end to end with it.
+
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
 required for the great-lakes/redwood scenarios), the maintained
