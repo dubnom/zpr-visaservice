@@ -1443,6 +1443,42 @@ unchanged). Network recreation can no longer strand single-node bindings;
 this closes the substrate-drift class found during the acceptance-matrix
 baseline. All five organizations healthy at session end.
 
+**Northstar machine enablement: 10/17 on the matrix; deny steps classified
+as legacy-address ports (2026-11-02, through `2174222`; estate on
+`velocity-paired-20261102-r5`):** northstar's three machine-blocked matrix
+cells were enabled on the on-the-fly chain: eight assets (machines
+01/04/06/07, each controller plus finance-client/operations-client/
+metrics-service/internet-gateway workload) onboarded through the single-call
+endpoint, assembled and `bas-authorized` (one onboarding hit an enrollment
+rate limit mid-readback and was cleanly revoked and re-onboarded — `revoke`
+was added to northstar's OIDC override and, via the maintained re-derivation
+against the stopped install, its paired enrollment trust); additive
+control-TLS for the four machines; the retained machine runtime grew their
+entries (frozen state rotated to `simulator-state-northstar-dns6`). The
+workload policy was migrated to the approved class-based form through the
+self-approved pipeline: revision 4 replaced the per-asset machine-03/05
+controller pins with a BAS organization/type machine-controller class and
+added the internet-gateway service; revision 5 added the metrics-service
+publication. Two Simulator gaps were found live and fixed: registry-driven
+paired simulators read expected-deny evidence through their organization's
+operator service exactly like the single-install settings the registry
+replaces (`fedd7b4` — previously the first expected-deny scenario fell
+through to Visa Admin credentials the simulator does not carry), and an
+expired denial-evidence window now reports missing evidence instead of the
+aborted read (`2174222`); the estate was rebuilt and redeployed as
+`velocity-paired-20261102-r5`. **Result:** `internet-gateway-egress`
+completed 19/19 — machine-07's gateway with real internet egress, a new
+matrix cell (10/17 complete). `machine-policy-deny` and `active-team-cycle`
+now run their full machine/login/workload sequences and fail only at
+expected-deny verification, with the explicit cause classified: their deny
+steps ping the legacy demo's fixed `fd00:1:x::1` workload addresses, which
+are never granted on the paired fabric, so the node drops the traffic
+without a Visa Service policy evaluation and no denial evidence can exist.
+Porting expected-deny targets to dynamically resolved addresses (the same
+never-pin-addresses principle, now in scenario data) joins `default-deny`
+as the named legacy-address porting item; it also covers those scenarios'
+remaining deny steps on every organization.
+
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
 provisioned with a pre-enrolled retained machine inventory. Instead the
