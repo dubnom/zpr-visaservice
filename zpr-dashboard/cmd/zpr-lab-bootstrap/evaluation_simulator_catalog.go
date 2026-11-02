@@ -17,6 +17,9 @@ var evaluationSimulatorCatalogIDs = []string{"great-lakes", "load-lab", "northst
 
 // evaluationSimulatorCatalogNodeID reads the packaged catalog profile's
 // published single node for a paired catalog organization.
+// evaluationSimulatorCatalogNodeID returns the organization's published
+// docking node: a single-node profile publishes exactly one node, and a
+// multi-node profile (G6) lists the docking node first.
 func evaluationSimulatorCatalogNodeID(catalog, organization string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(catalog, "organizations", organization+".json"))
 	var profile struct {
@@ -26,9 +29,9 @@ func evaluationSimulatorCatalogNodeID(catalog, organization string) (string, err
 			} `json:"nodes"`
 		} `json:"runtime"`
 	}
-	if err != nil || json.Unmarshal(data, &profile) != nil || len(profile.Runtime.Nodes) != 1 ||
+	if err != nil || json.Unmarshal(data, &profile) != nil || len(profile.Runtime.Nodes) == 0 ||
 		profile.Runtime.Nodes[0].ID == "" {
-		return "", errors.New("the packaged catalog profile must publish exactly one named node for the paired organization")
+		return "", errors.New("the packaged catalog profile must publish the paired organization's named nodes, docking node first")
 	}
 	return profile.Runtime.Nodes[0].ID, nil
 }
