@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -146,9 +147,11 @@ func buildSimulatorRuntimePlan(input simulatorRuntimePlanInput) simulatorRuntime
 	if binding := input.Organization.RetainedTopologyBinding; binding != nil {
 		copy := *binding
 		plan.RetainedTopologyBinding = &copy
-		if input.Scenario.Topology == nil || len(input.Scenario.Topology.Nodes) != 1 ||
-			len(input.Scenario.Topology.Links) != 0 ||
-			input.Scenario.Topology.Nodes[0] != binding.topology().Nodes[0] {
+		// The scenario topology must be exactly the binding's node set — one
+		// node for the reviewed single-node form, every install node in order
+		// for the multi-node form (G6) — with no scenario-declared links.
+		if input.Scenario.Topology == nil || len(input.Scenario.Topology.Links) != 0 ||
+			!slices.Equal(input.Scenario.Topology.Nodes, binding.topology().Nodes) {
 			addBlocker("scenario topology does not match the explicit retained topology binding")
 		}
 	}
