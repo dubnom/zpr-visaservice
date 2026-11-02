@@ -33,6 +33,11 @@ type simulatorRetainedMachineRuntime struct {
 	DataPlaneCAFile  string `json:"data_plane_ca_file"`
 	ControlTLSDir    string `json:"control_tls_dir"`
 	CallbackUpstream string `json:"callback_upstream"`
+	// ControlDNSName optionally overrides the production-published DNS name
+	// controllers resolve to reach the machine-control callback. It must be
+	// a bounded name in the production svc.zpr zone and must match the
+	// organization policy's SimulatorControlService provider alias.
+	ControlDNSName string `json:"control_dns_name,omitempty"`
 	// ControlAsset and Machines, when present, declare this organization's
 	// exact retained inventory: the simulator-control callback identity and
 	// each retained machine with its controller identity and single
@@ -142,7 +147,27 @@ func validateSimulatorRetainedInventory(runtime simulatorRetainedMachineRuntime)
 	return nil
 }
 
-const retainedCallbackAddress = "fd5a:5052:adda:1:ffff:ffff:ffff:fffe"
+// defaultRetainedControlDNSName is the production-published service name for
+// the retained machine-control callback: organization policy provides
+// SimulatorControlService at this name and the production Visa Service
+// publishes the callback adapter's granted address under it. The callback
+// address itself is always dynamic — policy matches the authenticated
+// adapter identity, and trust in the control channel comes exclusively from
+// its pinned mTLS identities, never from an address.
+const defaultRetainedControlDNSName = "simulator-control.svc.zpr"
+
+// retainedControlAddressFile is where the retained callback records the ZPR
+// address the Visa Service actually granted to its adapter.
+const retainedControlAddressFile = "/run/zpr-workloads/control-address"
+
+// controlDNSName returns the production DNS name for the retained
+// machine-control service.
+func (runtime simulatorRetainedMachineRuntime) controlDNSName() string {
+	if runtime.ControlDNSName == "" {
+		return defaultRetainedControlDNSName
+	}
+	return runtime.ControlDNSName
+}
 
 // simulatorRetainedRequiredAssets is the exact reviewed retained Velocity
 // machine-runtime endpoint inventory — the default inventory for bindings
@@ -178,6 +203,9 @@ func validateSimulatorRetainedMachineRuntime(organization simulatorOrganization)
 	portNumber, portErr := strconv.Atoi(port)
 	if err != nil || parseErr != nil || !ip.Is4() || !ip.IsPrivate() || portErr != nil || portNumber < 1024 || portNumber > 65535 {
 		return errors.New("retained callback upstream must be an explicit private IPv4 TLS listener and unprivileged port")
+	}
+	if name := runtime.ControlDNSName; name != "" && (!validScenarioDNSName(name) || !strings.HasSuffix(name, ".svc.zpr")) {
+		return errors.New("retained control DNS name must be a bounded name in the production svc.zpr zone")
 	}
 	return validateSimulatorRetainedInventory(*runtime)
 }
@@ -282,7 +310,11 @@ func retainedRuntimeDigest(organization simulatorOrganization, scope machineCont
 		Binding *simulatorRetainedTopologyBinding
 		Runtime *simulatorRetainedMachineRuntime
 		Scope   machineControlScope
-	}{organization.RetainedTopologyBinding, organization.RetainedMachineRuntime, scope})
+		// Control pins the machine-control rendezvous contract revision so
+		// containers started with the superseded fixed-address arguments are
+		// refused instead of silently reused.
+		Control string
+	}{organization.RetainedTopologyBinding, organization.RetainedMachineRuntime, scope, "granted-address-dns-v2"})
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])
 }
@@ -319,7 +351,7 @@ func retainedContainerOwned(container *retainedContainerState, organization simu
 		labels["org.zpr.runtime-digest"] == retainedRuntimeDigest(organization, scope)
 }
 
-func retainedContainerArguments(organization simulatorOrganization, machine string, scope machineControlScope) []string {
+func retainedContainerArguments(organization simulatorOrganization, machine string, scope machineControlScope, dnsServer string) []string {
 	runtime, binding := *organization.RetainedMachineRuntime, *organization.RetainedTopologyBinding
 	component, name := machine, machineContainerName(machine)
 	if machine == "callback" {
@@ -390,8 +422,7 @@ ip -6 route replace fd5a:5052::/32 dev tun5
 `
 	if machine == "callback" {
 		args = append(args, "-c", script+`exec /usr/local/bin/zpr-machine-controller "$@"`, "retained-callback",
-			"-mode", "machine-control-proxy", "-proxy-listen", "["+retainedCallbackAddress+"]:8792",
-			"-proxy-upstream", runtime.CallbackUpstream)
+			"-mode", "machine-control-proxy", "-proxy-upstream", runtime.CallbackUpstream)
 	} else {
 		script += `cp "$1" "/opt/zpr-workloads/authentication/$2.toml"
 chmod 600 "/opt/zpr-workloads/authentication/$2.toml"
@@ -400,12 +431,54 @@ exec /usr/local/bin/zpr-machine-controller "$@"`
 		args = append(args, "-c", script, "retained-machine",
 			retainedEndpointFiles(runtime, assets[1])[0], workload,
 			"-mode", "machine-controller", "-machine-id", machine,
-			"-control-url", "https://["+retainedCallbackAddress+"]:8792",
+			"-control-url", "https://"+runtime.controlDNSName()+":8792",
+			"-control-dns", dnsServer,
 			"-control-ca", "/run/zpr-machine/control-ca.crt", "-client-cert", "/run/zpr-machine/client.crt",
 			"-client-key", "/run/zpr-machine/client.key", "-zpr-ph", "/opt/zpr-workloads/ph",
 			"-zpr-node-addr", binding.SubstrateAddress+":5000")
 	}
 	return args
+}
+
+// waitForRetainedControlPublication waits for the retained callback to
+// record the ZPR address the Visa Service granted to its adapter, then for
+// the production Visa Service to publish the control service name at exactly
+// that address. It fails closed with explicit evidence when the installed
+// data plane does not publish the name, instead of letting controller waits
+// time out without a cause.
+func waitForRetainedControlPublication(ctx context.Context, organization simulatorOrganization, dnsServer string,
+	run func(context.Context, string, ...string) (string, error)) error {
+	if organization.RetainedMachineRuntime == nil || organization.RetainedTopologyBinding == nil {
+		return errors.New("retained control publication requires the runtime and topology bindings")
+	}
+	runtime, binding := *organization.RetainedMachineRuntime, *organization.RetainedTopologyBinding
+	container := "zpr-simulator-control-" + binding.InstallID
+	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	address := ""
+	for address == "" {
+		output, err := run(waitCtx, "docker", "exec", container, "cat", retainedControlAddressFile)
+		if err == nil {
+			granted, parseErr := netip.ParseAddr(strings.TrimSpace(output))
+			if parseErr != nil || !netip.MustParsePrefix("fd5a:5052::/32").Contains(granted) {
+				return fmt.Errorf("retained callback recorded an invalid granted control address %q", strings.TrimSpace(output))
+			}
+			address = granted.String()
+			break
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("retained callback has not recorded its granted control address: %w", waitCtx.Err())
+		case <-ticker.C:
+		}
+	}
+	name := runtime.controlDNSName() + "."
+	if err := waitForRetainedScenarioDNSRecord(waitCtx, binding, dnsServer, name, address, run); err != nil {
+		return fmt.Errorf("the production Visa Service has not published %s at the callback's granted address %s; verify the organization policy provides SimulatorControlService at that name and that the installed data plane publishes service DNS records: %w", name, address, err)
+	}
+	return nil
 }
 
 func waitForRetainedScenarioDNSRecord(ctx context.Context, binding simulatorRetainedTopologyBinding, server, name, address string,
@@ -444,7 +517,7 @@ func isSimulatorRetainedMachine(runtime *simulatorRetainedMachineRuntime, machin
 	return retained
 }
 
-func retainedMachineAction(ctx context.Context, organization simulatorOrganization, scope machineControlScope, machine, action string,
+func retainedMachineAction(ctx context.Context, organization simulatorOrganization, scope machineControlScope, machine, action, dnsServer string,
 	run func(context.Context, string, ...string) (string, error)) (string, error) {
 	if !isSimulatorRetainedMachine(organization.RetainedMachineRuntime, machine) && machine != "callback" || action != "start" && action != "stop" {
 		return "", errors.New("unsupported retained machine lifecycle operation")
@@ -489,7 +562,7 @@ func retainedMachineAction(ctx context.Context, organization simulatorOrganizati
 			return "", err
 		}
 	}
-	output, err := run(ctx, "docker", retainedContainerArguments(organization, machine, scope)...)
+	output, err := run(ctx, "docker", retainedContainerArguments(organization, machine, scope, dnsServer)...)
 	if err != nil {
 		return output, err
 	}
@@ -519,17 +592,24 @@ func simulatorRetainedMachineAction(ctx context.Context, manifest simulatorManif
 		return "", true, err
 	}
 	if action == "start" {
+		dns := net.ParseIP(manifest.DNSServer)
+		if dns == nil || dns.To4() != nil {
+			return "", true, errors.New("retained machine lifecycle requires the manifest's IPv6 protected DNS server")
+		}
 		if err := verifySimulatorRetainedTopology(ctx, organization, scenarioCommand); err != nil {
 			return "", true, err
 		}
 		if err := verifySimulatorRetainedMachineFiles(organization); err != nil {
 			return "", true, err
 		}
-		if _, err := retainedMachineAction(ctx, organization, scope, "callback", "start", scenarioCommand); err != nil {
+		if _, err := retainedMachineAction(ctx, organization, scope, "callback", "start", manifest.DNSServer, scenarioCommand); err != nil {
+			return "", true, err
+		}
+		if err := waitForRetainedControlPublication(ctx, organization, manifest.DNSServer, scenarioCommand); err != nil {
 			return "", true, err
 		}
 	}
-	output, err := retainedMachineAction(ctx, organization, scope, machine, action, scenarioCommand)
+	output, err := retainedMachineAction(ctx, organization, scope, machine, action, manifest.DNSServer, scenarioCommand)
 	if err != nil || action != "stop" {
 		return output, true, err
 	}
@@ -542,6 +622,6 @@ func simulatorRetainedMachineAction(ctx context.Context, manifest simulatorManif
 			return output, true, nil
 		}
 	}
-	_, err = retainedMachineAction(ctx, organization, scope, "callback", "stop", scenarioCommand)
+	_, err = retainedMachineAction(ctx, organization, scope, "callback", "stop", manifest.DNSServer, scenarioCommand)
 	return output, true, err
 }

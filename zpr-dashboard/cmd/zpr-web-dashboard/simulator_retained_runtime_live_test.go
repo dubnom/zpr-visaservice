@@ -96,7 +96,7 @@ func TestRetainedMachineRuntimeLiveOriginalSteps(t *testing.T) {
 					}
 				}
 			}
-			if _, err := retainedMachineAction(cleanup, organization, scope, machine, "stop", scenarioCommand); err != nil {
+			if _, err := retainedMachineAction(cleanup, organization, scope, machine, "stop", manifest.DNSServer, scenarioCommand); err != nil {
 				t.Errorf("cleanup diagnostic %s: %v", machine, err)
 			}
 			cancel()

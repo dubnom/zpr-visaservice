@@ -37,6 +37,7 @@ func main() {
 	gatewayUpstream := flag.String("gateway-upstream", "", "Fixed HTTPS upstream for the internet-gateway test service")
 	gatewayAllowedHosts := flag.String("gateway-allowed-hosts", "", "Comma-separated allowed hosts for the Simulator web gateway")
 	controlURL := flag.String("control-url", "", "Simulator mTLS heartbeat URL")
+	controlDNS := flag.String("control-dns", "", "Protected DNS server resolving the Simulator control service name")
 	controlCA := flag.String("control-ca", "", "Simulator control CA certificate")
 	clientCert := flag.String("client-cert", "", "Machine controller client certificate")
 	clientKey := flag.String("client-key", "", "Machine controller client key")
@@ -88,7 +89,7 @@ func main() {
 			log.Fatal(err)
 		}
 	case "machine-controller":
-		if err := runMachineController(*machineID, *controlURL, *controlCA, *clientCert, *clientKey, *zprPH, *zprBootstrapKey, *zprNodeAddress, *zprAddress); err != nil {
+		if err := runMachineController(*machineID, *controlURL, *controlDNS, *controlCA, *clientCert, *clientKey, *zprPH, *zprBootstrapKey, *zprNodeAddress, *zprAddress); err != nil {
 			log.Fatal(err)
 		}
 	case "test-service":

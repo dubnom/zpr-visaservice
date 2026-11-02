@@ -14,6 +14,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -185,7 +186,7 @@ func (registry *machineControllerRegistry) snapshot(machineIDs []string, now tim
 	return status
 }
 
-func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBinary, bootstrapKey, nodeAddress, zprAddress string) error {
+func runMachineController(machineID, controlURL, controlDNS, caFile, certFile, keyFile, phBinary, bootstrapKey, nodeAddress, zprAddress string) error {
 	if machineID == "" || controlURL == "" || caFile == "" || certFile == "" || keyFile == "" || phBinary == "" || nodeAddress == "" {
 		return errors.New("machine controller requires machine id, control URL, TLS identity, PH binary, authentication, and node address")
 	}
@@ -273,6 +274,13 @@ func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBi
 		Certificates: []tls.Certificate{certificate},
 		ServerName:   "host.docker.internal",
 	}}
+	if controlDNS != "" {
+		dialContext, dialErr := machineControlDNSDialContext(controlDNS)
+		if dialErr != nil {
+			return dialErr
+		}
+		transport.DialContext = dialContext
+	}
 	client := &http.Client{
 		Timeout:   6 * time.Second,
 		Transport: scopedMachineTransport{base: transport, scope: scope},
@@ -312,6 +320,56 @@ func runMachineController(machineID, controlURL, caFile, certFile, keyFile, phBi
 			time.Sleep(time.Second)
 		}
 	}
+}
+
+// machineControlDNSDialContext resolves the control service host through the
+// production protected DNS server on every connection, so controllers follow
+// the dynamically granted callback address without restarts. The DNS answer
+// is only a dial hint: trust in the control channel comes exclusively from
+// its pinned mTLS certificate identities.
+func machineControlDNSDialContext(server string) (func(context.Context, string, string) (net.Conn, error), error) {
+	address := net.ParseIP(server)
+	if address == nil || address.To4() != nil {
+		return nil, fmt.Errorf("protected DNS server %q is not an explicit IPv6 address", server)
+	}
+	return machineControlResolverDialContext(net.JoinHostPort(server, "53")), nil
+}
+
+func machineControlResolverDialContext(dnsAddress string) func(context.Context, string, string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, "tcp", dnsAddress)
+	}}
+	return func(ctx context.Context, network, target string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(target)
+		if err != nil {
+			return nil, err
+		}
+		if net.ParseIP(host) == nil {
+			name := host
+			if !strings.HasSuffix(name, ".") {
+				name += "."
+			}
+			resolved, err := resolver.LookupNetIP(ctx, "ip6", name)
+			if err != nil {
+				return nil, fmt.Errorf("resolve %s through protected DNS %s: %w", host, dnsAddress, err)
+			}
+			if len(resolved) == 0 {
+				return nil, fmt.Errorf("protected DNS %s returned no address for %s", dnsAddress, host)
+			}
+			host = preferredGrantedAddress(resolved).String()
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+	}
+}
+
+func preferredGrantedAddress(addresses []netip.Addr) netip.Addr {
+	for _, address := range addresses {
+		if netip.MustParsePrefix("fd5a:5052::/32").Contains(address) {
+			return address
+		}
+	}
+	return addresses[0]
 }
 
 func sendMachineHeartbeat(client *http.Client, controlURL, machineID string) error {
@@ -595,8 +653,8 @@ func stopMachineWorkload(agent string) error {
 
 func runMachineControlProxy(listenAddress, upstreamAddress string) error {
 	if node := os.Getenv("SIMULATION_RETAINED_CALLBACK_NODE"); node != "" {
-		if listenAddress != "["+retainedCallbackAddress+"]:8792" {
-			return errors.New("retained callback proxy requires its configured ZPR listener")
+		if listenAddress != "" {
+			return errors.New("the retained callback binds its granted dynamic ZPR address; a configured listener is refused")
 		}
 		return runRetainedMachineCallback(node, upstreamAddress)
 	}

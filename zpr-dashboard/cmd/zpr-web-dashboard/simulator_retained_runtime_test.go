@@ -67,7 +67,7 @@ func TestRetainedMachineRuntimeValidationAndExactMounts(t *testing.T) {
 	}
 	scope := machineControlScope{OrganizationID: "velocity", Generation: "generation-one"}
 	for _, machine := range []string{"machine-03", "machine-05", "callback"} {
-		args := retainedContainerArguments(organization, machine, scope)
+		args := retainedContainerArguments(organization, machine, scope, "fd5a:5052::53")
 		joined := strings.Join(args, "\n")
 		if strings.Contains(joined, "--privileged") || strings.Contains(joined, "bootstrap") ||
 			strings.Contains(joined, "source="+organization.RetainedMachineRuntime.EndpointRoot+",") {
@@ -80,6 +80,16 @@ func TestRetainedMachineRuntimeValidationAndExactMounts(t *testing.T) {
 			!strings.Contains(joined, `chmod 600 "/opt/zpr-workloads/authentication/$2.toml"`) ||
 			strings.Contains(joined, `ln -s "$1"`)) {
 			t.Fatal("workload authentication must be a protected regular file, not a symlink")
+		}
+		if machine == "callback" {
+			if strings.Contains(joined, "-proxy-listen") || strings.Contains(joined, "fffe") {
+				t.Fatalf("callback must bind its granted dynamic address, not a configured listener: %v", args)
+			}
+		} else {
+			if !strings.Contains(joined, "-control-url\nhttps://simulator-control.svc.zpr:8792") ||
+				!strings.Contains(joined, "-control-dns\nfd5a:5052::53") {
+				t.Fatalf("controller must resolve the production-published control name through the protected DNS: %v", args)
+			}
 		}
 		expectedAsset := "velocity-" + machine + "-controller"
 		if machine == "callback" {
@@ -94,7 +104,7 @@ func TestRetainedMachineRuntimeValidationAndExactMounts(t *testing.T) {
 			t.Fatal("one component received another component's private identity")
 		}
 	}
-	for _, failure := range []string{"no binding", "version", "image", "binary", "path", "upstream"} {
+	for _, failure := range []string{"no binding", "version", "image", "binary", "path", "upstream", "control name", "control zone"} {
 		t.Run(failure, func(t *testing.T) {
 			organization := retainedRuntimeTestOrganization(t)
 			switch failure {
@@ -110,6 +120,10 @@ func TestRetainedMachineRuntimeValidationAndExactMounts(t *testing.T) {
 				organization.RetainedMachineRuntime.EndpointRoot = "/etc/../private"
 			case "upstream":
 				organization.RetainedMachineRuntime.CallbackUpstream = "127.0.0.1:8791"
+			case "control name":
+				organization.RetainedMachineRuntime.ControlDNSName = "bad name.svc.zpr"
+			case "control zone":
+				organization.RetainedMachineRuntime.ControlDNSName = "control.example.com"
 			}
 			if err := validateSimulatorRetainedMachineRuntime(organization); err == nil {
 				t.Fatal("invalid configuration accepted")
@@ -158,7 +172,7 @@ func TestRetainedMachineLifecycleOnlyMutatesOwnedContainerIDs(t *testing.T) {
 					return "", nil
 				}
 			}
-			if _, err := retainedMachineAction(context.Background(), organization, scope, "machine-03", "start", run); err != nil {
+			if _, err := retainedMachineAction(context.Background(), organization, scope, "machine-03", "start", "fd5a:5052::53", run); err != nil {
 				t.Fatal(err)
 			}
 			switch failure {
@@ -171,7 +185,7 @@ func TestRetainedMachineLifecycleOnlyMutatesOwnedContainerIDs(t *testing.T) {
 			case "configuration":
 				container.Config.Labels["org.zpr.runtime-digest"] = "changed"
 			}
-			_, err := retainedMachineAction(context.Background(), organization, scope, "machine-03", "stop", run)
+			_, err := retainedMachineAction(context.Background(), organization, scope, "machine-03", "stop", "fd5a:5052::53", run)
 			if (err == nil) != (failure == "") {
 				t.Fatalf("wrong ownership result: %v", err)
 			}
@@ -302,13 +316,13 @@ func TestRetainedInventoryDeclaresPerOrganizationMachines(t *testing.T) {
 		t.Fatal("declared machine recognition is wrong")
 	}
 	scope := machineControlScope{OrganizationID: organization.ID, Generation: "generation-one"}
-	args := strings.Join(retainedContainerArguments(organization, "machine-01", scope), "\n")
+	args := strings.Join(retainedContainerArguments(organization, "machine-01", scope, "fd5a:5052::53"), "\n")
 	if !strings.Contains(args, "northstar-machine-01-controller") ||
 		!strings.Contains(args, "northstar-machine-01-operations-client") ||
 		!strings.Contains(args, "operations-client") || strings.Contains(args, "velocity-") {
 		t.Fatalf("container arguments do not use the declared inventory: %s", args)
 	}
-	callback := strings.Join(retainedContainerArguments(organization, "callback", scope), "\n")
+	callback := strings.Join(retainedContainerArguments(organization, "callback", scope, "fd5a:5052::53"), "\n")
 	if !strings.Contains(callback, "northstar-simulator-control") || strings.Contains(callback, "velocity-") {
 		t.Fatalf("callback arguments do not use the declared control identity: %s", callback)
 	}
