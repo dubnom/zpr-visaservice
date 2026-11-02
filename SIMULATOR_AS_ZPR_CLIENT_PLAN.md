@@ -1211,11 +1211,10 @@ The launcher's strict bindings schema accepts the multi-node form only when
 it binds exactly this install's own data-plane topology at its deterministic
 containers and addresses, and now refuses a single-node binding against a
 multi-node install. Test-pinned on both sides with the full suites, vet and
-both builds passing. Still open for G6: per-machine docking-node selection in
-the retained machine runtime (machines currently dock at the docking node;
-endpoints already choose nodes via `node_host`), live provisioning of
-great-lakes/redwood as paired multi-node organizations (the maintained
-provisioning command is the path), and the five-organization
+both builds passing. Live status is in the great-lakes record below; still
+open for G6: per-machine docking-node selection in the retained machine
+runtime (machines currently dock at the docking node; endpoints already
+choose nodes via `node_host`), redwood, and the five-organization
 seventeen-scenario acceptance matrix.
 
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling:
@@ -1228,6 +1227,44 @@ frozen installs, race-free delegation-trust derivation (today the install
 must be stopped to avoid racing the state walk), and fail-fast capability
 preflight that verifies installed-image contract assumptions with explicit
 evidence before scenario execution.
+
+**Great-lakes provisioned as the first new organization through the
+maintained command, multi-node live (2026-11-02, through `bae94eb`):**
+great-lakes came up as the fourth paired organization — and the first
+provisioned end to end by `-evaluation-provision-organization` (exit 0, all
+eight stages: pairing, derived enrollment trust and BAS executed; preflight
+and the class-based policy operator-attested; identity bundles, control-TLS
+and the multi-node machine-runtime contract file-verified) — on the approved
+on-the-fly model with the G6 multi-node retained topology binding verified
+live. Maintained-path sequence with dated backups throughout: the
+`organization-runtime.sh` image pin added great-lakes to the current
+`c820f183…` data-plane image; the reviewed self-approval derivations
+(enrollment and control trusts, operator-oidc, enrollment catalog gaining
+simulator-control/service-adapter); pairing at 21788; the paired enrollment
+trust; BAS at 21996/21997 with its auth root and class-based endpoint policy
+(controller/echo-service/simulator-control classes, zero asset pins) applied
+through the self-approved pipeline (record `2227f3fe…` revision 2, review
+`62G3XZHODMXY47EG25RF66BQP2`, apply `BE4A6FY26KWS5UJJGOP364DZUQ`, vinst 2);
+BAS adapter docked ACTIVE; preflight saved through the Room; three on-the-fly
+assets onboarded via the single-call endpoint (3×201) with assembled identity
+directories, each `bas-authorized`; control-TLS via the generic prepare
+script; and the first multi-node retained bindings (docking `milwaukee-hq`
+plus `shenzhen-office`/`tijuana-plant` at the install's deterministic
+addresses, machine-03 inventory). Four fail-closed contracts were found and
+fixed live, each pushed with tests: the provisioning plan resolves the
+operator services file for pairing (`896d552`), pairing derives paired
+service bindings post-hoc for already-paired installs without key rotation
+(`b5c4d77`), multi-node catalog profiles publish their docking node
+(`55504bc`), the runtime plan matches the scenario topology to every binding
+node (`5924c68`), and `verify_multinode_runtime` verifies retained bound
+nodes and their mesh instead of legacy demo containers (`bae94eb`). **Live
+result:** `great-lakes-runtime-verification` completed through the full
+authorized chain (budget 201, preflight zero blockers, approve, run 202) with
+"retained multi-node runtime verified: 3 bound nodes running with their exact
+addresses and a fully active mesh" — the first multi-node scenario on the
+paired on-the-fly model. All four organizations are healthy at session end.
+Open: great-lakes' business scenarios need their 13-machine identity set and
+workload policy (not tonight's scope), redwood, and the acceptance matrix.
 
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
