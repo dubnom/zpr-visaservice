@@ -647,6 +647,11 @@ func (manager *simulatorScenarioManager) resolveCurrentBudgetEvidence(
 	manager.mu.RLock()
 	resolver := manager.budgetEvidenceResolver
 	manager.mu.RUnlock()
+	// A member install with its own credentials answers for its organization;
+	// the process-wide resolver remains the single-install path.
+	if perInstall := simulatorInstallBudgetResolverFor(scope.OrganizationID); perInstall != nil {
+		resolver = perInstall
+	}
 	if resolver == nil {
 		resolver = budgetauthority.UnavailableResolver{}
 	}

@@ -451,6 +451,7 @@ func handleSimulatorOrganizationOperation(w http.ResponseWriter, r *http.Request
 // automatic onboarding of genuinely new profile-declared endpoints remains a
 // separate explicit operation.
 func handleOrdinaryClientActivation(w http.ResponseWriter, r *http.Request, auth operatorEnrollmentAuthorizer, signer *operatordelegation.Signer, organizationID string) {
+	signer = simulatorOperatorSignerFor(organizationID, signer)
 	if operatorAuthorizationDisabled(auth) || signer == nil {
 		writeWorkspaceError(w, http.StatusServiceUnavailable,
 			"Named enrollment delegation is not configured; explicit activation starts no setup (U01-ACTIVATION).")

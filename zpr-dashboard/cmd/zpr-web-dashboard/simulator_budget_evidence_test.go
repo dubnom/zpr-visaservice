@@ -398,3 +398,35 @@ func invalidSimulatorBudgetEvidenceResolver(
 		return evidence, nil
 	})
 }
+
+// TestSimulatorScenarioManagerPerInstallBudgetResolver proves a member
+// install's own budget authority answers for its organization while every
+// other organization keeps the process-wide resolver.
+func TestSimulatorScenarioManagerPerInstallBudgetResolver(t *testing.T) {
+	before := simulatorEvaluationInstallRegistry
+	t.Cleanup(func() { simulatorEvaluationInstallRegistry = before })
+	simulatorEvaluationInstallRegistry = &simulatorEvaluationInstalls{
+		budgetResolvers: map[string]budgetauthority.Resolver{
+			"member-org": simulatorBudgetEvidenceResolverFunc(
+				func(_ context.Context, scope budgetauthority.Scope) (budgetauthority.Evidence, error) {
+					return validSimulatorBudgetEvidence(scope, time.Now()), nil
+				},
+			),
+		},
+	}
+	manager := newSimulatorScenarioManager()
+	setSimulatorBudgetEvidenceResolver(manager, simulatorBudgetEvidenceResolverFunc(
+		func(context.Context, budgetauthority.Scope) (budgetauthority.Evidence, error) {
+			return budgetauthority.Evidence{}, budgetauthority.ErrUnavailable
+		},
+	))
+	ctx := context.Background()
+	memberScope := budgetauthority.Scope{OrganizationID: "member-org", ScenarioID: "scenario", PlanDigest: "sha256:digest"}
+	if evidence, err := manager.resolveCurrentBudgetEvidence(ctx, memberScope); err != nil || evidence.OrganizationID != "member-org" {
+		t.Fatalf("member install budget evidence = %+v, %v", evidence, err)
+	}
+	otherScope := budgetauthority.Scope{OrganizationID: "other-org", ScenarioID: "scenario", PlanDigest: "sha256:digest"}
+	if _, err := manager.resolveCurrentBudgetEvidence(ctx, otherScope); !errors.Is(err, budgetauthority.ErrUnavailable) {
+		t.Fatalf("other organization bypassed the process-wide resolver: %v", err)
+	}
+}

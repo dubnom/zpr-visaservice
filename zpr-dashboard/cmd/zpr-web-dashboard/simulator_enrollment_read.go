@@ -69,6 +69,7 @@ func simulatorEnrollmentInvitations(auth operatorEnrollmentAuthorizer, signer *o
 		if !handler.requestOrganizationMatches(w, r, organization) {
 			return
 		}
+		signer = simulatorOperatorSignerFor(organization, signer)
 		if operatorAuthorizationDisabled(auth) || signer == nil {
 			http.Error(w, "named enrollment delegation is not configured", http.StatusServiceUnavailable)
 			return
@@ -92,6 +93,7 @@ func relaySimulatorEnrollmentInvitations(
 	principal simulatorScenarioPrincipal,
 	organization string,
 ) {
+	signer = simulatorOperatorSignerFor(organization, signer)
 	registry := simulatorEvaluationInstallRegistry
 	if registry == nil {
 		http.Error(w, "paired operator service is unavailable", http.StatusServiceUnavailable)

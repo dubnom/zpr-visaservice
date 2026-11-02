@@ -178,15 +178,19 @@ func newSimulatorDataPlaneEndpointsFromEnv() (*simulatorDataPlaneEndpoints, erro
 	if path == "" {
 		return nil, nil
 	}
-	return newSimulatorDataPlaneEndpoints(path)
+	return newSimulatorDataPlaneEndpoints(path, "")
 }
 
-func newSimulatorDataPlaneEndpoints(path string) (*simulatorDataPlaneEndpoints, error) {
+// newSimulatorDataPlaneEndpoints prefers the member install's own data-plane
+// image; the process-wide image remains the single-install path.
+func newSimulatorDataPlaneEndpoints(path, image string) (*simulatorDataPlaneEndpoints, error) {
 	handoff, dir, err := loadSimulatorDataPlaneHandoff(path)
 	if err != nil {
 		return nil, err
 	}
-	image := strings.TrimSpace(os.Getenv(simulatorDataPlaneImageEnv))
+	if image == "" {
+		image = strings.TrimSpace(os.Getenv(simulatorDataPlaneImageEnv))
+	}
 	if image == "" {
 		image = simulatorDataPlaneDefaultImage
 	}

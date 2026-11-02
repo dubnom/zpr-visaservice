@@ -46,6 +46,17 @@ func configuredOperatorSigner(security *controlRoomSecurity) (*operatordelegatio
 	if configPath == "" || keyPath == "" || security.auth == nil || security.tls == nil {
 		return nil, errors.New("operator delegation requires direct HTTPS/OIDC plus ZPR_OPERATOR_DELEGATION_SIGNER_FILE and ZPR_OPERATOR_DELEGATION_KEY_FILE")
 	}
+	audience := strings.TrimSpace(os.Getenv("ZPR_OPERATOR_DELEGATION_AUDIENCE"))
+	if audience == "" {
+		audience = strings.TrimSpace(os.Getenv("ZPR_CONTROL_SERVICE_URL"))
+	}
+	return loadOperatorDelegationSigner(configPath, keyPath, audience)
+}
+
+// loadOperatorDelegationSigner builds one verified delegation signer bound to
+// its exact configured service audience; it is shared by the process-wide
+// signer and each member install's own per-install signer.
+func loadOperatorDelegationSigner(configPath, keyPath, audience string) (*operatordelegation.Signer, error) {
 	data, err := readOperatorFile(configPath, 65536, false)
 	if err != nil {
 		return nil, err
@@ -53,10 +64,6 @@ func configuredOperatorSigner(security *controlRoomSecurity) (*operatordelegatio
 	var config operatordelegation.SignerConfig
 	if err := decodeOperatorConfig(data, &config); err != nil {
 		return nil, err
-	}
-	audience := strings.TrimSpace(os.Getenv("ZPR_OPERATOR_DELEGATION_AUDIENCE"))
-	if audience == "" {
-		audience = strings.TrimSpace(os.Getenv("ZPR_CONTROL_SERVICE_URL"))
 	}
 	if config.Audience != audience {
 		return nil, errors.New("operator delegation audience must exactly equal its configured service audience")

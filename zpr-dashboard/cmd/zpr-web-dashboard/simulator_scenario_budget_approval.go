@@ -55,6 +55,7 @@ func simulatorScenarioBudgetApproval(auth operatorRequestAuthorizer, signer *ope
 		if !handler.requestOrganizationMatches(w, r, input.OrganizationID) {
 			return
 		}
+		signer = simulatorOperatorSignerFor(input.OrganizationID, signer)
 		if operatorAuthorizationDisabled(auth) || signer == nil {
 			http.Error(w, "named approval delegation is not configured", http.StatusServiceUnavailable)
 			return

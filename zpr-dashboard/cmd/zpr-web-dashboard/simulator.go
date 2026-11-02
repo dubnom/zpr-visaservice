@@ -251,6 +251,11 @@ func runSimulator(listen string) (runErr error) {
 		go dataPlaneEndpoints.run(context.Background())
 		go dataPlaneWorkloads.run(context.Background())
 	}
+	// Per-install delegation mirrors the process-wide signer's requirement:
+	// signed operator delegations exist only behind direct HTTPS/OIDC.
+	if installs.hasDelegationSigners() && (security.auth == nil || security.tls == nil) {
+		return errors.New("per-install operator delegation requires direct HTTPS/OIDC")
+	}
 	staticRoot, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		return err
@@ -384,11 +389,12 @@ func runSimulator(listen string) (runErr error) {
 	controlCert := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_TLS_CERT"))
 	controlKey := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_TLS_KEY"))
 	controlCA := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_CLIENT_CA"))
+	controlListen := ""
 	if controlCert != "" || controlKey != "" || controlCA != "" {
 		if controlCert == "" || controlKey == "" || controlCA == "" {
 			return errors.New("machine control listener requires a complete TLS certificate configuration")
 		}
-		controlListen := strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_LISTEN"))
+		controlListen = strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_LISTEN"))
 		if controlListen == "" {
 			controlListen = "127.0.0.1:8791"
 		}
@@ -398,6 +404,21 @@ func runSimulator(listen string) (runErr error) {
 				log.Printf("machine control listener stopped: %v", err)
 			}
 		}()
+	}
+	// Each member install declaring its own machine-control listener is
+	// served at its retained runtime's exact callback upstream.
+	if installs != nil {
+		manifestPath := simulatorManifestPath()
+		for _, install := range installs.controlListeners() {
+			if install.ControlListen == controlListen {
+				return fmt.Errorf("organization %q machine control listener collides with the process-wide listener", install.OrganizationID)
+			}
+			go func() {
+				if err := runMachineControlListener(install.ControlListen, install.ControlTLSCertFile, install.ControlTLSKeyFile, install.ControlClientCAFile, manifestPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					log.Printf("machine control listener for organization %q stopped: %v", install.OrganizationID, err)
+				}
+			}()
+		}
 	}
 	if security.tls != nil {
 		log.Printf("ZPR Simulator listening at %s (named operator login configured: %t)", security.origin, security.auth != nil)

@@ -119,7 +119,7 @@ func simulatorEnrollmentMutationContext(
 	if !handler.requestOrganizationMatches(w, r, organization) {
 		return "", simulatorScenarioPrincipal{}, false
 	}
-	if operatorAuthorizationDisabled(auth) || signer == nil {
+	if operatorAuthorizationDisabled(auth) || simulatorOperatorSignerFor(organization, signer) == nil {
 		http.Error(w, "named enrollment delegation is not configured", http.StatusServiceUnavailable)
 		return "", simulatorScenarioPrincipal{}, false
 	}
@@ -143,6 +143,7 @@ func relaySimulatorEnrollmentMutation(
 	path string,
 	body []byte,
 ) {
+	signer = simulatorOperatorSignerFor(organization, signer)
 	registry := simulatorEvaluationInstallRegistry
 	if registry == nil {
 		http.Error(w, "paired operator service is unavailable", http.StatusServiceUnavailable)

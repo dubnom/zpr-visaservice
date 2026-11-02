@@ -79,6 +79,7 @@ func (h *simulatorEnrollmentReadinessHandler) serve(auth operatorEnrollmentAutho
 		if !plan.requestOrganizationMatches(w, r, organization) {
 			return
 		}
+		signer = simulatorOperatorSignerFor(organization, signer)
 		if operatorAuthorizationDisabled(auth) || signer == nil {
 			http.Error(w, "named enrollment delegation is not configured", http.StatusServiceUnavailable)
 			return

@@ -310,6 +310,51 @@ func TestSimulatorEnrollmentInvitationsAuthorizedRead(t *testing.T) {
 	}
 }
 
+// TestSimulatorEnrollmentInvitationsPerInstallSigner proves the member
+// install's own delegation signer answers for its organization: with no
+// process-wide signer the relay still verifies, and a configured process-wide
+// signer never shadows the member's (a decoy process-wide signer would fail
+// the relay's verification).
+func TestSimulatorEnrollmentInvitationsPerInstallSigner(t *testing.T) {
+	const organization = "velocity"
+	decoy := func(t *testing.T) *operatordelegation.Signer {
+		t.Helper()
+		_, private, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signer, err := operatordelegation.NewSigner(operatordelegation.SignerConfig{
+			Version: 1, Audience: "https://control-service.synthetic.invalid", KeyID: "synthetic-simulator",
+		}, private)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return signer
+	}
+	for name, global := range map[string]func(*testing.T) *operatordelegation.Signer{
+		"no process-wide signer":            func(*testing.T) *operatordelegation.Signer { return nil },
+		"process-wide signer not shadowing": decoy,
+	} {
+		t.Run(name, func(t *testing.T) {
+			fixture := newSimulatorEnrollmentRelayFixture(t, organization)
+			simulatorEnrollmentTestRegistry(t, organization, fixture)
+			simulatorEvaluationInstallRegistry.signers = map[string]*operatordelegation.Signer{organization: fixture.signer}
+			authorizer := &simulatorEnrollmentTestAuthorizer{identity: fixture.identity}
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /api/simulator/organizations/{organization}/enrollment/invitations",
+				simulatorEnrollmentInvitations(authorizer, global(t)))
+			handler := simulatorAPIProxy(authorizer, func(*http.Request) (string, error) { return organization, nil }, mux)
+			request := httptest.NewRequest(http.MethodGet,
+				"https://simulator.example/api/simulator/organizations/"+organization+"/enrollment/invitations", nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK || fixture.relayCalls.Load() != 1 {
+				t.Fatalf("status=%d relay calls=%d body=%s", response.Code, fixture.relayCalls.Load(), response.Body)
+			}
+		})
+	}
+}
+
 func TestSimulatorEnrollmentInvitationsFailsClosed(t *testing.T) {
 	const organization = "velocity"
 	type testCase struct {

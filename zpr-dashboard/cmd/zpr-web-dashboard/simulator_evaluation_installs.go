@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,6 +17,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"neboagency.com/zpr-dashborad/internal/budgetauthority"
+	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 )
 
 // EVALUATION ONLY (D5): each Simulator organization is backed by its own,
@@ -37,6 +41,19 @@ type simulatorEvaluationInstall struct {
 	LifecycleCommand        []string                          `json:"lifecycle_command,omitempty"`
 	RetainedTopologyBinding *simulatorRetainedTopologyBinding `json:"retained_topology_binding,omitempty"`
 	RetainedMachineRuntime  *simulatorRetainedMachineRuntime  `json:"retained_machine_runtime,omitempty"`
+	// Per-install operator credentials (one-button activation): a member
+	// install carries its own delegation signer, data-plane image, and
+	// machine-control listener instead of the process-wide settings that
+	// bind a single-install launch. Each backend still authorizes against
+	// its own delegation trust.
+	DelegationSignerFile string `json:"delegation_signer_file,omitempty"`
+	DelegationKeyFile    string `json:"delegation_key_file,omitempty"`
+	DelegationAudience   string `json:"delegation_audience,omitempty"`
+	DataPlaneImage       string `json:"data_plane_image,omitempty"`
+	ControlListen        string `json:"control_listen,omitempty"`
+	ControlTLSCertFile   string `json:"control_tls_cert_file,omitempty"`
+	ControlTLSKeyFile    string `json:"control_tls_key_file,omitempty"`
+	ControlClientCAFile  string `json:"control_client_ca_file,omitempty"`
 }
 
 type simulatorEvaluationInstallsFile struct {
@@ -50,6 +67,11 @@ type simulatorEvaluationInstalls struct {
 	installs  map[string]simulatorEvaluationInstall
 	endpoints map[string]*simulatorDataPlaneEndpoints
 	workloads map[string]*simulatorDataPlaneWorkloads
+	// signers and budgetResolvers hold each member install's own verified
+	// delegation signer and bounded budget-authority client, built fail-fast
+	// at registry load so a misconfigured member is refused at startup.
+	signers         map[string]*operatordelegation.Signer
+	budgetResolvers map[string]budgetauthority.Resolver
 	// selectOrganization reports the Simulator's selected organization.
 	selectOrganization func() (string, error)
 	lifecycleMu        sync.Mutex
@@ -90,8 +112,10 @@ func loadSimulatorEvaluationInstalls(path, organizationsDirectory string) (*simu
 	if len(registry.Installs) == 0 {
 		return nil, errors.New("evaluation install registry lists no installs")
 	}
-	result := &simulatorEvaluationInstalls{installs: map[string]simulatorEvaluationInstall{}, endpoints: map[string]*simulatorDataPlaneEndpoints{}, workloads: map[string]*simulatorDataPlaneWorkloads{}, selectOrganization: simulatorSelectedOrganizationID}
+	result := &simulatorEvaluationInstalls{installs: map[string]simulatorEvaluationInstall{}, endpoints: map[string]*simulatorDataPlaneEndpoints{}, workloads: map[string]*simulatorDataPlaneWorkloads{},
+		signers: map[string]*operatordelegation.Signer{}, budgetResolvers: map[string]budgetauthority.Resolver{}, selectOrganization: simulatorSelectedOrganizationID}
 	networks := map[string]string{}
+	controlListens := map[string]string{}
 	for _, install := range registry.Installs {
 		id := install.OrganizationID
 		if len(install.LifecycleCommand) != 0 {
@@ -147,11 +171,57 @@ func loadSimulatorEvaluationInstalls(path, organizationsDirectory string) (*simu
 			}
 			seen[name] = true
 		}
+		withSigner := install.DelegationSignerFile != "" || install.DelegationKeyFile != "" || install.DelegationAudience != ""
+		if withSigner {
+			if install.DelegationSignerFile == "" || install.DelegationKeyFile == "" || strings.TrimSpace(install.DelegationAudience) == "" {
+				return nil, fmt.Errorf("organization %q delegation signer requires its config, key, and audience together", id)
+			}
+			for _, name := range []string{install.DelegationSignerFile, install.DelegationKeyFile} {
+				if !filepath.IsAbs(name) || filepath.Clean(name) != name {
+					return nil, fmt.Errorf("organization %q delegation files require canonical absolute paths", id)
+				}
+			}
+			signer, err := loadOperatorDelegationSigner(install.DelegationSignerFile, install.DelegationKeyFile, strings.TrimSpace(install.DelegationAudience))
+			if err != nil {
+				return nil, fmt.Errorf("organization %q delegation signer: %w", id, err)
+			}
+			// The member's budget authority is its own paired operator
+			// service; bounded self-approval evidence never crosses installs.
+			resolver, err := budgetauthority.NewHTTPResolver(budgetauthority.HTTPResolverConfig{
+				URL: install.OperatorServiceURL, ClientCertificateFile: install.ClientCertFile,
+				ClientKeyFile: install.ClientKeyFile, CAFile: install.ServiceCAFile,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("organization %q budget authority: %w", id, err)
+			}
+			result.signers[id], result.budgetResolvers[id] = signer, resolver
+		}
+		if strings.ContainsAny(install.DataPlaneImage, " \t\n") {
+			return nil, fmt.Errorf("organization %q data-plane image must name a local image", id)
+		}
+		withControl := install.ControlListen != "" || install.ControlTLSCertFile != "" || install.ControlTLSKeyFile != "" || install.ControlClientCAFile != ""
+		if withControl {
+			if install.ControlListen == "" || install.ControlTLSCertFile == "" || install.ControlTLSKeyFile == "" || install.ControlClientCAFile == "" {
+				return nil, fmt.Errorf("organization %q machine control listener requires its listen address and complete TLS configuration", id)
+			}
+			if host, port, err := net.SplitHostPort(install.ControlListen); err != nil || host == "" || port == "" {
+				return nil, fmt.Errorf("organization %q machine control listener requires an exact host:port", id)
+			}
+			for _, name := range []string{install.ControlTLSCertFile, install.ControlTLSKeyFile, install.ControlClientCAFile} {
+				if !filepath.IsAbs(name) || filepath.Clean(name) != name {
+					return nil, fmt.Errorf("organization %q machine control TLS files require canonical absolute paths", id)
+				}
+			}
+			if other, exists := controlListens[install.ControlListen]; exists {
+				return nil, fmt.Errorf("organizations %q and %q share one machine control listener", other, id)
+			}
+			controlListens[install.ControlListen] = id
+		}
 		if install.DataPlaneEndpointsFile != "" {
 			if !filepath.IsAbs(install.DataPlaneEndpointsFile) {
 				return nil, fmt.Errorf("organization %q data-plane endpoint handoff must be an absolute path", id)
 			}
-			endpoints, err := newSimulatorDataPlaneEndpoints(install.DataPlaneEndpointsFile)
+			endpoints, err := newSimulatorDataPlaneEndpoints(install.DataPlaneEndpointsFile, install.DataPlaneImage)
 			if err != nil {
 				return nil, fmt.Errorf("organization %q: %w", id, err)
 			}
@@ -191,6 +261,46 @@ func (registry *simulatorEvaluationInstalls) target(organizationID string) (simu
 		return simulatorOperatorTarget{}, fmt.Errorf("organization %q has no evaluation install; start one and register it in %s", organizationID, simulatorEvaluationInstallsEnv)
 	}
 	return simulatorOperatorTarget{ServiceURL: install.OperatorServiceURL, CertFile: install.ClientCertFile, KeyFile: install.ClientKeyFile, CAFile: install.ServiceCAFile}, nil
+}
+
+// simulatorOperatorSignerFor resolves the organization's own delegation
+// signer from the evaluation install registry; single-install launches keep
+// the process-wide signer.
+func simulatorOperatorSignerFor(organizationID string, fallback *operatordelegation.Signer) *operatordelegation.Signer {
+	if registry := simulatorEvaluationInstallRegistry; registry != nil {
+		if signer := registry.signers[organizationID]; signer != nil {
+			return signer
+		}
+	}
+	return fallback
+}
+
+// simulatorInstallBudgetResolverFor reports the organization's own bounded
+// budget-authority resolver when its member install declares per-install
+// credentials; otherwise the process-wide resolver stays authoritative.
+func simulatorInstallBudgetResolverFor(organizationID string) budgetauthority.Resolver {
+	if registry := simulatorEvaluationInstallRegistry; registry != nil {
+		return registry.budgetResolvers[organizationID]
+	}
+	return nil
+}
+
+func (registry *simulatorEvaluationInstalls) hasDelegationSigners() bool {
+	return registry != nil && len(registry.signers) != 0
+}
+
+// controlListeners lists each member install that declares its own
+// machine-control listener so the Simulator serves every organization's
+// retained callback upstream.
+func (registry *simulatorEvaluationInstalls) controlListeners() []simulatorEvaluationInstall {
+	var result []simulatorEvaluationInstall
+	for _, install := range registry.installs {
+		if install.ControlListen != "" {
+			result = append(result, install)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].OrganizationID < result[j].OrganizationID })
+	return result
 }
 
 func simulatorSelectedOrganizationID() (string, error) {
