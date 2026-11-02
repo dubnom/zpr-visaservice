@@ -1024,6 +1024,42 @@ and recurred twice in one evening — a maintained detection/recovery belongs
 on the design backlog; load-lab's subject-link cycle, like Northstar's, has
 not been run; offboard-at-teardown remains the next on-the-fly design piece.
 
+**Load-lab scenario set complete (2026-11-02, late evening):** all four
+published load-lab scenarios ran to completion through the full authorized
+chain on the on-the-fly stack — `load-lab-fanout` (200 clients),
+`load-lab-fanout-50`, `load-lab-fanout-100` and `load-lab-fanout-150`, each
+19/19 with verified container cleanup. The `vs-adapter` stale-noise wedge
+recurred once between the first fan-out and the variant batch (the node loses
+its egress link to the Visa Service fabric address; BAS relay and DNS
+reconciliation stall; the new callback readback surfaces it within two
+minutes) and was healed by the one-restart remedy; the subsequent three runs
+completed back-to-back without recurrence, so the wedge is intermittent and
+correlates with heavy stress teardown. Recorded as a data-plane defect
+needing maintained detection/recovery (same class as the DP-K03 adapter
+re-dock work), tracked on the design hardening backlog.
+
+**Offboarding design (proposed 2026-11-02, next executable on-the-fly
+phase):** a maintained single-call offboarding endpoint mirrors onboarding —
+`POST /api/simulator/organizations/{organization}/enrollment/offboarding`
+with the asset ID and an explicit reason — and executes fail-closed recorded
+stages: resolve the asset's enrollment record through the authorized relay
+(exact revision and key fingerprints), cancel it through the existing
+explicit Simulator-signed review path (the proven mechanism from the
+Northstar stranded-claim cleanup), then remove the Simulator workspace
+bundle only after the registry cancellation succeeds; operator-owned
+endpoint identity directories are reported for explicit operator removal,
+never deleted by the Simulator; a partial failure persists the operation
+record and stops. Acceptance: an offboarded asset can no longer
+BAS-authenticate or re-dock, its flows lose visas at the next sweep, and the
+enrollment inventory and workspace are verifiably clean. Scope decision for
+review (not yet approved): "teardown" is proposed to mean explicit
+organization deactivation/reset — identities persist across scenario runs
+and the bounded registry comes from deactivation-time offboarding — rather
+than per-run teardown, which would additionally require automatic per-run
+onboarding and runtime bundle wiring before it could hold. Per-run
+offboarding remains the eventual full on-the-fly contract once activation
+onboarding feeds the machine runtime directly.
+
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
 required for the great-lakes/redwood scenarios), the maintained
