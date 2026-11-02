@@ -1217,8 +1217,9 @@ multi-node install. Test-pinned on both sides with the full suites, vet and
 both builds passing. Live status is in the great-lakes record below; still
 open for G6: per-machine docking-node selection in the retained machine
 runtime (machines currently dock at the docking node; endpoints already
-choose nodes via `node_host`) and the five-organization seventeen-scenario
-acceptance matrix (redwood bring-up itself is done — see its record below).
+choose nodes via `node_host`) and closing the acceptance matrix — its first
+full measured baseline (9/17 completed) is recorded below (redwood bring-up
+itself is done — see its record below).
 
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling:
 the multi-node retained topology binding (G6) and the maintained
@@ -1375,6 +1376,43 @@ at session end. Redwood's acceptance-matrix cell is now 2/2 scenarios; still
 open: great-lakes business scenarios (13-machine identity set, workload
 policy), the full five-organization matrix, and per-machine docking-node
 selection.
+
+**Measured seventeen-scenario acceptance matrix baseline (2026-11-02, on the
+`velocity-paired-20261102-r3` estate):** every one of the seventeen original
+organization scenarios was driven (or explicitly preflighted) through the
+full authorized chain for the first time since the paired migration. **9/17
+completed:** velocity `velocity-single-node` (20/20), northstar
+`client-service` (23/23), all four load-lab fanouts (`load-lab-fanout`,
+`-50`, `-100`, `-150`, each 19/19), great-lakes
+`great-lakes-runtime-verification` (re-measured on the current package), and
+both redwood scenarios (recorded above). **1/17 fails as an unported
+legacy-runtime scenario:** northstar `default-deny` reproducibly fails at
+its single machine-less `traffic` step, which execs into the legacy
+`zpr-local-linux-node` demo container that does not exist on the paired
+retained estate — porting machine-less traffic steps to the retained
+runtime is new enablement work. **7/17 are blocked on missing retained
+machine identities (explicit preflight evidence, "retained machine
+lifecycle does not support <machine>"):** northstar `machine-policy-deny`
+(machine-01), `internet-gateway-egress` (machine-07), `active-team-cycle`
+(machine-04), and the four great-lakes business scenarios (machines 01–13
+plus the echo/metrics/internet-gateway workloads; `finance-web-gateway`
+additionally needs real internet egress). Operational findings while
+measuring, each resolved on maintained paths: velocity and load-lab were
+both found carrying live vs-adapter wedges and were healed by
+`-evaluation-adapter-health -recover` (its second and third real uses);
+velocity's and northstar's single-node installs had drifted off their
+pinned binding substrate addresses because single-node installs use dynamic
+Docker subnets (bindings updated with dated backups; their frozen states —
+which digest the binding file — rotated to `simulator-state-r6` and
+`simulator-state-northstar-dns4` preserving `workspace/`), recording a
+durable-fix backlog item: single-node retained bindings pin an inherently
+dynamic substrate address and should verify container identity while
+resolving the address live, or single-node installs should gain the
+deterministic subnet multi-node installs already have; and the first one or
+two scenario runs immediately after an install restart can fail on the
+control-callback rendezvous before the stack settles (both such failures
+completed on retry; recurrence under a settled stack remains defect
+evidence). All five organizations healthy at session end.
 
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
