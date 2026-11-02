@@ -137,6 +137,8 @@ func simulatorAPIPermission(method, requestPath string) (permission, explicitOrg
 			return "cancel", organization, true
 		case len(parts) == 5 && parts[4] == "activate" && method == http.MethodPost:
 			return "organization.activate", organization, true
+		case len(parts) == 5 && parts[4] == "deactivate" && method == http.MethodPost:
+			return "revoke", organization, true
 		case len(parts) == 5 && parts[4] == "restore-base" && method == http.MethodPost:
 			return "organization.restore", organization, true
 		case len(parts) == 5 && parts[4] == "directory" && method == http.MethodGet,

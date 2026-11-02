@@ -246,6 +246,142 @@ func handleSimulatorOrganizationRestoreBase(w http.ResponseWriter, r *http.Reque
 	handleSimulatorOrganizationOperation(w, r, true, nil, nil)
 }
 
+// handleSimulatorOrganizationDeactivate is the approved deactivation-time
+// offboarding contract (teardown means explicit organization deactivation,
+// not per-run teardown): every profile-declared endpoint with an approved
+// enrollment record is offboarded through the maintained single-call
+// offboarding workflow — registry revocation first, Simulator-owned workspace
+// bundle removal only after it succeeds — and the active-organization
+// selection is cleared when it names this organization. Reviewed retained
+// inventory is never offboarded here: grandfathered retained identities keep
+// their separate contracts, and legacy-launcher mode is refused entirely.
+// A partial failure keeps the per-asset operation records and stops without
+// clearing the selection.
+func handleSimulatorOrganizationDeactivate(auth operatorEnrollmentAuthorizer, signer *operatordelegation.Signer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mode, err := setupmode.Parse(os.Getenv(setupmode.Environment))
+		if err != nil || mode != setupmode.OrdinaryClient {
+			writeWorkspaceError(w, http.StatusServiceUnavailable,
+				"Explicit deactivation offboarding is an ordinary-client on-the-fly contract; legacy launcher organizations keep their reviewed retained identities. No offboarding was started.")
+			return
+		}
+		var input struct {
+			Reason string `json:"reason"`
+		}
+		organizationID, principal, ok := simulatorEnrollmentMutationContext(w, r, auth, signer, &input)
+		if !ok {
+			return
+		}
+		if strings.TrimSpace(input.Reason) == "" {
+			http.Error(w, "deactivation requires an explicit reason", http.StatusBadRequest)
+			return
+		}
+		profile, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID)
+		if err != nil {
+			writeWorkspaceError(w, http.StatusNotFound, "unknown organization")
+			return
+		}
+		activeSimulatorScenario.mu.Lock()
+		defer activeSimulatorScenario.mu.Unlock()
+		if activeSimulatorScenario.run.State == "running" || activeSimulatorScenario.run.State == "cleaning" {
+			writeWorkspaceError(w, http.StatusConflict, "Finish or cancel the running scenario before deactivating the organization.")
+			return
+		}
+		simulatorSessions.RLock()
+		defer simulatorSessions.RUnlock()
+		for _, session := range simulatorSessions.byMachine {
+			if session.Authenticated {
+				writeWorkspaceError(w, http.StatusConflict, "Log out all machine users before deactivating the organization.")
+				return
+			}
+		}
+		// Resolve the current enrollment state once through the authorized
+		// relay; only profile-declared endpoints with an approved record are
+		// offboarded. Reviewed retained inventory is never in this set.
+		approvedAssets := map[string]bool{}
+		if len(profile.DeclaredEndpoints) > 0 {
+			recorder := newSimulatorEnrollmentRecorder()
+			relaySimulatorEnrollmentInvitations(recorder, r, auth, signer, principal, organizationID)
+			if recorder.code != http.StatusOK {
+				writeWorkspaceError(w, http.StatusBadGateway, fmt.Sprintf(
+					"deactivation stopped at the enrollment inventory read (HTTP %d from the paired operator service); no offboarding was started", recorder.code))
+				return
+			}
+			var inventory struct {
+				Invitations []struct {
+					Asset struct {
+						AssetID string `json:"asset_id"`
+					} `json:"asset"`
+					State string `json:"state"`
+				} `json:"invitations"`
+			}
+			if err := json.Unmarshal(recorder.body.Bytes(), &inventory); err != nil {
+				writeWorkspaceError(w, http.StatusBadGateway,
+					"enrollment inventory response is invalid; no offboarding was started")
+				return
+			}
+			for _, invitation := range inventory.Invitations {
+				if invitation.State == "approved" {
+					approvedAssets[invitation.Asset.AssetID] = true
+				}
+			}
+		}
+		offboard := newSimulatorEnrollmentOffboardingHandler().serve(auth, signer)
+		offboarded := make([]json.RawMessage, 0, len(profile.DeclaredEndpoints))
+		alreadyClean := []string{}
+		for _, endpoint := range profile.DeclaredEndpoints {
+			if !approvedAssets[endpoint.AssetID] {
+				alreadyClean = append(alreadyClean, endpoint.AssetID)
+				continue
+			}
+			body, err := json.Marshal(struct {
+				AssetID string `json:"asset_id"`
+				Reason  string `json:"reason"`
+			}{endpoint.AssetID, input.Reason})
+			if err != nil {
+				writeWorkspaceError(w, http.StatusInternalServerError,
+					"cannot encode the declared endpoint offboarding request; deactivation stopped")
+				return
+			}
+			request := r.Clone(r.Context())
+			request.Method = http.MethodPost
+			request.URL.RawQuery = ""
+			request.Header = r.Header.Clone()
+			request.Header.Set("Content-Type", "application/json")
+			request.Body = io.NopCloser(bytes.NewReader(body))
+			request.ContentLength = int64(len(body))
+			request.SetPathValue("organization", organizationID)
+			recorder := newSimulatorEnrollmentRecorder()
+			offboard(recorder, request)
+			if recorder.code != http.StatusOK {
+				writeWorkspaceError(w, http.StatusBadGateway, fmt.Sprintf(
+					"deactivation offboarding for declared endpoint %s stopped (HTTP %d): %s. %d endpoint(s) were already offboarded with persisted operation records; the organization selection is unchanged. Reconcile through the explicit enrollment review path.",
+					endpoint.AssetID, recorder.code, strings.TrimSpace(recorder.body.String()), len(offboarded)))
+				return
+			}
+			offboarded = append(offboarded, json.RawMessage(append([]byte(nil), recorder.body.Bytes()...)))
+		}
+		selection := simulatorActiveOrganizationPath()
+		selectionCleared := false
+		if selected, err := os.ReadFile(selection); err == nil && strings.TrimSpace(string(selected)) == organizationID {
+			if err := os.Remove(selection); err != nil {
+				writeWorkspaceError(w, http.StatusInternalServerError, fmt.Sprintf(
+					"every declared endpoint is offboarded with persisted operation records, but the organization selection could not be cleared: %v", err))
+				return
+			}
+			selectionCleared = true
+		}
+		writeSimulatorJSON(w, map[string]any{
+			"deactivation": map[string]any{
+				"organization_id": organizationID, "setup_mode": "ordinary-client",
+				"selection_cleared": selectionCleared, "reason": input.Reason,
+			},
+			"offboarded":    offboarded,
+			"already_clean": alreadyClean,
+		})
+	}
+}
+
 func handleSimulatorOrganizationOperation(w http.ResponseWriter, r *http.Request, restoreBase bool, auth operatorEnrollmentAuthorizer, signer *operatordelegation.Signer) {
 	mode, err := setupmode.Parse(os.Getenv(setupmode.Environment))
 	if err != nil {

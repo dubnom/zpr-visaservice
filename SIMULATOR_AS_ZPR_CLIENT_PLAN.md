@@ -1091,8 +1091,17 @@ registry-revoke relays the bound revocation, and only then is the
 Simulator-owned workspace bundle (key bundle plus canonical onboarding
 record) removed; operator-owned identity directories are reported for
 explicit operator removal, and every partial failure persists an attempt
-record and stops. Still open: wiring offboarding into explicit organization
-deactivation/reset, granting `revoke` in live operator-delegation trust
+record and stops. **Deactivation wiring (2026-11-02, same session):** the
+approved deactivation-time contract is implemented in source as
+`POST /api/simulator/organizations/{organization}/deactivate` (session
+permission `revoke`, ordinary-client mode only — legacy-launcher is refused so
+reviewed retained identities are never offboarded): with no running scenario
+and no authenticated machine sessions, every profile-declared endpoint with an
+approved enrollment record is offboarded through the maintained single-call
+workflow (retained inventory is never in the set), assets without an approved
+record are reported already-clean, and the active-organization selection is
+cleared only after every declared endpoint is offboarded. Still open: granting
+`revoke` in live operator-delegation trust
 files, a package rebuild carrying the change, and the live acceptance run
 (revoked asset refused by BAS on an install, visas lost at the next sweep,
 inventory and workspace verifiably clean).
