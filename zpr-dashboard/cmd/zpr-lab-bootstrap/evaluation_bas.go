@@ -647,6 +647,11 @@ done
 [ "$ready" = true ] || fail "owning %[1]s data plane unavailable"
 node_ip=$(docker inspect --format '{{with index .NetworkSettings.Networks %[8]q}}{{.IPAddress}}{{end}}' "$node")
 [ -n "$node_ip" ] || fail "owning docking network unavailable"
+# Older data-plane images lack the ZPR-wide route in the Visa Service
+# namespace; the VS needs it to reach this authentication root for the
+# trusted-service token exchange. The replace is idempotent.
+docker exec "$node" ip netns exec zpr-vs ip -6 route replace fd5a:5052::/32 dev tun0 ||
+    fail "cannot ensure the Visa Service ZPR route"
 # Container root needs DAC_OVERRIDE to read the operator-owned, read-only key.
 exec docker run --rm --init --name "$name" --network "$node" --user 0:0 \
     --read-only --cap-drop ALL --cap-add NET_ADMIN --cap-add NET_RAW --cap-add DAC_OVERRIDE \
