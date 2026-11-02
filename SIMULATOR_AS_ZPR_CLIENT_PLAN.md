@@ -1522,10 +1522,50 @@ the registered organizations (or explicit per-organization sessions) with
 each backend still authorizing against its own delegation trust. (4) The
 activation flow on the registry path must switch the active organization,
 onboard the declared endpoints on the fly, and report progress without the
-unwired reset-organization subsystem. Until delivered, one-button
-activation is satisfied per organization by its own paired simulator; the
-estate's five simulators each activate their organization's install
-directly.
+unwired reset-organization subsystem. The composition and credential gaps
+(1)-(3) are implemented and suite-verified below; until the estate runs the
+composed launch, one-button activation remains satisfied per organization by
+its own paired simulator.
+
+**One-button activation implemented: multi-install composition, per-install
+credentials, composed session and trust (2026-11-02, source-only):** the
+four gaps above are closed in code, Mac full suite green (`go build`/`vet`/
+`test ./...` in `zpr-dashboard`), not yet live-validated. (1)+(2) The
+evaluation install registry schema gained per-install credentials — the
+delegation signer config/key/audience, the data-plane image pin and the
+machine-control listener with its TLS material
+(`zpr-dashboard/cmd/zpr-web-dashboard/simulator_evaluation_installs.go`);
+registry load builds each member's signer and bounded budget-authority
+resolver fail-fast, every organization-scoped Simulator relay resolves the
+signer by the request's organization with the process environment as the
+single-install fallback, scenario budget evidence resolves per organization,
+and the Simulator serves one machine-control listener per declaring install.
+(3) The launcher's new `-evaluation-simulator -evaluation-installs-manifest`
+flag composes the home install plus explicitly declared member installs
+(each an existing paired catalog-organization install; requires `-catalog`)
+into the frozen `installs-members.json`, and derives the frozen
+`simulator-oidc-members.json` session rendering from the home install's
+verified login — identities, issuer and permissions preserved exactly, only
+the organization scope widened; both artifacts live in the Simulator state,
+so a member-set change means a fresh state, and the original single-install
+registries are never rewritten. Each backend still authorizes against its
+own delegation trust: `-evaluation-simulator-pairing` gained
+`-session-grants-file`, which adds the composed home-session identities to
+the DERIVED `simulator-paired-delegation-trust.json` only — scoped to
+exactly that install's organization, bounded to the Simulator session
+permission universe, refusing to shadow any retained named identity, with
+the install's own runtime trust and frozen identities byte-identical
+(`zpr-dashboard/cmd/zpr-lab-bootstrap/evaluation_simulator_members.go`,
+`evaluation_simulator_pairing.go`). (4) Registry-path activation already
+switches via the maintained install registry and ordinary-client on-the-fly
+onboarding; it now works for member organizations through their per-install
+signers. Remaining for live one-button operation: rebuild the estate package
+on this source, re-derive each member's paired trust with the composed
+session rendering (derived files moved aside, install stopped), launch the
+composed Simulator against the home install, and run the activation
+acceptance on a member organization. The reset-organization subsystem
+remains unwired and is still not required for this path (G6 note above
+unchanged).
 
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
