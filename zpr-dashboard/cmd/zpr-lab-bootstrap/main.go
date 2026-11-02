@@ -58,6 +58,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "-evaluation-bas" {
 		return runEvaluationBAS(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "-evaluation-adapter-health" {
+		return runEvaluationAdapterHealth(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "-evaluation-simulator" {
 		return runEvaluationSimulator(args[1:], stdout, stderr)
 	}
