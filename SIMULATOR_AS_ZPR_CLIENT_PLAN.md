@@ -1100,11 +1100,47 @@ and no authenticated machine sessions, every profile-declared endpoint with an
 approved enrollment record is offboarded through the maintained single-call
 workflow (retained inventory is never in the set), assets without an approved
 record are reported already-clean, and the active-organization selection is
-cleared only after every declared endpoint is offboarded. Still open: granting
-`revoke` in live operator-delegation trust
-files, a package rebuild carrying the change, and the live acceptance run
-(revoked asset refused by BAS on an install, visas lost at the next sweep,
-inventory and workspace verifiably clean).
+cleared only after every declared endpoint is offboarded. Live status is in
+the acceptance record below: load-lab carries the `revoke` grants and passed
+the acceptance; the qualified package archives still predate these commits.
+
+**Revocation and offboarding accepted live on load-lab (2026-11-02,
+`8355ecb`):** the upgraded load-lab stack ran the full acceptance from
+binaries built on the workbench toolchain at `8355ecb`: Simulator
+`zpr-simulator-r20` with launcher `zpr-lab-bootstrap-r23` (the launcher's
+Simulator OIDC override allow-list had to learn the distinct `revoke`
+permission — it refused the override fail-closed until `8355ecb`), and the
+shared `bin/zpr-enrollment-service` replaced with a dated backup and an
+updated `SHA256SUMS` pin (the enrollment unit refused the unpinned binary
+fail-closed first, as designed; Velocity/Northstar enrollment units keep
+their old running processes and pick up the compatible binary on their next
+restart). Operator configuration gained `revoke` with dated backups in the
+operator-owned enrollment trust and the Simulator OIDC override, and the
+pairing-derived `simulator-paired-enrollment-trust.json` was re-derived
+through the maintained command against the stopped install (the superseded
+derived file kept as a dated backup); changing the OIDC override identity
+digest froze out the old private Simulator state, which was rotated to
+`simulator-state-load-lab-r2` preserving `workspace/`. **Acceptance evidence,
+all through the authorized named-operator chain:** the on-the-fly workload
+`load-lab-machine-03-finance-client` BAS-authorized with its exact runtime
+key (credential-check) before the operation; the single-call offboarding
+returned 200 with the registry record revoked at revision 4 bound to both
+recorded fingerprints and the workspace bundle removed; the direct BAS
+preauthorize then refused the revoked client (HTTP 403) while an approved
+control asset still received a nonce (HTTP 200); credential-check failed
+closed 404 with the bundle gone, the canonical onboarding record removed and
+the offboarding operation record persisted; re-onboarding the same asset
+succeeded (new invitation approved — the revoked record leaves the
+active-asset uniqueness set and is preserved for audit), the operator
+identity directory was explicitly replaced from the newly delivered bundle
+(dated backup), and credential-check re-authorized with the new runtime key.
+The estate was then requalified: `load-lab-fanout` completed all 19 steps
+from the upgraded stack with verified container cleanup. Not separately
+exercised: the visas-lost-at-next-sweep clause (the asset had no active
+flows; no scenario was running during revocation) and the live `deactivate`
+endpoint (would offboard all five identities; deferred to an explicit
+deactivation occasion). The 20261102 Velocity/Northstar packages still
+predate these commits.
 
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
