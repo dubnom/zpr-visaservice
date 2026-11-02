@@ -26,7 +26,7 @@ import (
 // mechanism, never this one.
 var evaluationSimulatorOIDCOverridePermissions = []string{
 	"read", "create", "cancel", "approve", "reject", "revoke", "budget.approve",
-	"scenario.edit", "scenario.publish",
+	"scenario.edit", "scenario.publish", "scenario.reset",
 }
 
 // applyEvaluationSimulatorOIDCOverride validates an explicit operator-owned

@@ -695,23 +695,37 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 		return err
 	}
 	if inventory.Config.SimulatorPort != 0 {
-		simulator := operatorauth.Config{
-			Version: 1, Issuer: issuer, ClientID: "zpr-simulator",
-			RedirectURL:            inventory.Config.browserOrigin(inventory.Config.SimulatorPort) + "/auth/operator/callback",
-			SessionLifetimeSeconds: 3600,
-			Grants: []operatorauth.Grant{{
-				Issuer: issuer, Subject: admin.Subject, Organizations: []string{organization},
-				Permissions: evaluationSimulatorOperatorPermissions(inventory.Config.ScenarioDemo),
-			}},
+		render := func(permissions []string) ([]byte, error) {
+			simulator := operatorauth.Config{
+				Version: 1, Issuer: issuer, ClientID: "zpr-simulator",
+				RedirectURL:            inventory.Config.browserOrigin(inventory.Config.SimulatorPort) + "/auth/operator/callback",
+				SessionLifetimeSeconds: 3600,
+				Grants: []operatorauth.Grant{{
+					Issuer: issuer, Subject: admin.Subject, Organizations: []string{organization},
+					Permissions: permissions,
+				}},
+			}
+			if err := simulator.Validate(); err != nil {
+				return nil, errors.New("verified Simulator operator grant is invalid")
+			}
+			document, err := json.MarshalIndent(simulator, "", "  ")
+			if err != nil {
+				return nil, err
+			}
+			return append(document, '\n'), nil
 		}
-		if err := simulator.Validate(); err != nil {
-			return errors.New("verified Simulator operator grant is invalid")
-		}
-		document, err := json.MarshalIndent(simulator, "", "  ")
+		document, err := render(evaluationSimulatorOperatorPermissions(inventory.Config.ScenarioDemo))
 		if err != nil {
 			return err
 		}
-		if err := writeEvaluationOnce(state, "simulator-oidc.json", append(document, '\n')); err != nil {
+		// Installs created before scenario.reset joined the default grant
+		// keep their exact frozen identity; the explicit Simulator OIDC
+		// override adds the permission without rebinding anything.
+		superseded, err := render(evaluationSupersededSimulatorPermissions(inventory.Config.ScenarioDemo))
+		if err != nil {
+			return err
+		}
+		if err := writeEvaluationOnceAccepting(state, "simulator-oidc.json", document, superseded); err != nil {
 			return err
 		}
 	}
@@ -753,12 +767,25 @@ func configureEvaluationOperator(ctx context.Context, state string, inventory ev
 // writeEvaluationOnce stores a verified identity binding once and refuses any
 // later difference rather than silently rebinding grants.
 func writeEvaluationOnce(state, name string, data []byte) error {
+	return writeEvaluationOnceAccepting(state, name, data)
+}
+
+// writeEvaluationOnceAccepting stores a verified identity binding once;
+// existing content must match the current rendering or one of the exact
+// known superseded renderings (kept as-is, never rewritten), so launcher
+// upgrades never strand an install while anything else still refuses.
+func writeEvaluationOnceAccepting(state, name string, data []byte, superseded ...[]byte) error {
 	existing, err := os.ReadFile(filepath.Join(state, name))
 	if err == nil {
-		if string(existing) != string(data) {
-			return errors.New("stored operator identity changed; refuse implicit rebind")
+		if string(existing) == string(data) {
+			return nil
 		}
-		return nil
+		for _, accepted := range superseded {
+			if string(existing) == string(accepted) {
+				return nil
+			}
+		}
+		return errors.New("stored operator identity changed; refuse implicit rebind")
 	}
 
 	if !errors.Is(err, os.ErrNotExist) {
@@ -773,6 +800,24 @@ func writeEvaluationOnce(state, name string, data []byte) error {
 }
 
 func evaluationSimulatorOperatorPermissions(scenarioDemo bool) []string {
+	permissions := []string{
+		"simulator.read", "simulator.control", "organization.read", "organization.activate",
+		"scenario.read", "scenario.analyze", "scenario.run", "scenario.cancel",
+		// Organization switching runs through the audited reset-organization
+		// operation; its status/intent/confirm routes require scenario.reset.
+		"scenario.reset",
+		"device.lifecycle", "device.workloads", "approval.self",
+	}
+	if scenarioDemo {
+		permissions = append(permissions, "budget.approve")
+	}
+	return permissions
+}
+
+// evaluationSupersededSimulatorPermissions is the exact grant rendering of
+// installs created before scenario.reset joined the default; their frozen
+// identity stays accepted so a launcher upgrade never strands an install.
+func evaluationSupersededSimulatorPermissions(scenarioDemo bool) []string {
 	permissions := []string{
 		"simulator.read", "simulator.control", "organization.read", "organization.activate",
 		"scenario.read", "scenario.analyze", "scenario.run", "scenario.cancel",

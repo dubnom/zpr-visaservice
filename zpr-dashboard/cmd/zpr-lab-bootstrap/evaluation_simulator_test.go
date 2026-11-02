@@ -49,11 +49,13 @@ func TestEvaluationSimulatorClientIsOptionalAndIndependent(t *testing.T) {
 
 func TestEvaluationSimulatorGrantIncludesScopedSelfApproval(t *testing.T) {
 	permissions := evaluationSimulatorOperatorPermissions(false)
-	if !slices.Contains(permissions, "approval.self") || slices.Contains(permissions, "budget.approve") {
+	if !slices.Contains(permissions, "approval.self") || !slices.Contains(permissions, "scenario.reset") ||
+		slices.Contains(permissions, "budget.approve") {
 		t.Fatalf("non-scenario Simulator permissions=%v", permissions)
 	}
 	permissions = evaluationSimulatorOperatorPermissions(true)
-	if !slices.Contains(permissions, "approval.self") || !slices.Contains(permissions, "budget.approve") {
+	if !slices.Contains(permissions, "approval.self") || !slices.Contains(permissions, "scenario.reset") ||
+		!slices.Contains(permissions, "budget.approve") {
 		t.Fatalf("scenario Simulator permissions=%v", permissions)
 	}
 }
@@ -369,4 +371,22 @@ func TestEvaluationSimulatorLaunchRejectsUnsupportedInstallShapes(t *testing.T) 
 			t.Fatalf("unpaired install accepted: %v", err)
 		}
 	})
+}
+
+func TestWriteEvaluationOnceAcceptsExactSupersededRenderings(t *testing.T) {
+	state := t.TempDir()
+	superseded := []byte("superseded rendering\n")
+	current := []byte("current rendering\n")
+	if err := os.WriteFile(filepath.Join(state, "grant.json"), superseded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeEvaluationOnceAccepting(state, "grant.json", current, superseded); err != nil {
+		t.Fatalf("exact superseded rendering refused: %v", err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(state, "grant.json")); string(data) != string(superseded) {
+		t.Fatal("superseded rendering must be kept as-is, never rewritten")
+	}
+	if err := writeEvaluationOnceAccepting(state, "grant.json", current, []byte("other\n")); err == nil {
+		t.Fatal("foreign content accepted")
+	}
 }
