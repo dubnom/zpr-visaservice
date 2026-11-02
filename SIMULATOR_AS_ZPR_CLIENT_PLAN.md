@@ -928,6 +928,36 @@ mixed-version gap. The 20261102 archives keep the engineering-unqualified
 label: they were built on the same workbench host, not a separate clean
 build host, and browser-UI package acceptance was not rerun.
 
+**Load-lab paired foundation on the maintained paths (2026-11-02):** load-lab
+was brought up as the third paired organization entirely through maintained
+and scripted paths, deliberately stopping before any net-new hand-built
+provisioning. Done: maintained Simulator pairing
+(`-evaluation-simulator-pairing` against the stopped install, port 22788);
+the self-approval trust derivations mirroring the reviewed Velocity/Northstar
+pattern (control delegation trust with `approval.self`+`budget.approve`,
+enrollment trust and operator-oidc gaining `approval.self`, administration
+listener repointed, operator services pointing at the derived trust, all with
+dated backups); data-plane image pinned to `c820f183…` through the maintained
+`organization-runtime.sh` branch (SHA256SUMS updated, dated backups); the
+three org services started healthy (Room 22787 HTTP 200, issuer 22556 HTTP
+200); maintained BAS provisioning (`-evaluation-bas`, listeners
+22996/22997); and the BAS authentication root applied through the fully
+self-approved policy pipeline (record `176f5749…` revision 2, review
+`FXKM6A6LMHDXN6BQKELZYOAODH`, apply `OYA2NOLPBS56IRPDCOBFGL7OVO` succeeded;
+the compiler-config fragment was merged into an operator-owned
+`dp-policy-stage.zplc` with the bootstrap key folded into the existing table,
+not duplicated) — the BAS adapter then docked ACTIVE. Control-TLS identities
+were generated with the generic `prepare-retained-machine-control.sh`.
+**Deliberately not started** (recorded as the maintained-provisioning gap,
+not a hand-build task for tonight): load-lab has no workload-access or
+`SimulatorControlService` provider policy, no declared-endpoint catalog
+variant, no onboarded retained identities and no retained bindings. Unlike
+Northstar — which carried those from prior sessions — load-lab would require
+building its entire scenario workload policy and retained identity set from
+scratch; that is exactly the per-organization provisioning that the design
+backlog item below says should become a maintained command before scaling to
+the remaining organizations. `load-lab-fanout` has not run.
+
 **Design hardening backlog (recorded 2026-11-01):** recorded for scheduling,
 none approved as started: a maintained multi-node retained topology (G6,
 required for the great-lakes/redwood scenarios), maintained per-organization
