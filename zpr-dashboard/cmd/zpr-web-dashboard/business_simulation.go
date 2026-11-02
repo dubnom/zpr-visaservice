@@ -224,7 +224,11 @@ func executeBusinessRequestWithCommand(ctx context.Context, manifest simulatorMa
 }
 
 func readBusinessDenials(ctx context.Context) ([]deny, error) {
-	if strings.TrimSpace(os.Getenv("SIMULATOR_OPERATOR_SERVICE_URL")) != "" ||
+	// Registry-driven paired installs read denial evidence through their
+	// organization's operator service exactly like the single-install
+	// environment settings the registry replaces.
+	if simulatorEvaluationInstallRegistry != nil ||
+		strings.TrimSpace(os.Getenv("SIMULATOR_OPERATOR_SERVICE_URL")) != "" ||
 		strings.TrimSpace(os.Getenv("SIMULATOR_CONTROL_ROOM_URL")) != "" {
 		current, err := readControlRoomSnapshotWithContext(ctx)
 		if err != nil {

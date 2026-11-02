@@ -5,8 +5,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -49,5 +51,23 @@ func TestBusinessDenialsUseConfiguredOperatorSnapshotWithoutAdminCredentials(t *
 				t.Fatalf("lost exact denial evidence: %v", entries)
 			}
 		})
+	}
+}
+
+func TestBusinessDenialsUseInstallRegistryOperatorService(t *testing.T) {
+	before := simulatorEvaluationInstallRegistry
+	t.Cleanup(func() { simulatorEvaluationInstallRegistry = before })
+	simulatorEvaluationInstallRegistry = &simulatorEvaluationInstalls{
+		installs:           map[string]simulatorEvaluationInstall{},
+		selectOrganization: func() (string, error) { return "", errors.New("no active organization") },
+	}
+	t.Setenv("SIMULATOR_OPERATOR_SERVICE_URL", "")
+	t.Setenv("SIMULATOR_CONTROL_ROOM_URL", "")
+	t.Setenv("ZPR_ADMIN_URL", "")
+	t.Setenv("ZPR_ADMIN_API_KEY", "")
+	t.Setenv("ZPR_ADMIN_KEY_FILE", "")
+	_, err := readBusinessDenials(t.Context())
+	if err == nil || strings.Contains(err.Error(), "Visa Admin API") {
+		t.Fatalf("registry-driven denial evidence must use the operator service path, not admin credentials: %v", err)
 	}
 }
