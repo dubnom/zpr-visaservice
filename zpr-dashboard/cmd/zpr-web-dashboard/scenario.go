@@ -1057,11 +1057,54 @@ func verifyMultinodeRuntime(ctx context.Context, manifest simulatorManifest) (st
 	return verifyMultinodeRuntimeWithCommand(ctx, manifest, scenarioCommand)
 }
 
+// verifyRetainedMultinodeRuntime is the G6 form of verify_multinode_runtime
+// for installations bound through the retained topology binding: every bound
+// node container is verified live against the binding (ownership, image,
+// network address, running state and tun0 ZPR address), and the install's
+// full node mesh must show an active link from every node to every peer's
+// substrate address. It never inspects containers outside the binding.
+func verifyRetainedMultinodeRuntime(ctx context.Context, organization simulatorOrganization, command scenarioCommandFunc) (string, error) {
+	binding := organization.RetainedTopologyBinding
+	nodes := binding.effectiveNodes()
+	if len(nodes) < 2 {
+		return "", errors.New("retained topology binding is not multi-node")
+	}
+	if err := verifySimulatorRetainedTopology(ctx, organization, command); err != nil {
+		return "", err
+	}
+	for _, node := range nodes {
+		summary, err := command(ctx, "docker", "exec", node.Container, "ph-cli", "-p", "/run/zpr/node.sock", "link", "show")
+		if err != nil {
+			return "", fmt.Errorf("read links on retained node %s: %w", node.LogicalNodeID, err)
+		}
+		for _, peer := range nodes {
+			if peer.LogicalNodeID == node.LogicalNodeID {
+				continue
+			}
+			endpoint := net.JoinHostPort(peer.SubstrateAddress, "5000")
+			active := false
+			for _, line := range strings.Split(summary, "\n") {
+				if strings.Contains(line, endpoint) && strings.Contains(line, "(Active)") {
+					active = true
+					break
+				}
+			}
+			if !active {
+				return "", fmt.Errorf("retained node %s has no active link to peer %s (%s)", node.LogicalNodeID, peer.LogicalNodeID, endpoint)
+			}
+		}
+	}
+	return fmt.Sprintf("retained multi-node runtime verified: %d bound nodes running with their exact addresses and a fully active mesh", len(nodes)), nil
+}
+
 func verifyMultinodeRuntimeWithCommand(ctx context.Context, manifest simulatorManifest, command scenarioCommandFunc) (string, error) {
 	organizationID := activeSimulatorOrganizationID(manifest)
 	organization, err := loadSimulatorOrganization(simulatorOrganizationsDirectory(), organizationID)
 	if err != nil {
 		return "", err
+	}
+	if organization.RetainedTopologyBinding != nil {
+		return verifyRetainedMultinodeRuntime(ctx, organization, command)
 	}
 	if organization.Runtime.Driver != "docker-multinode" || len(organization.Runtime.Nodes) < 2 {
 		return "", errors.New("active organization is not a multi-node docker-multinode runtime")

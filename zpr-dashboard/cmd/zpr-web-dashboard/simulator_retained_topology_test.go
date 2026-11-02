@@ -370,3 +370,62 @@ func TestSimulatorRetainedMultiNodeTopologyInspectsEveryNode(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifyRetainedMultinodeRuntimeChecksEveryNodeAndMesh(t *testing.T) {
+	for _, failure := range []string{"", "missing mesh link", "stopped node"} {
+		t.Run(failure, func(t *testing.T) {
+			organization := retainedMultiNodeTestOrganization(t)
+			binding := organization.RetainedTopologyBinding
+			command := func(_ context.Context, name string, args ...string) (string, error) {
+				if name != "docker" {
+					t.Fatalf("unexpected executable %s", name)
+				}
+				var node *simulatorRetainedTopologyNode
+				for index := range binding.Nodes {
+					if strings.Contains(strings.Join(args, " "), binding.Nodes[index].Container) {
+						node = &binding.Nodes[index]
+					}
+				}
+				if node == nil {
+					t.Fatalf("command outside the binding: %v", args)
+				}
+				switch {
+				case args[0] == "inspect":
+					running := !(failure == "stopped node" && node.LogicalNodeID == "tijuana-plant")
+					data, err := json.Marshal([]any{map[string]any{
+						"Name": "/" + node.Container, "Image": binding.ImageID,
+						"State":  map[string]any{"Running": running},
+						"Config": map[string]any{"Labels": map[string]string{"org.zpr.evaluation-install": binding.InstallID}},
+						"NetworkSettings": map[string]any{"Networks": map[string]any{
+							binding.Network: map[string]string{"IPAddress": node.SubstrateAddress},
+						}},
+					}})
+					return string(data), err
+				case args[2] == "ip":
+					return `[{"addr_info":[{"local":"` + node.ZPRAddress + `"}]}]`, nil
+				case args[2] == "ph-cli":
+					var lines []string
+					for _, peer := range binding.Nodes {
+						if peer.LogicalNodeID == node.LogicalNodeID {
+							continue
+						}
+						if failure == "missing mesh link" && node.LogicalNodeID == "shenzhen-office" && peer.LogicalNodeID == "tijuana-plant" {
+							continue
+						}
+						lines = append(lines, "  3: "+peer.SubstrateAddress+":5000 (Active)")
+					}
+					return "Link summary:\n" + strings.Join(lines, "\n"), nil
+				}
+				t.Fatalf("unexpected command: %v", args)
+				return "", nil
+			}
+			output, err := verifyRetainedMultinodeRuntime(context.Background(), organization, command)
+			if (err == nil) != (failure == "") {
+				t.Fatalf("result for %q: %v", failure, err)
+			}
+			if failure == "" && !strings.Contains(output, "3 bound nodes") {
+				t.Fatalf("verification summary incomplete: %s", output)
+			}
+		})
+	}
+}
