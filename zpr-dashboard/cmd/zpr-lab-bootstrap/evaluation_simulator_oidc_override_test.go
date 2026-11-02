@@ -58,11 +58,12 @@ func TestEvaluationSimulatorOIDCOverrideAddsOnlyExplicitPermissions(t *testing.T
 	evaluation, env, base := simulatorOIDCOverrideFixture(t)
 	override := base
 	override.Grants = []operatorauth.Grant{base.Grants[0]}
-	override.Grants[0].Permissions = append(slices.Clone(base.Grants[0].Permissions), "read", "revoke", "budget.approve")
+	override.Grants[0].Permissions = append(slices.Clone(base.Grants[0].Permissions),
+		"read", "revoke", "budget.approve", "scenario.edit", "scenario.publish")
 	path := writeSimulatorOIDCOverride(t, override)
 	updated, err := applyEvaluationSimulatorOIDCOverride(evaluation, path, env)
 	if err != nil {
-		t.Fatalf("explicit enrollment/budget additions were refused: %v", err)
+		t.Fatalf("explicit enrollment/budget/scenario-authoring additions were refused: %v", err)
 	}
 	if !slices.Contains(updated, "ZPR_SIMULATOR_OPERATOR_OIDC_CONFIG_FILE="+path) {
 		t.Fatalf("environment does not select the override: %v", updated)

@@ -17,12 +17,16 @@ import (
 
 // evaluationSimulatorOIDCOverridePermissions are the only permissions an
 // explicit operator-supplied Simulator session override may add to an
-// existing named operator: the enrollment administration contract and the
-// bounded scenario budget approval. Identity, issuer, client, callback,
-// organizations and every retained permission are preserved exactly, and
-// approval.self follows its own earlier explicit mechanism, never this one.
+// existing named operator: the enrollment administration contract, the
+// bounded scenario budget approval, and Simulator-private workspace scenario
+// authoring (edit/publish operate only on the Simulator's own workspace
+// artifacts, never on enrollment or production state). Identity, issuer,
+// client, callback, organizations and every retained permission are
+// preserved exactly, and approval.self follows its own earlier explicit
+// mechanism, never this one.
 var evaluationSimulatorOIDCOverridePermissions = []string{
 	"read", "create", "cancel", "approve", "reject", "revoke", "budget.approve",
+	"scenario.edit", "scenario.publish",
 }
 
 // applyEvaluationSimulatorOIDCOverride validates an explicit operator-owned
