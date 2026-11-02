@@ -1295,8 +1295,9 @@ the script now takes machine identities as arguments and issues missing
 machine certificates additively from the existing control CA without
 touching existing identities (`ed5dbe3`); after the additive machine-01
 issuance the scenario preflight's machine-runtime check passed. Redwood's
-own scenarios still declare the legacy demo topology and have no approved
-budget evidence, so no scenario was run — that is acceptance-matrix scope.
+own scenarios initially declared the legacy demo topology and had no
+approved budget evidence, so no scenario ran that morning — both were ported
+and completed the same day (see the scenario-enablement record below).
 All five organizations (velocity, northstar, load-lab, great-lakes, redwood)
 are healthy at session end.
 
@@ -1327,6 +1328,53 @@ journal. `zplc`/`zpr-policy-service` come from a different source tree and
 were not part of this rebuild. The package remains engineering-grade
 (`status=engineering-unqualified`); clean-host qualification is unchanged
 separate work.
+
+**Approved decision — bundled scenarios adopt the retained topology binding
+instead of declaring addresses (user-approved 2026-11-02):** scenario
+catalogs must not pin fabric addresses; ZPR addresses are VS-granted and
+dynamic. Scenarios that declared legacy fixed node addresses are ported to
+declare no topology and adopt the organization's retained topology binding at
+plan time, exactly like the other bundled scenarios (the alternative — a
+logical IDs-only declared topology — was considered and not chosen).
+
+**Redwood scenarios enabled and completed; Visa-Service BAS wiring made a
+fail-closed provisioning stage (2026-11-02, through `07c0948`, packages
+rebuilt at `velocity-paired-20261102-r3` from `5a3ec3e` and redeployed
+estate-wide):** both redwood scenarios were ported to the adopted retained
+topology (`d93d24d`) and completed live through the full authorized chain
+(budget 201, preflight zero blockers, approve, run 202):
+`redwood-regional-operations` verified the two bound nodes and their active
+mesh, and `redwood-dispatch-login` completed all 7 steps — machine-01
+started, its controller docked, dispatcher marisol.vega logged in and out
+with clean teardown — the **first business machine scenario on a newly
+provisioned on-the-fly organization**. Three gaps were found live, each
+closed on the maintained path: (1) paired operator baselines carry no
+workspace scenario-authoring grant, so seeded scenarios could never be
+updated through the API — the launcher's explicit OIDC-override allow-list
+now accepts the Simulator-private `scenario.edit`/`scenario.publish`
+additions (`5a3ec3e`; redwood's override gained them with a dated backup and
+its frozen state rotated to `simulator-state-redwood-r2` preserving
+`workspace/`; velocity's state rotated to `simulator-state-r5` when the r3
+package's changed catalog froze `simulator-state-r4`). (2) The first machine
+run failed with explicit VS evidence — "missing HTTPS and token-key
+configuration for authentication service redwood-enrollment-bas": endpoint
+admission requires the operator Visa configuration to wire the
+organization's BAS as an HTTPS trusted service
+(`[trusted_service_http.<org>-enrollment-bas]` plus the BAS runtime files
+mounted read-only), wiring load-lab had by hand and the provisioning path
+never covered; redwood and (latently) great-lakes were wired with dated
+backups, and because paired installs consume the pairing-derived
+`simulator-paired-operator-services.json`, both were re-derived through the
+maintained pairing command against stopped installs (no key rotation;
+great-lakes first needed container-written root-owned
+`data-plane/dns/adapters.json` ownership restored). (3) The provisioning
+command now verifies that exact wiring as a ninth fail-closed stage,
+`visa-bas-trust` (`07c0948`), test-pinned; both organizations re-ran
+provisioning to exit 0 with all nine stages. All five organizations healthy
+at session end. Redwood's acceptance-matrix cell is now 2/2 scenarios; still
+open: great-lakes business scenarios (13-machine identity set, workload
+policy), the full five-organization matrix, and per-machine docking-node
+selection.
 
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
