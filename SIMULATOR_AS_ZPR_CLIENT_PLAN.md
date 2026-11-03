@@ -1530,7 +1530,8 @@ its own paired simulator.
 **One-button activation implemented: multi-install composition, per-install
 credentials, composed session and trust (2026-11-02, source-only):** the
 four gaps above are closed in code, Mac full suite green (`go build`/`vet`/
-`test ./...` in `zpr-dashboard`), not yet live-validated. (1)+(2) The
+`test ./...` in `zpr-dashboard`), live-validated on the workbench estate the
+same evening (record below). (1)+(2) The
 evaluation install registry schema gained per-install credentials — the
 delegation signer config/key/audience, the data-plane image pin and the
 machine-control listener with its TLS material
@@ -1559,13 +1560,42 @@ the install's own runtime trust and frozen identities byte-identical
 `evaluation_simulator_pairing.go`). (4) Registry-path activation already
 switches via the maintained install registry and ordinary-client on-the-fly
 onboarding; it now works for member organizations through their per-install
-signers. Remaining for live one-button operation: rebuild the estate package
-on this source, re-derive each member's paired trust with the composed
-session rendering (derived files moved aside, install stopped), launch the
-composed Simulator against the home install, and run the activation
-acceptance on a member organization. The reset-organization subsystem
-remains unwired and is still not required for this path (G6 note above
-unchanged).
+signers. The reset-organization subsystem remains unwired and is still not
+required for this path (G6 note above unchanged).
+
+**One-button activation live-validated: composed velocity+redwood Simulator,
+member activation and scenario green (2026-11-02 evening, estate
+`velocity-paired-20261102-r8`, source `3237439`):** the estate was rebuilt
+and swapped through the proven seven-binary procedure (r6→r7→r8 in one
+evening; `SHA256SUMS` re-pinned each time), and one composed Simulator now
+fronts velocity (home) plus redwood (member) from
+`~/zpr-dev-organizations-r9/simulator-members-velocity.json` with the fresh
+state `simulator-state-velocity-members-r1` and the members onboarding
+override `enrollment/velocity/simulator-oidc-onboarding-members.json`
+(organizations widened to `["redwood","velocity"]`). Measured acceptance,
+one named login at the composed Simulator: activate redwood → 200
+`ready-verified` with the registry selection switching to redwood; bounded
+budget self-approval at redwood's own authority → 201 approved by the
+velocity home identity through redwood's per-install signer; preflight
+blockers `[]`; `redwood-dispatch-login` run → completed 7/7 including the
+retained machine lifecycle; activate velocity back → 200 `ready-verified`
+with the selection returning. Two defects were found live and fixed with
+tests: (a) the Control-Service relay forwards composed delegations to the
+Enrollment Service, whose derived trust also needs the composed identities —
+`-evaluation-simulator-enrollment-trust` gained the same
+`-session-grants-file` contract (`bf5393d`; without it every cross-install
+enrollment read fails 403); (b) the startup-generation machine-control scope
+read the raw state manifest (home organization) and refused every retained
+lifecycle start after switching — it now follows the explicit
+activation-selection overlay (`3237439`). Operational notes: a member's
+binding-adopted workspace scenario revisions live in its per-organization
+workspace database (`<org>-policy-only.db`), which must be carried into the
+composed state or the catalog scenario fails preflight with a retained
+topology mismatch; both derived trusts are re-derived against the stopped
+member with its derived files moved aside. Remaining before "any catalog
+organization": repeat the member derivations for northstar (declared
+catalog), load-lab and great-lakes, and decide the composed catalog shape
+for declared-northstar scenarios.
 
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
