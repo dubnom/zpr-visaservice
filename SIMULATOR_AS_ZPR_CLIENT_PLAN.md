@@ -1626,6 +1626,32 @@ hard per-organization fault/compromise/budget domains; the shared fabric
 trades that for tenancy-by-policy. Evaluation, dev and demo environments
 adopt the shared-fabric model.
 
+**Fabric-tenancy implementation staging (recorded 2026-11-02):** the first
+milestone (M1) is one single-node catalog organization activated on the dev
+fabric from zero and torn down clean — redwood-shaped, so the address-free
+multi-node work stays out of M1. Stage T1, multi-organization operator
+scoping: the one hard scalar pin is the management-mode validation requiring
+every grant to scope exactly the configured organization
+(`zpr-dashboard/internal/systemconfig/config.go` ~line 285, consumed through
+`internal/operatorweb/security.go` and rendered as
+`ZPR_CONTROL_ROOM_ORGANIZATION_ID` by `internal/systemconfig/runtime.go`);
+evolving it to an organization set is a schema-v2 production-composition
+contract change and must carry its renderers, composition tests and the
+Control Room boundary inventory together. Stage T2, per-activation
+trusted-source lifecycle: turn the install-time BAS provisioning
+(`-evaluation-bas` plus the self-approved auth-root pipeline) into an
+activation-time onboard and a deactivation-time offboard of the
+organization's VS trust entry, enrollment organization entry and auth-root
+layer — resumable and fail-closed like pairing. Stage T3, per-organization
+policy layering on the acceptance-tested multisource pipeline, with the
+bounded-approval contract: a tenant layer may reference only its own
+declared sources and endpoint classes. Stage T5, the teardown contract
+(already open design) extended to retract the policy layer and trusted
+source, not only endpoints. T1 and T2 are independent and can proceed in
+parallel; T3 depends on T2; M1 needs T1+T2+T3+T5 plus the existing
+declared-endpoint chain. T4 (address-free multi-node policy) gates only the
+multi-node organizations and follows M1.
+
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
 provisioned with a pre-enrolled retained machine inventory. Instead the
