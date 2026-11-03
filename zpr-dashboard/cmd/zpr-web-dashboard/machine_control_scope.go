@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -49,7 +50,19 @@ func machineControlRuntimeScope(manifestPath string) (machineControlScope, error
 		if err != nil {
 			return machineControlScope{}, err
 		}
-		return machineControlScope{OrganizationID: activeSimulatorOrganizationID(manifest), Generation: "startup"}, nil
+		organization := activeSimulatorOrganizationID(manifest)
+		// The explicit activation selection moves the machine-control scope
+		// with the active organization (multi-install one-button switching);
+		// a single-install state has no selection file and keeps its
+		// manifest organization.
+		if selected, err := os.ReadFile(simulatorActiveOrganizationPath()); err == nil {
+			if id := strings.TrimSpace(string(selected)); id != "" {
+				organization = id
+			}
+		} else if !os.IsNotExist(err) {
+			return machineControlScope{}, err
+		}
+		return machineControlScope{OrganizationID: organization, Generation: "startup"}, nil
 	}
 	if err != nil {
 		return machineControlScope{}, err

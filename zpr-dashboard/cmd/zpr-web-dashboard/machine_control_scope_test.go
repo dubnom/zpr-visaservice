@@ -202,3 +202,38 @@ func TestRuntimeMutationGuardBlocksActivationButAllowsIdle(t *testing.T) {
 		t.Fatal("idle runtime mutation blocked")
 	}
 }
+
+// TestMachineControlRuntimeScopeFollowsActivationSelection proves the
+// startup-generation scope moves with the explicit activation selection in a
+// composed multi-install state, while a single-install state without a
+// selection file keeps its manifest organization.
+func TestMachineControlRuntimeScopeFollowsActivationSelection(t *testing.T) {
+	directory := t.TempDir()
+	manifest := simulatorManifest{OrganizationID: "home-org"}
+	for index := 1; index <= 20; index++ {
+		manifest.Machines = append(manifest.Machines, simulatorMachine{
+			ID: fmt.Sprintf("machine-%02d", index), Type: "laptop", Model: "Test", Location: "Test",
+		})
+	}
+	content, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "manifest.json")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	selection := filepath.Join(directory, "active-organization.txt")
+	t.Setenv("SIMULATION_ACTIVE_ORGANIZATION_FILE", selection)
+	scope, err := machineControlRuntimeScope(path)
+	if err != nil || scope.OrganizationID != "home-org" || scope.Generation != "startup" {
+		t.Fatalf("scope without selection = %+v, %v", scope, err)
+	}
+	if err := os.WriteFile(selection, []byte("member-org\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scope, err = machineControlRuntimeScope(path)
+	if err != nil || scope.OrganizationID != "member-org" || scope.Generation != "startup" {
+		t.Fatalf("scope with activation selection = %+v, %v", scope, err)
+	}
+}
