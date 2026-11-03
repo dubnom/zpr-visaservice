@@ -10,8 +10,10 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"neboagency.com/zpr-dashborad/internal/operatorauth"
 	"neboagency.com/zpr-dashborad/internal/operatordelegation"
 	"neboagency.com/zpr-dashborad/internal/servicehttp"
 )
@@ -30,6 +32,7 @@ func runEvaluationSimulatorEnrollmentTrust(args []string, stdout, stderr io.Writ
 	flags.SetOutput(stderr)
 	state := flags.String("state", "", "existing stopped Simulator-paired evaluation install directory (required)")
 	trustFile := flags.String("enrollment-trust-file", "", "protected delegation trust currently loaded by the Enrollment Service administration listener (required)")
+	sessionGrants := flags.String("session-grants-file", "", "optional protected composed Simulator session configuration whose named identities gain this installation's organization grant in the derived enrollment trust only")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -46,7 +49,7 @@ func runEvaluationSimulatorEnrollmentTrust(args []string, stdout, stderr io.Writ
 		fmt.Fprintln(stderr, "Invalid local state path.")
 		return 1
 	}
-	if err := deriveEvaluationSimulatorEnrollmentTrust(absolute, *trustFile); err != nil {
+	if err := deriveEvaluationSimulatorEnrollmentTrust(absolute, *trustFile, *sessionGrants); err != nil {
 		fmt.Fprintf(stderr, "Simulator enrollment trust: %v\n", err)
 		return 1
 	}
@@ -58,13 +61,19 @@ func runEvaluationSimulatorEnrollmentTrust(args []string, stdout, stderr io.Writ
 // deriveEvaluationSimulatorEnrollmentTrust writes a derived Enrollment Service
 // administration delegation trust that adds only the install's registered
 // independent Simulator signing key, pinned to the exact relay transport
-// certificate that presents forwarded delegations. It requires a completed
-// Simulator pairing with recorded operator service bindings that include an
-// Enrollment Service relay, never modifies the operator-owned input, never
-// rotates or rebinds keys, and resumes or verifies instead of overwriting.
-func deriveEvaluationSimulatorEnrollmentTrust(state, trustFile string) error {
+// certificate that presents forwarded delegations, plus the optional
+// composed-session identities bounded exactly like the paired trust. It
+// requires a completed Simulator pairing with recorded operator service
+// bindings that include an Enrollment Service relay, never modifies the
+// operator-owned input, never rotates or rebinds keys, and resumes or
+// verifies instead of overwriting.
+func deriveEvaluationSimulatorEnrollmentTrust(state, trustFile, sessionFile string) error {
 	if !filepath.IsAbs(trustFile) || filepath.Clean(trustFile) != trustFile || strings.ContainsAny(trustFile, ",\"\r\n=") {
 		return errors.New("enrollment-trust-file requires a canonical absolute bind-mount-safe path")
+	}
+	if sessionFile != "" && (!filepath.IsAbs(sessionFile) || filepath.Clean(sessionFile) != sessionFile ||
+		strings.ContainsAny(sessionFile, ",\"\r\n=")) {
+		return errors.New("session-grants-file requires a canonical absolute bind-mount-safe path")
 	}
 	lock, err := lockEvaluation(state)
 	if err != nil {
@@ -119,7 +128,11 @@ func deriveEvaluationSimulatorEnrollmentTrust(state, trustFile string) error {
 	if err != nil {
 		return fmt.Errorf("read protected enrollment trust input: %w", err)
 	}
-	expected, err := renderEvaluationSimulatorEnrollmentTrust(trustData, inventory.Config, roomKey, simulatorKey, relayChain)
+	grants, err := loadEvaluationSimulatorSessionGrants(sessionFile, evaluationOrganization(inventory))
+	if err != nil {
+		return err
+	}
+	expected, err := renderEvaluationSimulatorEnrollmentTrust(trustData, inventory.Config, roomKey, simulatorKey, relayChain, grants)
 	if err != nil {
 		return err
 	}
@@ -132,12 +145,12 @@ func deriveEvaluationSimulatorEnrollmentTrust(state, trustFile string) error {
 }
 
 // renderEvaluationSimulatorEnrollmentTrust extends the Enrollment Service's
-// delegation trust with only the independent Simulator key. The audience,
-// retained Room key entry and every named grant are preserved byte for byte.
-// Both keys are pinned to the relay transport certificate because the
-// Control-Service relay presents forwarded delegations to the Enrollment
-// Service administration listener.
-func renderEvaluationSimulatorEnrollmentTrust(trustData []byte, config evaluationConfig, roomKey, simulatorKey, relayChain []byte) ([]byte, error) {
+// delegation trust with only the independent Simulator key and the optional
+// composed-session grants. The audience, retained Room key entry and every
+// named grant are preserved byte for byte. Both keys are pinned to the relay
+// transport certificate because the Control-Service relay presents forwarded
+// delegations to the Enrollment Service administration listener.
+func renderEvaluationSimulatorEnrollmentTrust(trustData []byte, config evaluationConfig, roomKey, simulatorKey, relayChain []byte, sessionGrants []operatorauth.Grant) ([]byte, error) {
 	var document map[string]json.RawMessage
 	decoder := json.NewDecoder(bytes.NewReader(trustData))
 	if err := decoder.Decode(&document); err != nil || decoder.Decode(new(any)) != io.EOF {
@@ -166,6 +179,40 @@ func renderEvaluationSimulatorEnrollmentTrust(trustData []byte, config evaluatio
 	keys = []map[string]string{room, simulator}
 	if document["keys"], err = json.Marshal(keys); err != nil {
 		return nil, err
+	}
+	if len(sessionGrants) != 0 {
+		var grants []json.RawMessage
+		if json.Unmarshal(document["grants"], &grants) != nil || len(grants) == 0 {
+			return nil, errors.New("enrollment delegation trust must contain its retained named grants")
+		}
+		retained := map[string]bool{}
+		for _, raw := range grants {
+			var grant operatorauth.Grant
+			if json.Unmarshal(raw, &grant) != nil || grant.Issuer == "" || grant.Subject == "" {
+				return nil, errors.New("enrollment delegation trust contains an invalid retained grant")
+			}
+			retained[grant.Issuer+"\x00"+grant.Subject] = true
+		}
+		composed := evaluationComposedSessionPermissions()
+		for _, grant := range sessionGrants {
+			if retained[grant.Issuer+"\x00"+grant.Subject] {
+				return nil, errors.New("composed session identity already holds a retained enrollment grant; refuse the ambiguous extension")
+			}
+			retained[grant.Issuer+"\x00"+grant.Subject] = true
+			for _, permission := range grant.Permissions {
+				if !slices.Contains(composed, permission) {
+					return nil, errors.New("composed session grants are bounded to the Simulator session permissions")
+				}
+			}
+			rendered, err := json.Marshal(grant)
+			if err != nil {
+				return nil, err
+			}
+			grants = append(grants, rendered)
+		}
+		if document["grants"], err = json.Marshal(grants); err != nil {
+			return nil, err
+		}
 	}
 	rendered, err := json.MarshalIndent(document, "", "  ")
 	if err != nil {

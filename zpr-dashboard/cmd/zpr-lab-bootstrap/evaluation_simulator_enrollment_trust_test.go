@@ -31,7 +31,7 @@ func TestEvaluationSimulatorEnrollmentTrustDerivesPairedTrust(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := enrollmentTrustFixtureInput(t, f)
-	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input); err != nil {
+	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err != nil {
 		t.Fatalf("derivation failed: %v", err)
 	}
 	target := filepath.Join(f.state, evaluationSimulatorEnrollmentTrustFile)
@@ -80,7 +80,7 @@ func TestEvaluationSimulatorEnrollmentTrustDerivesPairedTrust(t *testing.T) {
 	if err := os.WriteFile(alreadyExtended, rendered, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, alreadyExtended); err != nil {
+	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, alreadyExtended, ""); err != nil {
 		t.Fatalf("already-extended input was not verified: %v", err)
 	}
 }
@@ -92,7 +92,7 @@ func TestEvaluationSimulatorEnrollmentTrustResumesInterruptedRename(t *testing.T
 		t.Fatal(err)
 	}
 	input := enrollmentTrustFixtureInput(t, f)
-	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input); err != nil {
+	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err != nil {
 		t.Fatal(err)
 	}
 	target := filepath.Join(f.state, evaluationSimulatorEnrollmentTrustFile)
@@ -101,7 +101,7 @@ func TestEvaluationSimulatorEnrollmentTrustResumesInterruptedRename(t *testing.T
 	if err := os.Rename(target, staging); err != nil {
 		t.Fatal(err)
 	}
-	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input); err != nil {
+	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err != nil {
 		t.Fatalf("interrupted rename did not resume: %v", err)
 	}
 	if !bytes.Equal(readSubjectFile(t, f.state, evaluationSimulatorEnrollmentTrustFile), rendered) {
@@ -113,7 +113,7 @@ func TestEvaluationSimulatorEnrollmentTrustResumesInterruptedRename(t *testing.T
 	if err := os.WriteFile(staging, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input); err == nil ||
+	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err == nil ||
 		!strings.Contains(err.Error(), "staged enrollment trust differs") {
 		t.Fatalf("mismatched staging was not refused: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestEvaluationSimulatorEnrollmentTrustRefusesUnsafeInputs(t *testing.T) {
 	t.Run("unpaired", func(t *testing.T) {
 		f := newPairingServicesFixture(t)
 		input := enrollmentTrustFixtureInput(t, f)
-		err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input)
+		err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, "")
 		if err == nil || !strings.Contains(err.Error(), "no registered Simulator client") {
 			t.Fatalf("unpaired install was not refused: %v", err)
 		}
@@ -138,14 +138,14 @@ func TestEvaluationSimulatorEnrollmentTrustRefusesUnsafeInputs(t *testing.T) {
 			t.Fatal(err)
 		}
 		input := enrollmentTrustFixtureInput(t, f)
-		err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input)
+		err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, "")
 		if err == nil || !strings.Contains(err.Error(), "paired operator services") {
 			t.Fatalf("missing relay binding was not refused: %v", err)
 		}
 	})
 	t.Run("relative-path", func(t *testing.T) {
 		f := newPairingServicesFixture(t)
-		err := deriveEvaluationSimulatorEnrollmentTrust(f.state, "enrollment-trust.json")
+		err := deriveEvaluationSimulatorEnrollmentTrust(f.state, "enrollment-trust.json", "")
 		if err == nil || !strings.Contains(err.Error(), "canonical absolute") {
 			t.Fatalf("relative input was not refused: %v", err)
 		}
@@ -169,7 +169,7 @@ func TestEvaluationSimulatorEnrollmentTrustRefusesUnsafeInputs(t *testing.T) {
 		if err != nil || os.WriteFile(input, changed, 0o600) != nil {
 			t.Fatal(err)
 		}
-		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input); err == nil ||
+		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err == nil ||
 			!strings.Contains(err.Error(), "audience differs") {
 			t.Fatalf("foreign audience was not refused: %v", err)
 		}
@@ -185,7 +185,7 @@ func TestEvaluationSimulatorEnrollmentTrustRefusesUnsafeInputs(t *testing.T) {
 		if err != nil || os.WriteFile(input, changed, 0o600) != nil {
 			t.Fatal(err)
 		}
-		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input); err == nil ||
+		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err == nil ||
 			!strings.Contains(err.Error(), "retained Room key") {
 			t.Fatalf("foreign Room key was not refused: %v", err)
 		}
@@ -203,7 +203,7 @@ func TestEvaluationSimulatorEnrollmentTrustRefusesUnsafeInputs(t *testing.T) {
 		if err != nil || os.WriteFile(input, changed, 0o600) != nil {
 			t.Fatal(err)
 		}
-		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input); err == nil ||
+		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err == nil ||
 			!strings.Contains(err.Error(), "different second key") {
 			t.Fatalf("foreign second key was not refused: %v", err)
 		}
@@ -214,7 +214,7 @@ func TestEvaluationSimulatorEnrollmentTrustRefusesUnsafeInputs(t *testing.T) {
 		if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input); err == nil ||
+		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err == nil ||
 			!strings.Contains(err.Error(), "different content") {
 			t.Fatalf("existing different target was not refused: %v", err)
 		}
@@ -224,11 +224,11 @@ func TestEvaluationSimulatorEnrollmentTrustRefusesUnsafeInputs(t *testing.T) {
 	})
 	t.Run("output-as-input", func(t *testing.T) {
 		f, input := paired(t)
-		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input); err != nil {
+		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err != nil {
 			t.Fatal(err)
 		}
 		target := filepath.Join(f.state, evaluationSimulatorEnrollmentTrustFile)
-		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, target); err == nil ||
+		if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, target, ""); err == nil ||
 			!strings.Contains(err.Error(), "derived output") {
 			t.Fatalf("derived output as input was not refused: %v", err)
 		}
@@ -247,5 +247,52 @@ func TestEvaluationSimulatorEnrollmentTrustCLIRequiresArguments(t *testing.T) {
 		"-state", "/tmp/x", "-enrollment-trust-file", "/tmp/y", "extra" + strconv.Itoa(0),
 	}, &stdout, &stderr); code != 2 {
 		t.Fatalf("extra argument exit %d", code)
+	}
+}
+
+// TestEvaluationSimulatorEnrollmentTrustComposedSessionGrants proves the
+// composed home-session identity reaches the derived Enrollment Service
+// trust with exactly this organization's scope, bounded to the Simulator
+// session permissions, while the retained enrollment grants stay unchanged.
+func TestEvaluationSimulatorEnrollmentTrustComposedSessionGrants(t *testing.T) {
+	f := newPairingServicesFixture(t)
+	port := pairingFreePort(t)
+	permissions := evaluationSimulatorOperatorPermissions(true)
+	session := writeTestComposedSessionConfig(t, "https://home.invalid:15556", "home-admin",
+		[]string{"home-org", "velocity"}, permissions)
+	if err := pairEvaluationSimulatorWithServices(f.state, port, f.services, session, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	input := enrollmentTrustFixtureInput(t, f)
+	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, session); err != nil {
+		t.Fatalf("composed enrollment trust derivation failed: %v", err)
+	}
+	var before, derived operatordelegation.Config
+	if json.Unmarshal(f.original, &before) != nil ||
+		json.Unmarshal(readSubjectFile(t, f.state, evaluationSimulatorEnrollmentTrustFile), &derived) != nil {
+		t.Fatal("invalid delegation trust")
+	}
+	if len(derived.Grants) != len(before.Grants)+1 ||
+		!reflect.DeepEqual(derived.Grants[:len(before.Grants)], before.Grants) {
+		t.Fatalf("retained enrollment grants changed: %+v", derived.Grants)
+	}
+	composed := derived.Grants[len(derived.Grants)-1]
+	if composed.Issuer != "https://home.invalid:15556" || composed.Subject != "home-admin" ||
+		!reflect.DeepEqual(composed.Organizations, []string{"velocity"}) ||
+		!reflect.DeepEqual(composed.Permissions, permissions) {
+		t.Fatalf("composed enrollment session grant = %+v", composed)
+	}
+	// Re-deriving without the session grants must fail closed on the
+	// differing existing target, never silently narrow the derived trust.
+	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, ""); err == nil ||
+		!strings.Contains(err.Error(), "different content") {
+		t.Fatalf("narrowed re-derivation accepted: %v", err)
+	}
+	// Out-of-bound session permissions are refused.
+	bad := writeTestComposedSessionConfig(t, "https://home.invalid:15556", "home-admin",
+		[]string{"velocity"}, []string{"monitor.read"})
+	if err := deriveEvaluationSimulatorEnrollmentTrust(f.state, input, bad); err == nil ||
+		!strings.Contains(err.Error(), "bounded to the Simulator session permissions") {
+		t.Fatalf("out-of-bound enrollment session grant accepted: %v", err)
 	}
 }
