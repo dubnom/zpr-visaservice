@@ -1597,6 +1597,35 @@ organization": repeat the member derivations for northstar (declared
 catalog), load-lab and great-lakes, and decide the composed catalog shape
 for declared-northstar scenarios.
 
+**Approved design direction — organizations are fabric tenants (user-approved
+2026-11-02):** the end-state is one ZPR network hosting organizations as
+policy tenants, not one install per organization. Activation materializes an
+organization on the shared fabric — trusted-source onboarding (its BAS root
+and directory), a per-organization source-qualified policy layer applied
+through the audited pipeline, node admission, declared-endpoint
+autoprovisioning, and dynamic DNS publication — and deactivation dissolves
+every one of those steps, fail-closed on partial teardown. The primitives
+already exist and are acceptance-tested: multiple trusted sources with
+source-qualified policy (`MULTISOURCE_POLICY_SUPPORT.md`), org-named VS
+trust entries, the natively multi-organization Enrollment Service,
+organization-list operator grants, VS-granted dynamic addressing with
+production DNS publication, and the approved on-the-fly provisioning
+contract above. One-button composition of parallel installs (records above)
+remains the bridge for grandfathered estates; under this direction a
+single-install environment such as dev needs no member installs — its fabric
+is the host. Gap list to implementation: per-activation trusted-source
+(BAS root) lifecycle, per-organization policy layering with a bounded
+ownership/approval contract (blast radius of a tenant layer on co-tenants),
+multi-organization Control Room/Control-Service scoping
+(`ZPR_CONTROL_ROOM_ORGANIZATION_ID` and the runtime organization binding are
+scalar today), address-free multi-node policy (multi-node topologies still
+embed deterministic addresses), and the fail-closed teardown contract
+already recorded as open design. Production tenancy isolation remains an
+explicit open decision, not an accident of tooling: separate installs give
+hard per-organization fault/compromise/budget domains; the shared fabric
+trades that for tenancy-by-policy. Evaluation, dev and demo environments
+adopt the shared-fabric model.
+
 **Approved decision — on-the-fly provisioning replaces retained inventory for
 new organizations (user-approved 2026-11-01):** new organizations are not
 provisioned with a pre-enrolled retained machine inventory. Instead the
